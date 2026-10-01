@@ -417,6 +417,9 @@ export function buildDemoSnapshot(): Snapshot {
     }),
     todo,
     warnings: [],
+    // 演示数据里有 5 个学期，只有最后一个是当学期——和真实使用情形一致，
+    // 顺带让侧栏那行「跳过 N 门历史课程」在截图里也能看到。
+    reusedCourseCount: Math.max(0, courses.length - 6),
   };
 }
 

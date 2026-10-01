@@ -355,6 +355,8 @@ export function normaliseSnapshot(raw: unknown): Snapshot | null {
     assignments: s.assignments,
     todo: Array.isArray(s.todo) ? s.todo : [],
     warnings: Array.isArray(s.warnings) ? s.warnings : [],
+    // 老快照里没有这个字段；读出来按 0 处理，不要显示成 undefined
+    reusedCourseCount: typeof s.reusedCourseCount === 'number' ? s.reusedCourseCount : 0,
   };
 }
 

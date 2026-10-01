@@ -7,6 +7,7 @@
 
 import { CanvasClient } from './canvas.ts';
 import { CanvasError, describeCanvasError } from './errors.ts';
+import { cachedIds, planRefresh } from './refresh.ts';
 import {
   buildTermGroups,
   collectTermInfo,
@@ -14,7 +15,7 @@ import {
   summariseCourse,
   toAssignmentRows,
 } from './scoring.ts';
-import type { AssignmentRow, CanvasCourse, Snapshot } from './types.ts';
+import type { AssignmentRow, CanvasCourse, CourseSummary, Snapshot } from './types.ts';
 
 // Re-exported so the CLI can keep importing everything from one place.
 export {
@@ -29,6 +30,8 @@ export {
   summariseCourse,
   toAssignmentRows,
 } from './scoring.ts';
+
+export { cachedIds, decideRefresh, isTermOver, planRefresh } from './refresh.ts';
 
 async function mapPool<T, R>(
   items: T[],
@@ -76,6 +79,13 @@ async function fetchCourseAssignments(
 export interface BuildSnapshotOptions {
   enrollmentState?: 'active' | 'all';
   onProgress?: (done: number, total: number, label: string) => void;
+  /**
+   * 上一次的快照。已结束学期的课程直接沿用它的汇总与作业行，不再发请求。
+   * 传 null 或不传就是全量拉取。
+   */
+  previous?: Snapshot | null;
+  /** 强制全量刷新，忽略 [previous] 里的历史学期数据。 */
+  full?: boolean;
 }
 
 export async function buildSnapshot(
@@ -119,18 +129,46 @@ export async function buildSnapshot(
 
   const allRows: AssignmentRow[] = [];
   const termInfo = collectTermInfo(courses);
-  let done = 0;
 
-  const details = await mapPool(courses, 4, async (course) => {
+  // --- 刷新范围 -------------------------------------------------------------
+  // 已结束学期的课不会再变，沿用上次的汇总与作业行，省下每门课两个请求。
+  const previous = options.previous ?? null;
+  const ids = cachedIds(previous);
+  const plan = planRefresh(
+    courses,
+    (c) => resolveTerm(c, termInfo).endAt,
+    {
+      full: options.full === true,
+      now: Date.now(),
+      cachedCourseIds: ids.courseIds,
+      cachedRowCourseIds: ids.rowCourseIds,
+    }
+  );
+
+  const reusedSummaries: CourseSummary[] = [];
+  if (plan.reuse.length > 0 && previous) {
+    const wanted = new Set(plan.reuse.map((c) => c.id));
+    for (const c of previous.courses) {
+      if (wanted.has(c.id)) reusedSummaries.push(c);
+    }
+    for (const r of previous.assignments) {
+      if (wanted.has(r.courseId)) allRows.push(r);
+    }
+  }
+
+  let done = 0;
+  const fetched = await mapPool(plan.fetch, 4, async (course) => {
     const nickname = nicknames.get(course.id);
     const displayName = nickname || course.name;
     const term = resolveTerm(course, termInfo);
     const rows = await fetchCourseAssignments(client, course, displayName, warnings);
     allRows.push(...rows);
     done += 1;
-    options.onProgress?.(done, courses.length, displayName);
+    options.onProgress?.(done, plan.fetch.length, displayName);
     return summariseCourse(course, displayName, nickname, rows, term);
   });
+
+  const details = [...reusedSummaries, ...fetched];
 
   // Upcoming work -----------------------------------------------------------
   const todo: Snapshot['todo'] = [];
@@ -187,5 +225,7 @@ export async function buildSnapshot(
     }),
     todo,
     warnings,
+    /** 这次刷新沿用了多少门已结束学期的课（没有为它们发请求）。 */
+    reusedCourseCount: reusedSummaries.length,
   };
 }

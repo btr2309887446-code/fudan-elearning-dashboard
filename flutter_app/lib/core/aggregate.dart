@@ -7,6 +7,7 @@ library;
 
 import 'canvas.dart';
 import 'errors.dart';
+import 'refresh.dart';
 import 'scoring.dart';
 import 'types.dart';
 
@@ -63,10 +64,18 @@ class BuildSnapshotOptions {
   const BuildSnapshotOptions({
     this.enrollmentState = 'all',
     this.onProgress,
+    this.previous,
+    this.full = false,
   });
 
   final String enrollmentState;
   final void Function(int done, int total, String label)? onProgress;
+
+  /// 上一次的快照。已结束学期的课程直接沿用它的汇总与作业行，不再发请求。
+  final Snapshot? previous;
+
+  /// 强制全量刷新，忽略 [previous] 里的历史学期数据。
+  final bool full;
 }
 
 Future<Snapshot> buildSnapshot(CanvasClient client, [BuildSnapshotOptions options = const BuildSnapshotOptions()]) async {
@@ -106,18 +115,46 @@ Future<Snapshot> buildSnapshot(CanvasClient client, [BuildSnapshotOptions option
 
   final allRows = <AssignmentRow>[];
   final termInfo = collectTermInfo(courses);
-  var done = 0;
 
-  final summaries = await _mapPool<CanvasCourse, CourseSummary>(courses, 4, (course, _) async {
+  // --- 刷新范围 -------------------------------------------------------------
+  // 已结束学期的课不会再变，沿用上次的汇总与作业行，省下每门课两个请求。
+  final prev = options.previous;
+  final ids = cachedIds(
+    prev?.courses.map((c) => c.id) ?? const <int>[],
+    prev?.assignments.map((a) => a.courseId) ?? const <int>[],
+  );
+  final plan = planRefresh<CanvasCourse>(
+    courses,
+    (c) => c.id,
+    (c) => resolveTerm(c, termInfo).endAt,
+    RefreshInputs(
+      full: options.full,
+      now: DateTime.now().millisecondsSinceEpoch,
+      cachedCourseIds: ids.courseIds,
+      cachedRowCourseIds: ids.rowCourseIds,
+    ),
+  );
+
+  final reused = <CourseSummary>[];
+  if (plan.reuse.isNotEmpty && prev != null) {
+    final wanted = plan.reuse.map((c) => c.id).toSet();
+    reused.addAll(prev.courses.where((c) => wanted.contains(c.id)));
+    allRows.addAll(prev.assignments.where((a) => wanted.contains(a.courseId)));
+  }
+
+  var done = 0;
+  final fetched = await _mapPool<CanvasCourse, CourseSummary>(plan.fetch, 4, (course, _) async {
     final nickname = nicknames[course.id];
     final displayName = (nickname != null && nickname.isNotEmpty) ? nickname : course.name;
     final term = resolveTerm(course, termInfo);
     final rows = await _fetchCourseAssignments(client, course, displayName, warnings);
     allRows.addAll(rows);
     done++;
-    options.onProgress?.call(done, courses.length, displayName);
+    options.onProgress?.call(done, plan.fetch.length, displayName);
     return summariseCourse(course, displayName, nickname, rows, term);
   });
+
+  final summaries = [...reused, ...fetched];
 
   // 待办事项 --------------------------------------------------------------
   final todo = <TodoEntry>[];
@@ -188,5 +225,7 @@ Future<Snapshot> buildSnapshot(CanvasClient client, [BuildSnapshotOptions option
     assignments: allRows,
     todo: todo,
     warnings: warnings,
+    // 这次刷新沿用了多少门已结束学期的课（没有为它们发请求）。
+    reusedCourseCount: reused.length,
   );
 }

@@ -52,6 +52,12 @@ interface Prefs {
   dashboardOrder?: string[];
   /** 手动标记为「无需提交」的作业键（`courseId:assignmentId`）。只影响显示。 */
   ignoredAssignments?: string[];
+  /**
+   * 刷新范围：`current` 只请求当前及未来学期（默认），`all` 全部重拉。
+   *
+   * 已结束学期的成绩和作业不会再变，每次刷新都拉一遍纯属浪费。
+   */
+  refreshScope?: 'current' | 'all';
   /** 大模型配置；未配置时作业简介降级为截取描述前 100 字。 */
   llm?: LlmConfig;
   /** 作业简介缓存，键是 summaryCacheKey()。 */
@@ -182,6 +188,9 @@ async function refreshSnapshot(force: boolean): Promise<Snapshot> {
     const prefs = readPrefs();
     const built = await buildSnapshot(client, {
       enrollmentState: prefs.enrollmentState,
+      // 已结束学期的课不会再变，沿用上次的数据，省下每门课两个请求。
+      previous: snapshot ?? readCachedSnapshot(),
+      full: prefs.refreshScope === 'all',
       onProgress: (done, total, label) => {
         mainWindow?.webContents.send('data:progress', { done, total, label });
       },

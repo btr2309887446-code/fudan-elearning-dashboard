@@ -22,6 +22,11 @@ export interface Prefs {
   dashboardOrder?: string[];
   /** 手动标记为「无需提交」的作业键（`courseId:assignmentId`）。只影响显示。 */
   ignoredAssignments?: string[];
+  /**
+   * 刷新范围：`current` 只请求当前及未来学期（默认），`all` 全部重拉。
+   * 已结束学期的成绩和作业不会再变。
+   */
+  refreshScope?: 'current' | 'all';
 }
 
 export type { CanvasFile, DownloadProgress, FileNode };

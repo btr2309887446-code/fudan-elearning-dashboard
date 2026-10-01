@@ -21,6 +21,7 @@ class OverviewTab extends StatelessWidget {
     required this.onOpenAssignment,
     required this.sectionOrder,
     this.ignoredSet = const {},
+    this.reusedCourseCount = 0,
   });
 
   final List<CourseSummary> courses;
@@ -36,6 +37,9 @@ class OverviewTab extends StatelessWidget {
 
   /// 被标记为「无需提交」的作业键；这些不计入缺交、也不出现在未交清单。
   final Set<String> ignoredSet;
+
+  /// 这次刷新沿用了多少门已结束学期的课（没有为它们发请求）。
+  final int reusedCourseCount;
 
   /// 用户排定的板块顺序；空列表表示默认顺序。
   final List<String> sectionOrder;
@@ -342,6 +346,18 @@ class OverviewTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         for (final k in orderedKeys) ...(blocks[k] ?? const <Widget>[]),
+
+        // 这次刷新跳过了多少门历史学期的课。写在这里是为了让「怎么这么快」
+        // 有个解释，而不是让人怀疑是不是没刷新。
+        if (reusedCourseCount > 0) ...[
+          Gap.lg,
+          Center(
+            child: Text(
+              '已结束学期的 $reusedCourseCount 门课程沿用了上次的数据',
+              style: TextStyle(fontSize: 11.5, color: p.muted),
+            ),
+          ),
+        ],
       ],
     );
   }

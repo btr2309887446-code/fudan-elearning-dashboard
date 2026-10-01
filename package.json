@@ -1,6 +1,6 @@
 {
   "name": "fudan-elearning-dashboard",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "复旦大学 eLearning (Canvas) 课程 / 作业 / 成绩 图形化看板",
   "main": "./out/main/index.js",
   "author": "ksar",
@@ -20,8 +20,9 @@
     "test:files": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-files.ts",
     "test:summary": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-summary.ts",
     "test:ignored": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-ignored.ts",
+    "test:refresh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-refresh.ts",
     "test:download": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-download.ts",
-    "test": "npm run test:files && npm run test:summary && npm run test:ignored && npm run test:download && npm run test:cache",
+    "test": "npm run test:files && npm run test:summary && npm run test:ignored && npm run test:refresh && npm run test:download && npm run test:cache",
     "cli": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/snapshot.ts"
   },
   "dependencies": {

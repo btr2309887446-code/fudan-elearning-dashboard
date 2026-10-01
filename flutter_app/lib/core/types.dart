@@ -645,6 +645,7 @@ class Snapshot {
     required this.assignments,
     this.todo = const [],
     this.warnings = const [],
+    this.reusedCourseCount = 0,
   });
 
   final String fetchedAt;
@@ -657,6 +658,11 @@ class Snapshot {
   /// 组装过程中遇到的非致命问题。
   final List<String> warnings;
 
+  /// 这次刷新沿用了多少门已结束学期的课（没有为它们发请求）。
+  ///
+  /// 老快照里没有这个字段，读缓存时按 0 处理。
+  final int reusedCourseCount;
+
   Map<String, dynamic> toJson() => {
         'fetchedAt': fetchedAt,
         'profile': profile.toJson(),
@@ -665,6 +671,7 @@ class Snapshot {
         'assignments': assignments.map((a) => a.toJson()).toList(),
         'todo': todo.map((t) => t.toJson()).toList(),
         'warnings': warnings,
+        'reusedCourseCount': reusedCourseCount,
       };
 
   factory Snapshot.fromJson(Map<String, dynamic> json) => Snapshot(
@@ -688,6 +695,7 @@ class Snapshot {
             .map(TodoEntry.fromJson)
             .toList(),
         warnings: (json['warnings'] as List<dynamic>? ?? []).whereType<String>().toList(),
+        reusedCourseCount: (json['reusedCourseCount'] as num?)?.toInt() ?? 0,
       );
 }
 

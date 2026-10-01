@@ -64,6 +64,35 @@ class SettingsScreen extends StatelessWidget {
 
               Gap.lg,
 
+              // --- 刷新范围 ---
+              const SectionHeader('刷新'),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('刷新范围', style: TextStyle(fontSize: 13, color: p.textDim)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        _scopeChip(context, '只刷新当前学期', 'current'),
+                        _scopeChip(context, '全部学期', 'all'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      state.prefs.refreshScope == 'all'
+                          ? '每次刷新都重新拉取全部课程，比较慢。'
+                          : '已结束学期的成绩和作业不会再变，刷新时直接沿用上次的数据，'
+                              '不再逐门课发请求。历史学期只有在缓存缺失时才会重新拉取。',
+                      style: TextStyle(fontSize: 11.5, color: p.muted, height: 1.6),
+                    ),
+                  ],
+                ),
+              ),
+
+              Gap.lg,
+
               // --- 显示 ---
               const SectionHeader('显示'),
               AppCard(
@@ -135,6 +164,31 @@ class SettingsScreen extends StatelessWidget {
     final on = state.prefs.themeMode == mode;
     return InkWell(
       onTap: () => state.setThemeMode(mode),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: on ? p.accent.withValues(alpha: 0.12) : p.surface,
+          border: Border.all(color: on ? p.accent : p.border),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: on ? p.accent : p.textDim,
+            fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _scopeChip(BuildContext context, String label, String scope) {
+    final p = context.palette;
+    final on = state.prefs.refreshScope == scope;
+    return InkWell(
+      onTap: () => state.setRefreshScope(scope),
       borderRadius: BorderRadius.circular(999),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),

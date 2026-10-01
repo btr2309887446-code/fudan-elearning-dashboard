@@ -244,4 +244,10 @@ export interface Snapshot {
   }[];
   /** Non-fatal problems encountered while assembling the snapshot. */
   warnings: string[];
+  /**
+   * 这次刷新沿用了多少门已结束学期的课（没有为它们发请求）。
+   *
+   * 老快照里没有这个字段，读缓存时要按 0 处理。
+   */
+  reusedCourseCount?: number;
 }

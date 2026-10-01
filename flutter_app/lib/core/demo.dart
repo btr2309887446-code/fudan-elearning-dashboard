@@ -348,5 +348,8 @@ Snapshot buildDemoSnapshot() {
     terms: buildTermGroups(courses),
     assignments: assignments,
     todo: todo,
+    // 演示数据里有多个学期，只有最后一个是当学期——和真实使用情形一致，
+    // 顺带让「跳过 N 门历史课程」那行在 golden 里也能看到。
+    reusedCourseCount: (courses.length - 6).clamp(0, courses.length),
   );
 }

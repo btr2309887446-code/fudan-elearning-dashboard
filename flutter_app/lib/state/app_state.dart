@@ -40,6 +40,7 @@ class AppPrefs {
     this.dashboardSections = const {},
     this.dashboardOrder = const [],
     this.ignoredAssignments = const [],
+    this.refreshScope = 'current',
     this.llm = defaultLlm,
   });
 
@@ -60,6 +61,11 @@ class AppPrefs {
   /// 手动标记为「无需提交」的作业键（`courseId:assignmentId`）。只影响显示。
   final List<String> ignoredAssignments;
 
+  /// 刷新范围：`current` 只请求当前及未来学期（默认），`all` 全部重拉。
+  ///
+  /// 已结束学期的成绩和作业不会再变，每次刷新都拉一遍纯属浪费。
+  final String refreshScope;
+
   /// 作业简介用的大模型接口；未配置时降级为截取描述前 100 字。
   final LlmConfig llm;
 
@@ -72,6 +78,7 @@ class AppPrefs {
     Map<String, bool>? dashboardSections,
     List<String>? dashboardOrder,
     List<String>? ignoredAssignments,
+    String? refreshScope,
     LlmConfig? llm,
   }) =>
       AppPrefs(
@@ -83,6 +90,7 @@ class AppPrefs {
         dashboardSections: dashboardSections ?? this.dashboardSections,
         dashboardOrder: dashboardOrder ?? this.dashboardOrder,
         ignoredAssignments: ignoredAssignments ?? this.ignoredAssignments,
+        refreshScope: refreshScope ?? this.refreshScope,
         llm: llm ?? this.llm,
       );
 
@@ -95,6 +103,7 @@ class AppPrefs {
         'dashboardSections': dashboardSections,
         'dashboardOrder': dashboardOrder,
         'ignoredAssignments': ignoredAssignments,
+        'refreshScope': refreshScope,
         'llm': llm.toJson(),
       };
 
@@ -115,6 +124,7 @@ class AppPrefs {
         ignoredAssignments: ((json['ignoredAssignments'] as List?) ?? const [])
             .map((e) => e.toString())
             .toList(),
+        refreshScope: json['refreshScope'] == 'all' ? 'all' : 'current',
         llm: json['llm'] is Map<String, dynamic>
             ? LlmConfig.fromJson(json['llm'] as Map<String, dynamic>)
             : defaultLlm,
@@ -315,6 +325,9 @@ class AppState extends ChangeNotifier {
         client,
         BuildSnapshotOptions(
           enrollmentState: prefs.enrollmentState,
+          // 已结束学期的课不会再变，沿用上次的数据，省下每门课两个请求。
+          previous: snapshot,
+          full: prefs.refreshScope == 'all',
           onProgress: (done, total, label) {
             progress = (done: done, total: total, label: label);
             notifyListeners();
@@ -573,6 +586,13 @@ class AppState extends ChangeNotifier {
   Future<void> toggleIgnoredAssignment(int courseId, int id) async {
     final next = toggleIgnored(prefs.ignoredAssignments, courseId, id);
     prefs = prefs.copyWith(ignoredAssignments: next);
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  /// 改刷新范围。立即生效并落盘，下次刷新就用新范围。
+  Future<void> setRefreshScope(String scope) async {
+    prefs = prefs.copyWith(refreshScope: scope == 'all' ? 'all' : 'current');
     notifyListeners();
     await _savePrefs();
   }

@@ -100,6 +100,16 @@ export default function Sidebar({
             {snapshot ? `${snapshot.assignments.length} 项作业` : '尚未同步'}
             {version ? ` · v${version}` : ''}
           </div>
+          {/* 这次刷新跳过了多少门历史学期的课。放在这里是为了让「怎么这么快」
+              有个解释，而不是让人怀疑是不是没刷新。 */}
+          {snapshot && (snapshot.reusedCourseCount ?? 0) > 0 && (
+            <div
+              className="sb-user-meta"
+              title="已结束学期的成绩和作业不会再变，刷新时直接沿用上次的数据"
+            >
+              跳过 {snapshot.reusedCourseCount} 门历史课程
+            </div>
+          )}
         </div>
         <button className="icon-btn" onClick={onLogout} title="退出并清除本机登录状态">
           <Icon name="logout" size={17} />

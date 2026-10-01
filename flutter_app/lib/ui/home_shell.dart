@@ -238,6 +238,7 @@ class _HomeShellState extends State<HomeShell> {
                                   sections: state.prefs.dashboardSections,
                                   sectionOrder: state.effectiveSectionOrder(),
                                   ignoredSet: state.ignoredSet,
+                                  reusedCourseCount: snapshot.reusedCourseCount,
                                   onOpenAssignment: _openAssignment,
                                   onSelectCourse: _openCourse,
                                 ),

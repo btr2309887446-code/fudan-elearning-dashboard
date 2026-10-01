@@ -58,6 +58,8 @@ export default function SettingsModal({
   }
   /** 分页放，否则一屏塞不下。 */
   const [tab, setTab] = useState<'appearance' | 'llm'>('appearance');
+  /** 刷新范围：默认只拉当前及未来学期。 */
+  const [scope, setScope] = useState<'current' | 'all'>('current');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -76,6 +78,27 @@ export default function SettingsModal({
       setLoaded(true);
     })();
   }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const p = await window.elearning.prefs.get();
+        setScope(p.refreshScope === 'all' ? 'all' : 'current');
+      } catch {
+        /* 读不到就用默认值 */
+      }
+    })();
+  }, []);
+
+  /** 改刷新范围：立即生效并落盘，不需要点保存。 */
+  async function changeScope(v: 'current' | 'all') {
+    setScope(v);
+    try {
+      await window.elearning.prefs.set({ refreshScope: v });
+    } catch {
+      /* 偏好写失败不该影响界面 */
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -142,6 +165,33 @@ export default function SettingsModal({
                   <span className="settings-hint">
                     当前：{theme === 'dark' ? '深色' : '浅色'}
                   </span>
+                </div>
+              </div>
+
+              <div className="field" style={{ marginTop: 20 }}>
+                <label>刷新范围</label>
+                <div className="settings-hint" style={{ marginBottom: 8 }}>
+                  已结束学期的成绩和作业不会再变，刷新时直接沿用上次的数据，
+                  不再逐门课发请求。一门课要发两个请求，省下的就是这么多。
+                </div>
+                <div className="settings-inline">
+                  <button
+                    className={`dash-toggle ${scope === 'current' ? 'on' : ''}`}
+                    onClick={() => void changeScope('current')}
+                  >
+                    只刷新当前学期
+                  </button>
+                  <button
+                    className={`dash-toggle ${scope === 'all' ? 'on' : ''}`}
+                    onClick={() => void changeScope('all')}
+                  >
+                    全部学期
+                  </button>
+                </div>
+                <div className="settings-hint" style={{ marginTop: 6 }}>
+                  {scope === 'current'
+                    ? '历史学期只有在缓存缺失时才会重新拉取。'
+                    : '每次刷新都重新拉取全部课程，比较慢。'}
                 </div>
               </div>
 
