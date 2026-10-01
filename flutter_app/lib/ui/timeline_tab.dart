@@ -150,7 +150,7 @@ class _TimelineTabState extends State<TimelineTab> {
     final totalDone = all.length - totalOpen;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 104),
       children: [
         Row(
           children: [

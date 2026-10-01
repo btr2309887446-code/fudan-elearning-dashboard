@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../core/types.dart';
@@ -259,24 +261,135 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ],
             ),
+      // 让内容延伸到导航栏下方，毛玻璃才有东西可以透。
+      extendBody: !wide && snapshot != null,
       bottomNavigationBar: (wide || snapshot == null)
           ? null
-          : NavigationBar(
-              selectedIndex: _tab,
-              onDestinationSelected: (i) => setState(() => _tab = i),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard),
-                  label: '总览',
+          : _GlassDock(
+              index: _tab,
+              onSelect: (i) => setState(() => _tab = i),
+              items: const [
+                (icon: Icons.dashboard_outlined, active: Icons.dashboard, label: '总览'),
+                (icon: Icons.checklist_outlined, active: Icons.checklist, label: '作业与截止'),
+              ],
+            ),
+    );
+  }
+}
+
+/// 悬浮毛玻璃底栏。
+///
+/// 照着旦挞（DanXi）那种做法：不贴屏幕边缘、四角圆润、背后透出内容的模糊，
+/// 选中的那一项是嵌在胶囊里的小药丸，而不是 Material 那种整条高亮。
+///
+/// 用 [BackdropFilter] 而不是半透明纯色——后者在内容滚动时看得出是块死板色块，
+/// 前者才有「玻璃」的感觉。
+class _GlassDock extends StatelessWidget {
+  const _GlassDock({
+    required this.index,
+    required this.onSelect,
+    required this.items,
+  });
+
+  final int index;
+  final ValueChanged<int> onSelect;
+  final List<({IconData icon, IconData active, String label})> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return SafeArea(
+      minimum: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.14),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+            child: Container(
+              height: 60,
+              decoration: BoxDecoration(
+                // 半透明，让背后的内容透出来一点，玻璃感就来自这里
+                color: (isDark ? const Color(0xFF141416) : Colors.white)
+                    .withValues(alpha: isDark ? 0.72 : 0.78),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: p.border.withValues(alpha: 0.7)),
+              ),
+              child: Row(
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Expanded(child: _dockItem(context, i)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dockItem(BuildContext context, int i) {
+    final p = context.palette;
+    final on = i == index;
+    final it = items[i];
+
+    return Semantics(
+      button: true,
+      selected: on,
+      label: it.label,
+      child: InkWell(
+        onTap: () => onSelect(i),
+        borderRadius: BorderRadius.circular(22),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              // 选中的是嵌在胶囊里的小药丸，不是整条高亮
+              color: on ? p.accent.withValues(alpha: 0.16) : Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  on ? it.active : it.icon,
+                  size: 19,
+                  color: on ? p.accent : p.muted,
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.checklist_outlined),
-                  selectedIcon: Icon(Icons.checklist),
-                  label: '作业与截止',
+                const SizedBox(width: 7),
+                // 文字始终显示，不搞「选中才展开」那一套。
+                // 试过只给选中项显示文字（iOS 常见做法），结果是未选中的
+                // 页面在界面上完全没有文字入口，可发现性太差。
+                Flexible(
+                  child: Text(
+                    it.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: on ? FontWeight.w600 : FontWeight.w500,
+                      color: on ? p.accent : p.textDim,
+                    ),
+                  ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
     );
   }
 }

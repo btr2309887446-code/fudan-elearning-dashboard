@@ -147,7 +147,7 @@ class OverviewTab extends StatelessWidget {
                 label: '课程',
                 value: '${courses.length}',
                 unit: '门',
-                hint: '共{assignments.length} 项作业',
+                hint: '共 ${assignments.length} 项作业',
               ),
             ),
           ],
@@ -343,7 +343,7 @@ class OverviewTab extends StatelessWidget {
     // 开关与排序的界面在设置页里，这里只负责按顺序渲染。
     final orderedKeys = _orderedSectionKeys();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
       children: [
         for (final k in orderedKeys) ...(blocks[k] ?? const <Widget>[]),
 

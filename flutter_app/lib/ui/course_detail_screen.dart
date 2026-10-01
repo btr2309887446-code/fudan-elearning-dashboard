@@ -73,7 +73,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         title: Text(course.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
         children: [
           // --- 概览 ---
           AppCard(
