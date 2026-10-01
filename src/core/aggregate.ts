@@ -51,6 +51,36 @@ async function mapPool<T, R>(
   return out;
 }
 
+/**
+ * 401/403 到底是「会话失效」还是「这一门课没权限」？
+ *
+ * **Canvas 对两者都返回 401**，只看状态码分不出来。所以用一个轻量请求探一下：
+ * 探针还活着 → 是课程级权限问题；探针也挂了 → 会话真的失效了。
+ *
+ * 为什么必须区分：不区分的话，一门访问不了的课会让整次刷新中断，
+ * 界面报一句「登录状态已失效」——而用户其实是刚登录成功的。
+ */
+async function sessionIsDead(client: CanvasClient, err: unknown): Promise<boolean> {
+  if (!(err instanceof CanvasError) || !err.isAuthFailure) return false;
+  try {
+    await client.getProfile();
+    return false; // 探针成功，会话没问题
+  } catch {
+    return true; // 探针也 401，会话确实失效了
+  }
+}
+
+/**
+ * 课程级 401 的人话描述。
+ *
+ * 不能直接用 describeCanvasError——它对 401 会返回
+ * 「登录状态已失效，请重新登录。」，在这个语境下是误导。
+ */
+function authWarning(err: unknown): string {
+  const code = err instanceof CanvasError ? err.status : 0;
+  return `无权访问（HTTP ${code}），已跳过这门课`;
+}
+
 async function fetchCourseAssignments(
   client: CanvasClient,
   course: CanvasCourse,
@@ -61,7 +91,12 @@ async function fetchCourseAssignments(
   try {
     groups = await client.getAssignmentGroups(course.id);
   } catch (err) {
-    warnings.push(`${displayName}：作业分组获取失败（${describeCanvasError(err)}）`);
+    if (await sessionIsDead(client, err)) throw err;
+    const msg =
+      err instanceof CanvasError && err.isAuthFailure
+        ? `作业分组${authWarning(err)}`
+        : `作业分组获取失败（${describeCanvasError(err)}）`;
+    warnings.push(`${displayName}：${msg}`);
   }
   const groupById = new Map(groups.map((g) => [g.id, { name: g.name, weight: g.group_weight ?? 0 }]));
 
@@ -69,9 +104,12 @@ async function fetchCourseAssignments(
     const assignments = await client.getAssignments(course.id);
     return toAssignmentRows(course, displayName, assignments, groupById);
   } catch (err) {
-    // Losing the session must abort the whole refresh, not silently degrade.
-    if (err instanceof CanvasError && err.isAuthFailure) throw err;
-    warnings.push(`${displayName}：作业列表获取失败（${describeCanvasError(err)}）`);
+    if (await sessionIsDead(client, err)) throw err;
+    const msg =
+      err instanceof CanvasError && err.isAuthFailure
+        ? authWarning(err)
+        : `作业列表获取失败（${describeCanvasError(err)}）`;
+    warnings.push(`${displayName}：${msg}`);
     return [];
   }
 }

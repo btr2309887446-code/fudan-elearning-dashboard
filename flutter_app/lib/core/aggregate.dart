@@ -33,6 +33,33 @@ Future<List<R>> _mapPool<T, R>(
   return out.cast<R>();
 }
 
+/// 401/403 到底是「会话失效」还是「这一门课没权限」？
+///
+/// **Canvas 对两者都返回 401**，只看状态码分不出来。所以用一个轻量请求探一下：
+/// 探针还活着 → 是课程级权限问题；探针也挂了 → 会话真的失效了。
+///
+/// 为什么必须区分：不区分的话，一门访问不了的课会让整次刷新中断，
+/// 界面报一句「登录状态已失效」——而用户其实是刚登录成功的。
+/// 这个坑真实发生过（课程 94313 无权限，导致整个应用看起来登录不上）。
+Future<bool> _sessionIsDead(CanvasClient client, Object error) async {
+  if (error is! CanvasException || !error.isAuthFailure) return false;
+  try {
+    await client.getProfile();
+    return false; // 探针成功，会话没问题
+  } catch (_) {
+    return true; // 探针也 401，会话确实失效了
+  }
+}
+
+/// 课程级 401 的人话描述。
+///
+/// 不能直接走 [describeCanvasError]——它对 401 会返回
+/// 「登录状态已失效，请重新登录。」，在这个语境下是误导。
+String _authWarning(Object error) {
+  final code = error is CanvasException ? error.statusCode : 0;
+  return '无权访问（HTTP $code），已跳过这门课';
+}
+
 Future<List<AssignmentRow>> _fetchCourseAssignments(
   CanvasClient client,
   CanvasCourse course,
@@ -46,16 +73,22 @@ Future<List<AssignmentRow>> _fetchCourseAssignments(
       for (final g in groups) g.id: (name: g.name, weight: g.groupWeight),
     };
   } catch (e) {
-    warnings.add('$displayName：作业分组获取失败（${describeCanvasError(e)}）');
+    if (await _sessionIsDead(client, e)) rethrow;
+    final msg = (e is CanvasException && e.isAuthFailure)
+        ? '作业分组$_authWarning(e)'
+        : '作业分组获取失败（${describeCanvasError(e)}）';
+    warnings.add('$displayName：$msg');
   }
 
   try {
     final assignments = await client.getAssignments(course.id);
     return toAssignmentRows(course, displayName, assignments, groupById);
   } catch (e) {
-    // 会话失效必须中断整次刷新，而不是悄悄降级。
-    if (e is CanvasException && e.isAuthFailure) rethrow;
-    warnings.add('$displayName：作业列表获取失败（${describeCanvasError(e)}）');
+    if (await _sessionIsDead(client, e)) rethrow;
+    final msg = (e is CanvasException && e.isAuthFailure)
+        ? _authWarning(e)
+        : '作业列表获取失败（${describeCanvasError(e)}）';
+    warnings.add('$displayName：$msg');
     return const [];
   }
 }

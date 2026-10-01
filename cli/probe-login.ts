@@ -24,7 +24,7 @@ console.log('');
 
 try {
   const t0 = Date.now();
-  const ctx = await beginLogin({ jar, http });
+  const ctx = await beginLogin({ jar });
   console.log(`✓ beginLogin 成功（${Date.now() - t0} ms）`);
   console.log('');
   console.log('--- 解析出来的上下文 ---');
@@ -51,13 +51,13 @@ try {
   console.log('');
 
   console.log('--- 发给 id.fudan.edu.cn 的 Cookie 头会是什么 ---');
-  const forId = jar.cookieHeader('https://id.fudan.edu.cn/idp/authn/queryAuthMethods');
-  console.log('  ', forId ? forId.split('; ').map((p) => p.split('=')[0]).join(', ') : '（无）');
+  const forId = jar.getCookieHeader('https://id.fudan.edu.cn/idp/authn/queryAuthMethods');
+  console.log('  ', forId ? forId.split('; ').map((p: string) => p.split('=')[0]).join(', ') : '（无）');
   console.log('');
 
   console.log('--- 发给 elearning.fudan.edu.cn 的 Cookie 头会是什么 ---');
-  const forCanvas = jar.cookieHeader('https://elearning.fudan.edu.cn/api/v1/users/self');
-  console.log('  ', forCanvas ? forCanvas.split('; ').map((p) => p.split('=')[0]).join(', ') : '（无）');
+  const forCanvas = jar.getCookieHeader('https://elearning.fudan.edu.cn/api/v1/users/self');
+  console.log('  ', forCanvas ? forCanvas.split('; ').map((p: string) => p.split('=')[0]).join(', ') : '（无）');
   console.log('');
 
   console.log('--- 完整请求轨迹 ---');
