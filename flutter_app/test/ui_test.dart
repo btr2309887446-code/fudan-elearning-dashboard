@@ -292,6 +292,45 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('关掉「未提交作业」板块不会连带关掉「三天内截止」', (tester) async {
+      // 回归：曾经这两块是嵌套的——三天内截止嵌在未提交展开里，
+      // 于是把「未提交作业」板块一关，临近的截止也跟着消失了。
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final s = buildDemoSnapshot();
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: OverviewTab(
+            courses: s.courses,
+            assignments: s.assignments,
+            todo: s.todo,
+            termName: '全部学期',
+            hideUnsubmitted: false,
+            sections: const {'unsubmitted': false},
+            onToggleSection: (_) {},
+            onOpenAssignment: (_) {},
+            onSelectCourse: (_) {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.widgetWithText(SectionHeader, '未提交的作业'),
+        findsNothing,
+        reason: '这个板块被关掉了',
+      );
+      expect(
+        find.widgetWithText(SectionHeader, '三天内截止'),
+        findsOneWidget,
+        reason: '关掉一个板块不该连带关掉另一个',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('作业页按状态分组', (tester) async {
       tester.view.physicalSize = const Size(1200, 3000);
       tester.view.devicePixelRatio = 3.0;

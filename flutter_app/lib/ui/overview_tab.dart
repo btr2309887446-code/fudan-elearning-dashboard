@@ -205,8 +205,11 @@ class OverviewTab extends StatelessWidget {
                 ),
               ),
             ],
+        ],
         Gap.lg,
 
+        // 这一段必须与上面的「未提交的作业」并列，不能嵌在里面——
+        // 否则没有欠交作业的人反而看不到临近的截止。
         if (_show('soon') && soon.isNotEmpty) ...[
           SectionHeader('三天内截止', icon: Icons.schedule, iconColor: p.warn, trailing: _count(soon.length)),
             AppCard(
@@ -221,7 +224,6 @@ class OverviewTab extends StatelessWidget {
               ),
             ),
           ],
-        ],
 
         // --- 得分图 ---
         if (_show('charts')) ...[
