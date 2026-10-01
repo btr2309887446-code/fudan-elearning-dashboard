@@ -136,9 +136,22 @@ String truncate(String text, int limit) {
 String makeExcerpt(String? html, [int limit = excerptLength]) =>
     truncate(htmlToPlainText(html), limit);
 
+/// 去掉 HTML、压掉空白后的正文。判断「要不要精简」和喂给大模型都用它。
+String summarySourceText(String? description) => htmlToPlainText(description).trim();
+
+/// 正文长到需要精简吗？
+///
+/// 门槛就是摘要长度本身：大部分作业的要求本来就不到 100 字，
+/// 这时候「精简」出来的东西和原文信息量完全一样，纯属白调一次接口。
+/// 所以短的直接显示原文，摘要栏整个不出现。
+///
+/// 与桌面端 `needsSummary()` 保持同一口径。
+bool needsSummary(String? description) =>
+    summarySourceText(description).length > summaryLength;
+
 /// 降级简介：没接大模型时直接截取描述前 100 字。
 String fallbackSummary(String? description) {
-  final text = htmlToPlainText(description);
+  final text = summarySourceText(description);
   if (text.isEmpty) return '';
   return truncate(text, summaryLength);
 }
@@ -229,8 +242,10 @@ class SummarizeResult {
 
   final String summary;
 
-  /// 走了大模型还是降级截取。
-  final String source; // 'llm' | 'fallback'
+  /// llm      = 走大模型精简
+  /// fallback = 没接大模型，退回截取
+  /// none     = 正文本来就不长，不需要精简（此时 summary 为空）
+  final String source;
   final String? error;
 }
 
@@ -238,16 +253,21 @@ class SummarizeResult {
 ///
 /// 失败时**不抛错**，而是退回截取结果——简介只是锦上添花，
 /// 不该因为它把详情页弄崩。
+///
+/// 正文不超过 100 字时直接返回 `source: 'none'`，**一次接口都不调**。
 Future<SummarizeResult> summarizeAssignment(
   String title,
   String? description,
   LlmConfig? cfg, {
   LlmTransport? transport,
 }) async {
-  final plain = htmlToPlainText(description);
+  final plain = summarySourceText(description);
   final fallback = fallbackSummary(description);
 
-  if (plain.isEmpty) return const SummarizeResult(summary: '', source: 'fallback');
+  // 没有正文，或者正文本来就够短——都不需要精简。
+  if (plain.isEmpty || !needsSummary(description)) {
+    return const SummarizeResult(summary: '', source: 'none');
+  }
   if (!llmReady(cfg)) return SummarizeResult(summary: fallback, source: 'fallback');
 
   final base = cfg!.baseUrl.replaceAll(RegExp(r'/+$'), '');

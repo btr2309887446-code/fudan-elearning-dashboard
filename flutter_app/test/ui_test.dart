@@ -18,6 +18,7 @@ import 'package:fudan_elearning/ui/charts.dart';
 import 'package:fudan_elearning/ui/format.dart';
 import 'package:fudan_elearning/ui/home_shell.dart';
 import 'package:fudan_elearning/ui/overview_tab.dart';
+import 'package:fudan_elearning/ui/settings_screen.dart';
 import 'package:fudan_elearning/ui/timeline_tab.dart';
 import 'package:fudan_elearning/ui/widgets.dart';
 
@@ -213,10 +214,7 @@ void main() {
             termName: '全部学期',
             hideUnsubmitted: false,
             sections: const {},
-            onToggleSection: (_) {},
             sectionOrder: const [],
-            onMoveSection: (_, __) {},
-            onResetOrder: () {},
             onOpenAssignment: (_) {},
             onSelectCourse: (_) {},
           ),
@@ -271,10 +269,7 @@ void main() {
             termName: '全部学期',
             hideUnsubmitted: false,
             sections: const {},
-            onToggleSection: (_) {},
             sectionOrder: const [],
-            onMoveSection: (_, __) {},
-            onResetOrder: () {},
             onOpenAssignment: (_) {},
             onSelectCourse: (_) {},
           ),
@@ -316,10 +311,7 @@ void main() {
             termName: '全部学期',
             hideUnsubmitted: false,
             sections: const {'unsubmitted': false},
-            onToggleSection: (_) {},
             sectionOrder: const [],
-            onMoveSection: (_, __) {},
-            onResetOrder: () {},
             onOpenAssignment: (_) {},
             onSelectCourse: (_) {},
           ),
@@ -458,9 +450,6 @@ void main() {
               hideUnsubmitted: false,
               sections: const {},
               sectionOrder: order,
-              onToggleSection: (_) {},
-              onMoveSection: (_, __) {},
-              onResetOrder: () {},
               onOpenAssignment: (_) {},
               onSelectCourse: (_) {},
             ),
@@ -484,9 +473,39 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('胶囊上的 ▲▼ 都渲染出来了', (tester) async {
-      // 点击行为交给下面的纯状态测试覆盖；这里只确认按钮确实画出来了，
+    testWidgets('设置页里有主题选择与板块列表', (tester) async {
+      // 开关与排序的界面已经从总览页挪到设置页。
+      // 点击行为交给下面的纯状态测试覆盖；这里只确认入口确实画出来了，
       // 免得出现「逻辑对但界面上根本没有入口」。
+      tester.view.physicalSize = const Size(1200, 3000);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final state = AppState(store: MemoryStore(), demo: true);
+      await state.boot();
+
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: SettingsScreen(state: state),
+      ));
+      await tester.pumpAndSettle();
+
+      // 三种主题模式
+      expect(find.text('浅色'), findsOneWidget);
+      expect(find.text('深色'), findsOneWidget);
+      expect(find.text('跟随系统'), findsOneWidget);
+
+      // 5 个板块各一个上移一个下移
+      expect(find.text('▲'), findsNWidgets(5));
+      expect(find.text('▼'), findsNWidgets(5));
+      expect(find.text('数据概览'), findsOneWidget);
+      expect(find.text('课程卡片'), findsOneWidget);
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('总览页不再出现板块开关栏', (tester) async {
+      // 反向确认：这些控件不该同时存在于两处。
       tester.view.physicalSize = const Size(1200, 3000);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
@@ -498,30 +517,24 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         theme: AppTheme.light(),
         home: Scaffold(
-          body: AnimatedBuilder(
-            animation: state,
-            builder: (context, _) => OverviewTab(
-              courses: s.courses,
-              assignments: s.assignments,
-              todo: s.todo,
-              termName: '全部学期',
-              hideUnsubmitted: false,
-              sections: state.prefs.dashboardSections,
-              sectionOrder: state.effectiveSectionOrder(),
-              onToggleSection: (k) => state.toggleDashboardSection(k),
-              onMoveSection: (k, d) => state.moveDashboardSection(k, d),
-              onResetOrder: () => state.resetDashboardOrder(),
-              onOpenAssignment: (_) {},
-              onSelectCourse: (_) {},
-            ),
+          body: OverviewTab(
+            courses: s.courses,
+            assignments: s.assignments,
+            todo: s.todo,
+            termName: '全部学期',
+            hideUnsubmitted: false,
+            sections: state.prefs.dashboardSections,
+            sectionOrder: state.effectiveSectionOrder(),
+            ignoredSet: state.ignoredSet,
+            onOpenAssignment: (_) {},
+            onSelectCourse: (_) {},
           ),
         ),
       ));
       await tester.pumpAndSettle();
 
-      // 5 个板块各一个上移一个下移。
-      expect(find.text('▲'), findsNWidgets(5));
-      expect(find.text('▼'), findsNWidgets(5));
+      expect(find.text('▲'), findsNothing, reason: '排序控件应当在设置页里');
+      expect(find.text('首页板块'), findsNothing, reason: '板块栏应当已经撤掉');
       expect(tester.takeException(), isNull);
     });
 

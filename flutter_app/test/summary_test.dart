@@ -112,8 +112,74 @@ void main() {
     test('null 降级为空串', () => expect(fallbackSummary(null), ''));
   });
 
+  group('摘要门槛', () {
+    // 大部分作业的要求本来就不到 100 字，这时候「精简」出来的东西
+    // 和原文信息量完全一样，白白调一次接口。所以短的直接不做摘要。
+    test('短正文不需要精简', () {
+      expect(needsSummary('<p>交一份实验报告。</p>'), isFalse);
+    });
+
+    test('刚好 100 字不需要精简，101 字需要', () {
+      expect(needsSummary('字' * summaryLength), isFalse);
+      expect(needsSummary('字' * (summaryLength + 1)), isTrue);
+    });
+
+    test('空正文不需要精简', () {
+      expect(needsSummary(''), isFalse);
+      expect(needsSummary(null), isFalse);
+    });
+
+    test('纯标签不算正文', () {
+      expect(needsSummary('<p></p><div>   </div>'), isFalse);
+    });
+
+    test('HTML 标签不计入长度', () {
+      expect(needsSummary('<p>${'字' * summaryLength}</p>'), isFalse);
+    });
+
+    test('首尾空白不计入长度', () {
+      expect(needsSummary('  ${'字' * summaryLength}  '), isFalse);
+    });
+
+    test('summarySourceText 去标签并 trim', () {
+      expect(summarySourceText('  <p>你好</p>  '), '你好');
+    });
+
+    test('短正文一次接口都不调，长正文才调', () async {
+      const cfg = LlmConfig(
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-test',
+        model: 'm',
+        enabled: true,
+      );
+
+      var called = false;
+      Future<LlmHttpResponse> spy(String url, String apiKey, String body) async {
+        called = true;
+        return const LlmHttpResponse(
+          status: 200,
+          body: '{"choices":[{"message":{"content":"摘要"}}]}',
+        );
+      }
+
+      final short = await summarizeAssignment('短作业', '<p>交一份报告。</p>', cfg, transport: spy);
+      expect(called, isFalse, reason: '短正文不该发请求');
+      expect(short.source, 'none');
+      expect(short.summary, isEmpty);
+
+      called = false;
+      await summarizeAssignment('长作业', '字' * (summaryLength + 1), cfg, transport: spy);
+      expect(called, isTrue, reason: '长正文应当发请求');
+    });
+  });
+
   group('大模型调用', () {
-    const html = '<p>写一份关于二叉搜索树的实验报告，包含插入、删除、查找三种操作的复杂度分析。</p>';
+    // 夹具必须超过 100 字，否则会被摘要门槛挡下、根本走不到大模型那条路。
+    // 门槛本身在「摘要门槛」那组里单独测。
+    const html = '<p>写一份关于二叉搜索树的实验报告，包含插入、删除、查找三种操作的复杂度分析。'
+        '要求给出每种操作的平均情况与最坏情况时间复杂度推导过程，画出至少三种不同形态的树'
+        '（平衡、退化成链、随机插入）并对比它们的查找效率，最后总结在什么情况下会退化以及'
+        '如何用平衡树避免。</p>';
     const cfg = LlmConfig(
       baseUrl: 'https://api.example.com/v1',
       apiKey: 'sk-test',

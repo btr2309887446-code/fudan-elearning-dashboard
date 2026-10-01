@@ -17,6 +17,7 @@ import '../core/demo.dart';
 import '../core/errors.dart';
 import '../core/files.dart';
 import '../core/http.dart';
+import '../core/ignored.dart';
 import '../core/rsa.dart';
 import '../core/scoring.dart';
 import '../core/session.dart';
@@ -38,6 +39,7 @@ class AppPrefs {
     this.rememberPassword = false,
     this.dashboardSections = const {},
     this.dashboardOrder = const [],
+    this.ignoredAssignments = const [],
     this.llm = defaultLlm,
   });
 
@@ -55,6 +57,9 @@ class AppPrefs {
   /// 首页板块的排列顺序；空列表表示默认顺序。
   final List<String> dashboardOrder;
 
+  /// 手动标记为「无需提交」的作业键（`courseId:assignmentId`）。只影响显示。
+  final List<String> ignoredAssignments;
+
   /// 作业简介用的大模型接口；未配置时降级为截取描述前 100 字。
   final LlmConfig llm;
 
@@ -66,6 +71,7 @@ class AppPrefs {
     bool? rememberPassword,
     Map<String, bool>? dashboardSections,
     List<String>? dashboardOrder,
+    List<String>? ignoredAssignments,
     LlmConfig? llm,
   }) =>
       AppPrefs(
@@ -76,6 +82,7 @@ class AppPrefs {
         rememberPassword: rememberPassword ?? this.rememberPassword,
         dashboardSections: dashboardSections ?? this.dashboardSections,
         dashboardOrder: dashboardOrder ?? this.dashboardOrder,
+        ignoredAssignments: ignoredAssignments ?? this.ignoredAssignments,
         llm: llm ?? this.llm,
       );
 
@@ -87,6 +94,7 @@ class AppPrefs {
         'rememberPassword': rememberPassword,
         'dashboardSections': dashboardSections,
         'dashboardOrder': dashboardOrder,
+        'ignoredAssignments': ignoredAssignments,
         'llm': llm.toJson(),
       };
 
@@ -102,6 +110,9 @@ class AppPrefs {
         dashboardSections: ((json['dashboardSections'] as Map?) ?? const {})
             .map((k, v) => MapEntry(k.toString(), v == true)),
         dashboardOrder: ((json['dashboardOrder'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        ignoredAssignments: ((json['ignoredAssignments'] as List?) ?? const [])
             .map((e) => e.toString())
             .toList(),
         llm: json['llm'] is Map<String, dynamic>
@@ -549,6 +560,19 @@ class AppState extends ChangeNotifier {
 
   Future<void> resetDashboardOrder() async {
     prefs = prefs.copyWith(dashboardOrder: const []);
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  /// 当前被标记为「无需提交」的作业键集合。
+  Set<String> get ignoredSet => toIgnoredSet(prefs.ignoredAssignments);
+
+  /// 打上或取消「无需提交」标记。
+  ///
+  /// 只写偏好、不动数据：标记是显示层的事，得分该怎样还怎样。
+  Future<void> toggleIgnoredAssignment(int courseId, int id) async {
+    final next = toggleIgnored(prefs.ignoredAssignments, courseId, id);
+    prefs = prefs.copyWith(ignoredAssignments: next);
     notifyListeners();
     await _savePrefs();
   }

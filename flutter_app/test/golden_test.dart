@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fudan_elearning/core/clock.dart';
 import 'package:fudan_elearning/core/demo.dart';
 import 'package:fudan_elearning/core/session.dart';
 import 'package:fudan_elearning/state/app_state.dart';
@@ -84,6 +85,20 @@ void main() {
       // ignore: avoid_print
       print('警告：没有找到可用中文字体，截图中的文字会是占位方框。');
     }
+  });
+
+  // 冻结「现在」。
+  //
+  // 界面上的相对时间文案（「今天截止（9 小时内）」「还有 8 天」）是按墙上
+  // 时钟算的，演示数据也是按「今天」生成的。不冻结的话 golden 每小时
+  // 就会失效一次——那不是「发现回归」，只是时间在走。
+  //
+  // 选一个固定的中午：离当天 0 点与 24 点都远，相对天数不会卡在边界上。
+  setUp(() {
+    appNow = () => DateTime(2026, 3, 15, 12, 0);
+  });
+  tearDown(() {
+    appNow = DateTime.now;
   });
 
   testWidgets('总览页（浅色）', (tester) async {

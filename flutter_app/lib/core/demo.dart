@@ -5,6 +5,7 @@
 
 library;
 
+import 'clock.dart';
 import 'files.dart';
 import 'scoring.dart';
 import 'types.dart';
@@ -223,7 +224,7 @@ const _courses = <_CourseSeed>[
 ];
 
 String _iso(int daysFromNow, [int hour = 23, int minute = 59]) {
-  final d = DateTime.now().add(Duration(days: daysFromNow));
+  final d = appNow().add(Duration(days: daysFromNow));
   return DateTime(d.year, d.month, d.day, hour, minute).toIso8601String();
 }
 
@@ -286,7 +287,7 @@ Snapshot buildDemoSnapshot() {
     final currentScore = computeWeightedPercent(totals.values.toList());
     final earned = totals.values.fold<double>(0, (s, g) => s + g.earned);
     final possible = totals.values.fold<double>(0, (s, g) => s + g.possible);
-    final now = DateTime.now();
+    final now = appNow();
 
     courses.add(CourseSummary(
       id: seed.id,
@@ -325,7 +326,7 @@ Snapshot buildDemoSnapshot() {
     return tb.compareTo(ta);
   });
 
-  final now = DateTime.now();
+  final now = appNow();
   final todo = assignments
       .where((r) => r.score == null && r.dueAt != null && DateTime.parse(r.dueAt!).isAfter(now))
       .map((r) => TodoEntry(
@@ -341,7 +342,7 @@ Snapshot buildDemoSnapshot() {
     ..sort((a, b) => DateTime.parse(a.dueAt!).compareTo(DateTime.parse(b.dueAt!)));
 
   return Snapshot(
-    fetchedAt: DateTime.now().toIso8601String(),
+    fetchedAt: appNow().toIso8601String(),
     profile: profile,
     courses: courses,
     terms: buildTermGroups(courses),

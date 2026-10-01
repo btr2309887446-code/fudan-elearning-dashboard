@@ -6,6 +6,7 @@ import '../theme.dart';
 import 'assignment_detail_screen.dart';
 import 'course_detail_screen.dart';
 import 'overview_tab.dart';
+import 'settings_screen.dart';
 import 'timeline_tab.dart';
 
 /// 学期筛选；`null` 表示匹配 Canvas 未给学期的课程。
@@ -136,9 +137,10 @@ class _HomeShellState extends State<HomeShell> {
               switch (v) {
                 case 'hide':
                   await state.setHideUnsubmitted(!state.prefs.hideUnsubmitted);
-                case 'theme':
-                  final isDark = Theme.of(context).brightness == Brightness.dark;
-                  await state.setThemeMode(isDark ? ThemeMode.light : ThemeMode.dark);
+                case 'settings':
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => SettingsScreen(state: state)),
+                  );
                 case 'logout':
                   final ok = await showDialog<bool>(
                     context: context,
@@ -161,8 +163,8 @@ class _HomeShellState extends State<HomeShell> {
                 child: const Text('忽略未提交的作业'),
               ),
               const PopupMenuItem(
-                value: 'theme',
-                child: Text('切换明暗主题'),
+                value: 'settings',
+                child: Text('设置（外观、首页板块）'),
               ),
               const PopupMenuItem(value: 'logout', child: Text('退出登录')),
             ],
@@ -235,9 +237,7 @@ class _HomeShellState extends State<HomeShell> {
                                   hideUnsubmitted: state.prefs.hideUnsubmitted,
                                   sections: state.prefs.dashboardSections,
                                   sectionOrder: state.effectiveSectionOrder(),
-                                  onToggleSection: (k) => state.toggleDashboardSection(k),
-                                  onMoveSection: (k, d) => state.moveDashboardSection(k, d),
-                                  onResetOrder: () => state.resetDashboardOrder(),
+                                  ignoredSet: state.ignoredSet,
                                   onOpenAssignment: _openAssignment,
                                   onSelectCourse: _openCourse,
                                 ),

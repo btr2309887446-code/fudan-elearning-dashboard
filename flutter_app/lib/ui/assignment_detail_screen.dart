@@ -13,6 +13,7 @@ import '../core/summary.dart';
 import '../core/types.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../core/ignored.dart';
 import 'format.dart';
 import 'widgets.dart';
 
@@ -30,7 +31,7 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
   bool _loading = true;
   String _description = '';
   String _summary = '';
-  String _source = 'fallback';
+  String _source = 'none';
   String? _summaryError;
   String? _loadError;
 
@@ -119,6 +120,10 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
           const SizedBox(height: 14),
 
           // --- 简介 ---
+          // 正文本来就不到 100 字时 _source 是 'none'，摘要栏整个不出现：
+          // 「精简」一段本来就够短的说明，得到的东西和信息量一模一样，
+          // 只会白占一块地方。下面「作业说明」里就是原文。
+          if (_source != 'none') ...[
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -164,6 +169,7 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
               ],
             ),
           ),
+          ],
 
           const SizedBox(height: 18),
 
@@ -203,6 +209,44 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
               style: TextStyle(fontSize: 12.5, color: p.warn),
             ),
           ],
+
+          const SizedBox(height: 18),
+
+          // 有些作业本质上不用交（签到、选做、老师明说不用交的），
+          // 但 Canvas 仍算它们 unsubmitted，于是永远挂在未交清单里。
+          // 这里让用户手动摘掉——只影响显示，不改得分。
+          AnimatedBuilder(
+            animation: widget.state,
+            builder: (context, _) {
+              final ignored = isIgnored(
+                widget.state.ignoredSet,
+                row.courseId,
+                row.id,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () =>
+                        widget.state.toggleIgnoredAssignment(row.courseId, row.id),
+                    icon: Icon(ignored ? Icons.check_circle : Icons.inbox_outlined, size: 17),
+                    label: Text(ignored ? '已标记无需提交' : '标记为无需提交'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      foregroundColor: ignored ? p.accent : p.textDim,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    ignored
+                        ? '已从未交清单与缺交统计里移除。再点一次可恢复。'
+                        : '签到、选做、老师明说不用交的作业可以标记，标记后不再出现在未交清单里。',
+                    style: TextStyle(fontSize: 11.5, color: p.muted, height: 1.6),
+                  ),
+                ],
+              );
+            },
+          ),
 
           if (row.htmlUrl != null) ...[
             const SizedBox(height: 18),

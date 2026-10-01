@@ -37,6 +37,9 @@ flutter_app/**/*.iml
 # 截图基线要提交（README 里引用了），但打包体积大的本地产物不提交
 !flutter_app/test/goldens/
 
+# golden 失败时自动生成的对比图：每次跑失败都会重写，是诊断产物不是基线
+flutter_app/test/failures/
+
 # build/ 里只保留 electron-builder 需要的图标与源图，
 # 其余是生成过程中的预览/中间产物
 build/icon-preview.png

@@ -1,3 +1,4 @@
+import '../core/clock.dart';
 import 'package:flutter/material.dart';
 
 import '../core/types.dart';
@@ -115,7 +116,7 @@ class _TimelineTabState extends State<TimelineTab> {
   Widget build(BuildContext context) {
     final p = context.palette;
     final all = _items;
-    final now = DateTime.now();
+    final now = appNow();
 
     // 忽略未提交时，已完成条目正是列表的全部意义，所以「显示已完成」不再生效。
     final withCompleted = _showCompleted || widget.hideUnsubmitted;

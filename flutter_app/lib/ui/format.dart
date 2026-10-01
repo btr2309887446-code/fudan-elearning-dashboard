@@ -6,6 +6,7 @@ library;
 
 import 'package:intl/intl.dart';
 
+import '../core/clock.dart';
 import '../core/types.dart';
 
 String formatScore(double? score, {int digits = 2}) =>
@@ -40,7 +41,7 @@ DueInfo relativeDue(String? iso) {
   final t = DateTime.tryParse(iso);
   if (t == null) return const DueInfo('无截止时间', DueTone.none);
 
-  final diff = t.difference(DateTime.now());
+  final diff = t.difference(appNow());
   if (diff.isNegative) {
     return DueInfo('已逾期 ${-diff.inDays} 天', DueTone.overdue);
   }
@@ -94,7 +95,7 @@ SubmissionState submissionState(AssignmentRow row) {
   if (row.missing) return const SubmissionState('未提交', 'bad');
 
   final due = row.dueAt == null ? null : DateTime.tryParse(row.dueAt!);
-  if (due != null && due.isBefore(DateTime.now())) {
+  if (due != null && due.isBefore(appNow())) {
     return const SubmissionState('已逾期未交', 'bad');
   }
   return const SubmissionState('未开始', 'neutral');
