@@ -48,3 +48,8 @@ build/icon-android-check.png
 build/icon-android-real.png
 build/icon-ico-check.png
 build/icon-mark-1024.png
+
+# 构建产物：IPA/APK 等压缩包不入库，GitHub Actions artifact 里有
+*.zip
+*.ipa
+*.apk
