@@ -161,6 +161,7 @@ class OverviewTab extends StatelessWidget {
         // --- 未提交的作业 ---
         // 注意：这一段必须独立于「三天内截止」——三天内没有截止作业时
         // 未提交清单仍然要显示，否则越是有欠交的人越看不到自己欠了什么。
+        Gap.lg,
         if (_show('unsubmitted') && !hideUnsubmitted && totalOpen > 0) ...[
             SectionHeader(
               '未提交的作业',
