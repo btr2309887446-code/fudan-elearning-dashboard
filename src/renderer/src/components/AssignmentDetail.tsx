@@ -13,11 +13,12 @@
  * 想看富文本排版可以点「在浏览器中打开」。
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { htmlToPlainText } from '../../../core/summary';
 import type { AssignmentRow } from '../../../core/types';
 import { dueRelative, formatDate, formatScore, isCompleted, scoreColor } from '../util';
+import { closeWithAnimation } from '../motion';
 import Icon from './Icon';
 
 interface Props {
@@ -26,6 +27,15 @@ interface Props {
 }
 
 export default function AssignmentDetail({ row, onClose }: Props) {
+  // 退场动画期间先别卸载：直接消失和入场动画不对称。
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const closing = useRef(false);
+
+  function requestClose() {
+    if (closing.current) return;
+    closing.current = true;
+    closeWithAnimation(backdropRef.current, onClose);
+  }
   const [loading, setLoading] = useState(true);
   const [description, setDescription] = useState('');
   const [summary, setSummary] = useState('');
@@ -64,11 +74,11 @@ export default function AssignmentDetail({ row, onClose }: Props) {
   // Esc 关闭，符合浮层的习惯。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   const rel = dueRelative(row.dueAt, isCompleted(row));
   const done = isCompleted(row);
@@ -96,7 +106,7 @@ export default function AssignmentDetail({ row, onClose }: Props) {
         : 'tag-neutral';
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" ref={backdropRef} onClick={requestClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="modal-head">
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -106,7 +116,7 @@ export default function AssignmentDetail({ row, onClose }: Props) {
               {row.groupName ? ` · ${row.groupName}` : ''}
             </div>
           </div>
-          <button className="icon-btn" onClick={onClose} title="关闭（Esc）">
+          <button className="icon-btn" onClick={requestClose} title="关闭（Esc）">
             <Icon name="close" size={17} />
           </button>
         </div>
@@ -192,7 +202,7 @@ export default function AssignmentDetail({ row, onClose }: Props) {
               <Icon name="external" size={15} /> 在浏览器中打开
             </button>
           )}
-          <button className="btn btn-primary" onClick={onClose}>
+          <button className="btn btn-primary" onClick={requestClose}>
             关闭
           </button>
         </div>

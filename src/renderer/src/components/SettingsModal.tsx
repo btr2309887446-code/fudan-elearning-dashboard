@@ -8,8 +8,9 @@
  * 通义、OpenAI 以及自建网关都只需要改 base URL 与模型名。
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { closeWithAnimation } from '../motion';
 import Icon from './Icon';
 
 interface Props {
@@ -26,6 +27,15 @@ const PRESETS: { label: string; baseUrl: string; model: string }[] = [
 ];
 
 export default function SettingsModal({ onClose }: Props) {
+  // 退场动画期间先别卸载：直接消失和入场动画不对称。
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const closing = useRef(false);
+
+  function requestClose() {
+    if (closing.current) return;
+    closing.current = true;
+    closeWithAnimation(backdropRef.current, onClose);
+  }
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -47,11 +57,11 @@ export default function SettingsModal({ onClose }: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   async function save() {
     setSaving(true);
@@ -67,14 +77,14 @@ export default function SettingsModal({ onClose }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" ref={backdropRef} onClick={requestClose}>
       <div className="modal" style={{ maxWidth: 580 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div style={{ flex: 1 }}>
             <div className="modal-title">设置</div>
             <div className="modal-sub">作业简介的生成方式</div>
           </div>
-          <button className="icon-btn" onClick={onClose} title="关闭（Esc）">
+          <button className="icon-btn" onClick={requestClose} title="关闭（Esc）">
             <Icon name="close" size={17} />
           </button>
         </div>
@@ -163,7 +173,7 @@ export default function SettingsModal({ onClose }: Props) {
 
         <div className="modal-foot">
           <div style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>
+          <button className="btn" onClick={requestClose}>
             取消
           </button>
           <button className="btn btn-primary" onClick={() => void save()} disabled={saving || !loaded}>

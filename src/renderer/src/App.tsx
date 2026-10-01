@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { AssignmentRow, CanvasProfile, Snapshot } from '../../core/types';
 import AssignmentDetail from './components/AssignmentDetail';
 import CourseDetail from './components/CourseDetail';
@@ -6,6 +7,7 @@ import Dashboard, { SECTIONS } from './components/Dashboard';
 import Icon from './components/Icon';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
+import { revealThemeFrom, slidePage } from './motion';
 import Sidebar from './components/Sidebar';
 import Timeline from './components/Timeline';
 import type { TermFilter, Theme } from './types';
@@ -199,14 +201,34 @@ export default function App() {
     return out;
   }
 
-  function toggleTheme() {
+  function toggleTheme(event?: { clientX: number; clientY: number }) {
     themeTouched.current = true;
     const next: Theme = theme === 'light' ? 'dark' : 'light';
-    // Apply immediately rather than waiting for the effect to commit, so the
-    // switch never feels laggy and cannot be lost to a render race.
-    document.documentElement.dataset.theme = next;
-    setTheme(next);
+
+    // 直接在 DOM 上改属性：CSS 变量立刻生效，
+    // View Transition 才能把「新主题」这一帧正确捕获下来。
+    const apply = () => {
+      document.documentElement.dataset.theme = next;
+      flushSync(() => setTheme(next));
+    };
+
+    // 从按钮位置扩散，而不是整页闪一下。
+    // 键盘触发时没有坐标，就从右上角（按钮所在处）展开。
+    const x = event?.clientX ?? window.innerWidth - 44;
+    const y = event?.clientY ?? 44;
+    revealThemeFrom(x, y, apply);
+
     void window.elearning.prefs.set({ theme: next });
+  }
+
+  /** 进课程详情：带一个从右滑入的转场，暗示「进入下一层」。 */
+  function openCourse(id: number) {
+    slidePage(() => flushSync(() => setSelectedCourse(id)));
+  }
+
+  /** 返回列表：反向滑出。 */
+  function closeCourse() {
+    slidePage(() => flushSync(() => setSelectedCourse(null)));
   }
 
   async function logout() {
@@ -306,7 +328,7 @@ export default function App() {
       <div className="main">
         <header className="page-head">
           {selectedCourse !== null && (
-            <button className="back-link" onClick={() => setSelectedCourse(null)} title="返回总览">
+            <button className="back-link" onClick={closeCourse} title="返回总览">
               <Icon name="back" />
             </button>
           )}
@@ -340,7 +362,11 @@ export default function App() {
             忽略未提交
           </button>
 
-          <button className="icon-btn" onClick={toggleTheme} title={theme === 'light' ? '切换到深色' : '切换到浅色'}>
+          <button
+            className="icon-btn"
+            onClick={(e) => toggleTheme(e)}
+            title={theme === 'light' ? '切换到深色' : '切换到浅色'}
+          >
             <Icon name={theme === 'light' ? 'moon' : 'sun'} size={18} />
           </button>
 
@@ -380,7 +406,7 @@ export default function App() {
               onMoveSection={moveDashboardSection}
               onResetOrder={resetDashboardOrder}
               onOpenAssignment={setOpenAssignment}
-              onSelectCourse={(id) => setSelectedCourse(id)}
+              onSelectCourse={openCourse}
             />
           )}
 
@@ -389,7 +415,7 @@ export default function App() {
               snapshot={snapshot}
               courseId={selectedCourse}
               hideUnsubmitted={hideUnsubmitted}
-              onBack={() => setSelectedCourse(null)}
+              onBack={closeCourse}
               onOpenAssignment={setOpenAssignment}
             />
           )}
@@ -402,7 +428,7 @@ export default function App() {
               onOpenAssignment={setOpenAssignment}
               onSelectCourse={(id) => {
                 setTab('overview');
-                setSelectedCourse(id);
+                openCourse(id);
               }}
             />
           )}

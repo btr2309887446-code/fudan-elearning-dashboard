@@ -12,7 +12,15 @@
   --radius: 12px;
   --radius-sm: 9px;
   --sidebar-w: 236px;
+  /* 通用缓动：起步快、收尾缓，接近 iOS 的手感 */
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* 出场：位移用这个更自然 */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 回弹：用于弹层出现 */
+  --ease-spring: cubic-bezier(0.34, 1.28, 0.64, 1);
+  /* 按下要跟手，所以比松开快得多 */
+  --press: 90ms;
+  --release: 260ms;
 }
 
 /* ---------- 浅色（默认） ---------- */
@@ -1701,4 +1709,217 @@ table.data tbody tr:hover {
 
 .tl-item.as-button:hover {
   background: var(--surface-2);
+}
+
+/* ==========================================================================
+   动效打磨
+   ==========================================================================
+
+   原则：
+   1. 按下要比松开快得多——按下不跟手会显得「粘」，松开则可以带一点回弹；
+   2. 层与层之间要有因果关系：弹层从触发它的位置/方向长出来，而不是凭空出现；
+   3. 尊重 prefers-reduced-motion，关掉动效时功能必须完全不受影响。
+   ========================================================================== */
+
+/* ---------- 主题切换：从点击处圆形扩散 ---------- */
+
+/* 关闭默认的整页淡入淡出，改由 JS 用 clip-path 做圆形扩散。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* 旧画面在下、新画面在上，扩散时才有「揭开」的感觉。 */
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+/* ---------- 卡片的按压反馈 ---------- */
+
+/* 统一给可点卡片一套「按下缩一点、边框点亮、阴影收进去」的反馈。
+   之前只有 course-card 有，而且只缩 0.5%，几乎看不出来。 */
+.course-card,
+.mini-card,
+.stat,
+.tl-item.as-button,
+.dash-toggle,
+.file-row {
+  transition:
+    transform var(--release) var(--ease-spring),
+    box-shadow var(--release) var(--ease-out),
+    border-color 180ms var(--ease),
+    background 180ms var(--ease);
+}
+
+.course-card:active,
+.mini-card:active,
+.stat:active,
+.tl-item.as-button:active,
+.file-row:active {
+  transform: scale(0.976);
+  /* 按下立刻响应，不等 260ms 的松开曲线 */
+  transition-duration: var(--press);
+  transition-timing-function: var(--ease-out);
+}
+
+/* 按压时把阴影收掉，视觉上「陷下去」 */
+.course-card:active,
+.mini-card:active,
+.stat:active {
+  box-shadow: 0 1px 2px rgba(20, 28, 46, 0.06);
+}
+
+/* 边框点亮，明确「这一块被按住了」 */
+.course-card:active,
+.mini-card:active {
+  border-color: var(--accent);
+}
+
+/* 课程卡片上盖一层极淡的高光，按下时出现 */
+.course-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--release) var(--ease);
+}
+
+.course-card:active::after {
+  opacity: 0.05;
+  transition-duration: var(--press);
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  transition:
+    background 180ms var(--ease),
+    border-color 180ms var(--ease),
+    color 180ms var(--ease),
+    box-shadow var(--release) var(--ease-out),
+    transform var(--release) var(--ease-spring);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.968);
+  transition-duration: var(--press);
+}
+
+.icon-btn {
+  transition:
+    background 160ms var(--ease),
+    color 160ms var(--ease),
+    transform var(--release) var(--ease-spring);
+}
+
+.icon-btn:active {
+  transform: scale(0.9);
+  transition-duration: var(--press);
+}
+
+/* 主题按钮转一下，切换时更有反馈 */
+.icon-btn.spin-on-press:active svg {
+  transform: rotate(-40deg);
+}
+
+.icon-btn svg {
+  transition: transform 320ms var(--ease-spring);
+}
+
+/* ---------- 弹层 ---------- */
+
+.modal-backdrop {
+  animation: backdrop-in 200ms var(--ease-out) both;
+}
+
+.modal-backdrop.closing {
+  animation: backdrop-out 150ms var(--ease) both;
+}
+
+.modal {
+  animation: modal-in 300ms var(--ease-spring) both;
+}
+
+.modal-backdrop.closing .modal {
+  animation: modal-out 150ms var(--ease) both;
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+@keyframes modal-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+/* ---------- 页面切换 ---------- */
+
+/* 只在 slidePage() 执行期间挂上，避免和主题的整页扩散打架。 */
+.content.vt-page {
+  view-transition-name: page;
+}
+
+::view-transition-old(page),
+::view-transition-new(page) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* ---------- 列表项逐个淡入 ---------- */
+
+.enter-stagger > * {
+  animation: rise-in 320ms var(--ease-out) both;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ---------- 无障碍：关掉动效 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* 扩散动画也一并关掉，改回直接切换 */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }

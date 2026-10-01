@@ -250,6 +250,81 @@
       const after = visualOrder();
       done = `order; before=${JSON.stringify(before.slice(0, 3))}; after=${JSON.stringify(after.slice(0, 3))}; moved=${before[0] !== after[0]}`;
     }
+  } else if (target === 'motion') {
+    // 动效没法靠截图验证。这里直接包一层 startViewTransition，
+    // 看它有没有被调用、ready 有没有兑现——比事后猜 getAnimations 可靠。
+    const hasVT = typeof document.startViewTransition === 'function';
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    let vtCalled = false;
+    let vtReady = false;
+    let vtFinished = false;
+    let vtError = '';
+    if (hasVT) {
+      const orig = document.startViewTransition.bind(document);
+      document.startViewTransition = (cb) => {
+        vtCalled = true;
+        const t = orig(cb);
+        t.ready.then(() => (vtReady = true)).catch((e) => (vtError = 'ready:' + e));
+        t.finished.then(() => (vtFinished = true)).catch(() => {});
+        return t;
+      };
+    }
+
+    const themeBtn = Array.from(document.querySelectorAll('.icon-btn')).find((b) =>
+      (b.getAttribute('title') || '').includes('切换到')
+    );
+
+    const before = document.documentElement.dataset.theme;
+    if (!themeBtn) {
+      done = `motion: theme button not found (hasVT=${hasVT})`;
+    } else {
+      const r = themeBtn.getBoundingClientRect();
+      themeBtn.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+        })
+      );
+      await sleep(300);
+      const after = document.documentElement.dataset.theme;
+      // clip-path 动画挂在伪元素上，从根元素带 subtree 才查得到
+      const anims = document.documentElement.getAnimations({ subtree: true });
+      const vt = anims.filter((a) => (a.effect && a.effect.pseudoElement || '').includes('view-transition'));
+      const clip = vt.map((a) => {
+        const kf = a.effect.getKeyframes ? a.effect.getKeyframes() : [];
+        return kf.map((k) => k.clipPath).filter(Boolean).join(' -> ');
+      }).filter(Boolean)[0] || '';
+      done = `motion; hasVT=${hasVT}; theme=${before}->${after}; called=${vtCalled}; anims=${vt.length}; clip=${clip.slice(0, 34)}`;
+      await sleep(700);
+
+      // 再验证弹层：打开作业详情，看 .modal 上有没有正在跑的动画。
+      setZoom(0.72);
+      await sleep(400);
+      const item = Array.from(document.querySelectorAll('.todo-group .tl-item'))[0];
+      if (item) {
+        item.click();
+        await sleep(120);
+        const modal = document.querySelector('.modal');
+        const backdrop = document.querySelector('.modal-backdrop');
+        const modalAnims = modal ? modal.getAnimations().map((a) => a.animationName).join(',') : 'none';
+        const bdAnims = backdrop ? backdrop.getAnimations().map((a) => a.animationName).join(',') : 'none';
+        done += ` || modal: anims=[${modalAnims}] backdrop=[${bdAnims}]`;
+
+        // 关掉时应当先挂 closing 再卸载
+        const closeBtn = Array.from(document.querySelectorAll('.modal .btn')).find((b) =>
+          b.textContent.includes('关闭')
+        );
+        if (closeBtn) {
+          closeBtn.click();
+          await sleep(60);
+          done += ` closing=${!!document.querySelector('.modal-backdrop.closing')}`;
+          await sleep(300);
+          done += ` gone=${!document.querySelector('.modal')}`;
+        }
+      }
+    }
   } else if (target === 'darkReload') {
     // Seed localStorage, then reload so the very first paint is already dark -
     // capturePage only reliably returns the first composed frame here.
