@@ -1,0 +1,47 @@
+node_modules/
+out/
+release/
+dist/
+*.log
+
+# Local session cookies / snapshots produced by the CLI helpers.
+.session.json
+snapshot.json
+captcha.png
+
+# Smoke-test screenshots (docs/ keeps the curated copies).
+# recon/ 里的探针脚本要保留，只忽略它们跑出来的图与响应。
+recon/*.png
+recon/out/
+recon/*.json
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# ---------- Flutter 移动端 ----------
+flutter_app/.dart_tool/
+flutter_app/build/
+flutter_app/dist/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/**/GeneratedPluginRegistrant.*
+flutter_app/**/Pods/
+flutter_app/**/.symlinks/
+flutter_app/ios/Flutter/ephemeral/
+flutter_app/macos/Flutter/ephemeral/
+flutter_app/**/*.iml
+**/.gradle/
+**/local.properties
+**/keystore.properties
+
+# 截图基线要提交（README 里引用了），但打包体积大的本地产物不提交
+!flutter_app/test/goldens/
+
+# build/ 里只保留 electron-builder 需要的图标与源图，
+# 其余是生成过程中的预览/中间产物
+build/icon-preview.png
+build/icon-compare.png
+build/icon-android-check.png
+build/icon-android-real.png
+build/icon-ico-check.png
+build/icon-mark-1024.png

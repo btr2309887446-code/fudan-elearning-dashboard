@@ -1,0 +1,33 @@
+appId: cn.edu.fudan.elearning.dashboard
+productName: Fudan-eLearning-Dashboard
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: build
+
+# Use the Electron already present in node_modules instead of re-downloading a
+# ~100 MB zip from GitHub on every build.
+electronDist: node_modules/electron/dist
+electronVersion: 33.4.11
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Fudan-eLearning-Dashboard-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 复旦 eLearning 学习看板
+  deleteAppDataOnUninstall: false

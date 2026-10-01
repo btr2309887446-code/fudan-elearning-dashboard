@@ -1,0 +1,282 @@
+// Drive the UI into a specific screen before the smoke screenshot is taken.
+// SMOKE_VIEW is injected by the main process (the renderer has no `process`).
+(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const target = typeof SMOKE_VIEW === 'string' ? SMOKE_VIEW : 'dashboard';
+
+  const cards = () => document.querySelectorAll('.course-card');
+  const navs = () => Array.from(document.querySelectorAll('.sb-item'));
+  const terms = () => document.querySelectorAll('.sb-term');
+  const ignoreSwitch = () => document.querySelector('.switch');
+  const themeBtn = () =>
+    Array.from(document.querySelectorAll('.icon-btn')).find((b) =>
+      (b.getAttribute('title') || '').includes('色')
+    );
+
+  const navTo = (word) => {
+    const t = navs().find((b) => b.textContent.includes(word));
+    if (t) t.click();
+    return !!t;
+  };
+
+  // .content 才是滚动容器，scrollIntoView 在这里不起作用（它不动 scrollTop），
+  // 所以按元素相对容器的位置手动设 scrollTop。
+  const scrollToEl = (el, pad = 12) => {
+    const box = document.querySelector('.content');
+    if (!box || !el) return false;
+    const a = el.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    box.scrollTop += a.top - b.top - pad;
+    return true;
+  };
+
+  const filesSection = () =>
+    Array.from(document.querySelectorAll('.section-head h2')).find((h) =>
+      h.textContent.includes('课程文件')
+    );
+
+  // 窗口高度受屏幕限制，装不下整页。缩小页面让文件区完整可见。
+  // 只影响截图，不影响真实布局。
+  const setZoom = (z) => {
+    document.body.style.zoom = String(z);
+  };
+
+  // Idempotent: the theme preference persists between runs, so ensure the
+  // wanted theme instead of blindly toggling.
+  const ensureTheme = async (want) => {
+    if (document.documentElement.dataset.theme !== want) {
+      const b = themeBtn();
+      if (b) b.click();
+      await sleep(450);
+    }
+    return document.documentElement.dataset.theme;
+  };
+
+  let done = 'noop';
+
+  // Computed-style probe: verifies the theme without relying on a screenshot,
+  // because capturePage returns stale frames when the window is not focused.
+  if (target === 'probe') {
+    const cs = (sel, prop) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el)[prop] : 'none';
+    };
+    return [
+      'theme=' + document.documentElement.dataset.theme,
+      'body=' + getComputedStyle(document.body).backgroundColor,
+      'sidebar=' + cs('.sidebar', 'backgroundColor'),
+      'card=' + cs('.course-card', 'backgroundColor'),
+      'stat=' + cs('.stat', 'backgroundColor'),
+      'title=' + cs('.page-title', 'color'),
+    ].join(' | ');
+  }
+
+  // Reset any scroll the app may have picked up, so the capture shows the top.
+  const resetScroll = () => {
+    const content = document.querySelector('.content');
+    if (content) content.scrollTop = 0;
+  };
+  resetScroll();
+  await sleep(60);
+
+  if (target === 'dashboard') {
+    done = 'dashboard';
+  } else if (target === 'course') {
+    if (cards().length > 0) {
+      cards()[0].click();
+      done = 'course';
+    }
+  } else if (target === 'timeline') {
+    done = 'timeline:' + navTo('作业');
+  } else if (target === 'files') {
+    // 进入第一门课，滚到「课程文件」那一节。
+    if (cards().length > 0) {
+      cards()[0].click();
+      await sleep(1600);
+      const filesHead = filesSection();
+      if (filesHead) {
+        setZoom(0.62);
+        await sleep(700);
+        const panel = filesHead.closest('.panel');
+        scrollToEl(panel || filesHead);
+        await sleep(700);
+        const rows = document.querySelectorAll('.file-row').length;
+        const stats = document.querySelector('.section-head .section-note');
+        const box = document.querySelector('.content');
+        done = `files; rows=${rows}; note=${stats ? stats.textContent.trim() : 'none'}; scrollTop=${box ? Math.round(box.scrollTop) : '?'}`;
+      } else {
+        done = 'files: section not found';
+      }
+    } else {
+      done = 'files: no course card';
+    }
+  } else if (target === 'filesSelect') {
+    // 勾选若干文件，检查「下载选中」工具条是否出现。
+    if (cards().length > 0) {
+      cards()[0].click();
+      await sleep(1600);
+      const boxes = Array.from(document.querySelectorAll('.file-check'));
+      let clicked = 0;
+      for (const b of boxes) {
+        if (clicked >= 3) break;
+        b.click();
+        clicked += 1;
+      }
+      await sleep(500);
+      const bar = document.querySelector('.files-toolbar');
+      scrollToEl(bar, 90);
+      await sleep(500);
+      done = `filesSelect; checked=${clicked}; toolbar=${bar ? bar.textContent.trim() : 'none'}`;
+    }
+  } else if (target === 'filesDownload') {
+    // 触发一次演示下载，检查进度条是否渲染。
+    if (cards().length > 0) {
+      cards()[0].click();
+      await sleep(1600);
+      const filesHead = filesSection();
+      if (filesHead) scrollToEl(filesHead.closest('.panel') || filesHead);
+      await sleep(400);
+      const all = Array.from(document.querySelectorAll('.btn')).find((b) =>
+        b.textContent.includes('下载本课全部')
+      );
+      if (all) {
+        all.click();
+        await sleep(2600);
+        const bar = document.querySelector('.dl-progress');
+        scrollToEl(bar, 140);
+        await sleep(600);
+        const head = document.querySelector('.dl-progress-head');
+        done = `filesDownload; progress=${head ? head.textContent.trim() : 'none'}`;
+      } else {
+        done = 'filesDownload: button not found';
+      }
+    }
+  } else if (target === 'unsubmitted') {
+    // 首页新增的「未提交的作业」板块。
+    setZoom(0.72);
+    await sleep(600);
+    const heads = Array.from(document.querySelectorAll('.panel-title'));
+    const h = heads.find((x) => x.textContent.includes('未提交的作业'));
+    if (h) {
+      scrollToEl(h.closest('.panel'));
+      await sleep(600);
+      const rows = document.querySelectorAll('.todo-group .tl-item').length;
+      const groups = Array.from(document.querySelectorAll('.todo-group-title')).map((g) => g.textContent.trim());
+      const toggles = document.querySelectorAll('.dash-toggle').length;
+      const on = document.querySelectorAll('.dash-toggle.on').length;
+      done = `unsubmitted; rows=${rows}; groups=${JSON.stringify(groups)}; toggles=${on}/${toggles}`;
+    } else {
+      done = 'unsubmitted: section not found';
+    }
+  } else if (target === 'customise') {
+    // 关掉两个板块，验证开关生效。
+    const btns = Array.from(document.querySelectorAll('.dash-toggle'));
+    const off = (label) => {
+      const b = btns.find((x) => x.textContent.includes(label));
+      if (b && b.classList.contains('on')) b.click();
+      return !!b;
+    };
+    const a = off('得分与关注');
+    const b = off('课程卡片');
+    await sleep(800);
+    const panelTitles = Array.from(document.querySelectorAll('.panel-title')).map((p) => p.textContent.trim());
+    const hasChart = panelTitles.some((t) => t.includes('各课程当前得分'));
+    const hasGrid = !!document.querySelector('.course-grid');
+    const on = document.querySelectorAll('.dash-toggle.on').length;
+    done = `customise; hit=${a},${b}; chartGone=${!hasChart}; gridGone=${!hasGrid}; stillOn=${on}`;
+  } else if (target === 'detail') {
+    // 打开一条作业详情浮层。
+    setZoom(0.72);
+    await sleep(600);
+    const items = Array.from(document.querySelectorAll('.todo-group .tl-item'));
+    // 挑一条演示数据里带说明的，否则浮层只能显示「没有附说明」。
+    const pick =
+      items.find((el) => el.textContent.includes('级数')) ||
+      items.find((el) => el.textContent.includes('光电效应')) ||
+      items[0];
+    if (pick) {
+      pick.click();
+      await sleep(2500);
+      const modal = document.querySelector('.modal');
+      if (modal) {
+        const title = modal.querySelector('.modal-title');
+        const summary = modal.querySelector('.summary-text');
+        const src = modal.querySelector('.summary-head');
+        const paras = modal.querySelectorAll('.desc-body p').length;
+        done = `detail; title=${title ? title.textContent.slice(0, 26) : '?'}; src=${src ? src.textContent.trim().slice(0, 20) : '?'}; summaryLen=${summary ? summary.textContent.length : 0}; paras=${paras}`;
+      } else {
+        done = 'detail: modal not found';
+      }
+    } else {
+      done = 'detail: no unsubmitted item on page';
+    }
+  } else if (target === 'settings') {
+    // 打开设置浮层。
+    const btn = Array.from(document.querySelectorAll('.icon-btn')).find((b) =>
+      (b.getAttribute('title') || '').includes('设置')
+    );
+    if (btn) {
+      btn.click();
+      await sleep(1400);
+      const modal = document.querySelector('.modal');
+      const presets = document.querySelectorAll('.dash-toggle').length;
+      const fields = document.querySelectorAll('.field input').length;
+      done = `settings; modal=${!!modal}; presets=${presets}; fields=${fields}`;
+    } else {
+      done = 'settings: button not found';
+    }
+  } else if (target === 'darkReload') {
+    // Seed localStorage, then reload so the very first paint is already dark -
+    // capturePage only reliably returns the first composed frame here.
+    localStorage.setItem('elearning.theme', 'dark');
+    location.reload();
+    return 'reloading into dark';
+  } else if (target === 'dark') {
+    const t = await ensureTheme('dark');
+    await sleep(3000);
+    done = `dark themeAttr=${document.documentElement.dataset.theme} (was ${t}) bodyBg=${getComputedStyle(document.body).backgroundColor}`;
+  } else if (target === 'darkCourse') {
+    await ensureTheme('dark');
+    if (cards().length > 0) cards()[0].click();
+    done = 'darkCourse; themeAttr=' + document.documentElement.dataset.theme;
+  } else if (target === 'darkTimeline') {
+    await ensureTheme('dark');
+    navTo('作业');
+    done = 'darkTimeline; themeAttr=' + document.documentElement.dataset.theme;
+  } else if (target === 'ignore') {
+    const s = ignoreSwitch();
+    if (s && !s.classList.contains('on')) s.click();
+    await sleep(300);
+    navTo('作业');
+    done = 'ignore+timeline';
+  } else if (target === 'allterms') {
+    const t = terms();
+    if (t.length > 0) {
+      t[0].click();
+      done = 'all:' + t[0].textContent;
+    }
+  } else if (target === 'term1') {
+    const t = terms();
+    if (t.length > 1) {
+      t[1].click();
+      done = 'term:' + t[1].textContent;
+    }
+  }
+
+  resetScroll();
+  await sleep(120);
+
+  const content = document.querySelector('.content');
+  const stats = document.querySelector('.stat-grid');
+  const chart = document.querySelector('.two-col');
+  const rect = (el) => {
+    if (!el) return 'none';
+    const r = el.getBoundingClientRect();
+    return `${Math.round(r.top)},${Math.round(r.height)}`;
+  };
+  const layout = content
+    ? `content[top=${Math.round(content.getBoundingClientRect().top)},scrollTop=${Math.round(content.scrollTop)},scrollH=${content.scrollHeight},clientH=${content.clientHeight}] stats[${rect(stats)}] twoCol[${rect(chart)}]`
+    : 'no content';
+
+  return [done, 'cards=' + cards().length, layout].join(' | ');
+})();

@@ -1,0 +1,123 @@
+# 在 GitHub 的 macOS runner 上构建未签名 iOS 包。
+#
+# 这个工作流的意义在于：**开发者不需要拥有一台 Mac**。
+# GitHub Actions 对公开仓库免费提供 macOS 运行器，直接产出可侧载的 IPA。
+#
+# 用法：仓库页面 → Actions → “Build iOS (unsigned)” → Run workflow。
+# 产物在本次运行的 Artifacts 里，下载后用 Sideloadly / AltStore / TrollStore
+# 装到 iPhone 上（免费开发者账号签名的有效期是 7 天，到期重装即可）。
+#
+# 注意：未签名 IPA 无法上架 App Store，也不支持推送等需要正式签名的能力。
+
+name: Build iOS (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: Show toolchain
+        run: flutter --version
+
+      - name: Install dependencies
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Static analysis
+        working-directory: flutter_app
+        run: flutter analyze
+
+      - name: Unit and widget tests
+        working-directory: flutter_app
+        # golden 图依赖具体平台的字体与光栅化，跨机器必然有像素差异，故跳过；
+        # 它们只在本地用 --update-goldens 生成，供人工核对视觉。
+        run: flutter test --exclude-tags golden
+
+      # --no-codesign 是关键：没有签名证书也能编译出可运行的 .app。
+      - name: Build iOS (no codesign)
+        working-directory: flutter_app
+        run: flutter build ios --release --no-codesign
+
+      - name: Package into an unsigned IPA
+        working-directory: flutter_app
+        run: |
+          set -euo pipefail
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          test -d "$APP_PATH"
+          rm -rf Payload app-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry app-unsigned.ipa Payload
+          ls -lh app-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: fudan-elearning-ipa
+          path: flutter_app/app-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+  build-macos:
+    name: Build macOS app
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: flutter_app
+        run: flutter pub get
+
+      # 没有开发者证书时用 ad-hoc 签名（CODE_SIGN_IDENTITY=-）。
+      # 本机运行足够；首次打开需要右键 → 打开，或执行
+      #   xattr -cr /Applications/fudan_elearning.app
+      # 绕过 Gatekeeper（因为未做公证 notarization）。
+      - name: Build macOS
+        working-directory: flutter_app
+        env:
+          CODE_SIGN_IDENTITY: '-'
+        run: flutter build macos --release
+
+      - name: Package
+        working-directory: flutter_app
+        run: |
+          set -euo pipefail
+          APP="build/macos/Build/Products/Release/fudan_elearning.app"
+          test -d "$APP"
+          rm -f fudan-elearning-macos.zip
+          ditto -c -k --sequesterRsrc --keepParent "$APP" fudan-elearning-macos.zip
+          ls -lh fudan-elearning-macos.zip
+
+      - name: Upload macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: fudan-elearning-macos
+          path: flutter_app/fudan-elearning-macos.zip
+          if-no-files-found: error
+          retention-days: 30

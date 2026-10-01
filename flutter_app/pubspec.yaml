@@ -1,0 +1,73 @@
+name: fudan_elearning
+description: 复旦大学 eLearning 学习看板 — iOS / Android 客户端
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 纯 Dart 的 RSA，用于统一身份认证的密码加密。
+  # Web Crypto 只有 RSA-OAEP，iOS 也不直接暴露 PKCS#1 v1.5，所以必须自带实现。
+  pointycastle: ^3.9.1
+
+  # 会话与偏好持久化；密码走系统钥匙串。
+  shared_preferences: ^2.3.2
+  flutter_secure_storage: ^9.2.2
+
+  url_launcher: ^6.3.0
+
+  # 找到可写的下载目录。
+  # iOS 上落在应用文档目录（配置了 Files 共享后可在「文件」App 里看到）；
+  # Android 上落在应用专属外部目录，无需申请存储权限。
+  path_provider: ^2.1.4
+
+  # 日期格式化。
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+  # 从一张 1024 源图生成 iOS / Android / macOS / web 的全套图标。
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    # 应用内的品牌标识（纯图形，不带文字）：
+    # 侧边栏/登录页只有 34–42 像素，完整版里的文字在这个尺寸下不可读。
+    - assets/brand/mark.png
+
+# 源图在 assets/icon/，由仓库根目录的 recon/make-icons.py 生成。
+# 重新生成图标集：dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: 'assets/icon/icon.png'
+
+  # iOS 图标必须是满幅方图且不带 alpha——系统会自己套圆角遮罩，
+  # 若预先把圆角切掉，四角会露出白边。
+  #
+  # 注意：平台专属覆盖要用扁平的 `image_path_ios`，不是嵌套的 `ios:` map，
+  # 后者会被静默忽略（图标会带着透明角生成，肉眼很难发现）。
+  ios: true
+  image_path_ios: 'assets/icon/icon_ios.png'
+  remove_alpha_ios: true
+
+  android: true
+  # Android 自适应图标：前景已经在生成时缩进了安全区，
+  # 背景用白色与图本身的底色一致。
+  adaptive_icon_background: '#FFFFFF'
+  adaptive_icon_foreground: 'assets/icon/icon_foreground.png'
+
+  macos:
+    image_path: 'assets/icon/icon.png'
+
+  web:
+    generate: true
+    image_path: 'assets/icon/icon.png'
+    background_color: '#F2F2F7'
+    theme_color: '#007AFF'
