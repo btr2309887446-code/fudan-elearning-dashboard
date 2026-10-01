@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/types.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'assignment_detail_screen.dart';
 import 'course_detail_screen.dart';
 import 'overview_tab.dart';
 import 'timeline_tab.dart';
@@ -73,6 +74,15 @@ class _HomeShellState extends State<HomeShell> {
       if (t.id == _term) return t.name;
     }
     return '全部学期';
+  }
+
+  /// 打开作业详情。以前是直接跳浏览器，等于把人赶出应用。
+  void _openAssignment(AssignmentRow row) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AssignmentDetailScreen(state: state, row: row),
+      ),
+    );
   }
 
   void _openCourse(int id) {
@@ -223,6 +233,9 @@ class _HomeShellState extends State<HomeShell> {
                                   todo: snapshot.todo,
                                   termName: _termName,
                                   hideUnsubmitted: state.prefs.hideUnsubmitted,
+                                  sections: state.prefs.dashboardSections,
+                                  onToggleSection: (k) => state.toggleDashboardSection(k),
+                                  onOpenAssignment: _openAssignment,
                                   onSelectCourse: _openCourse,
                                 ),
                                 TimelineTab(

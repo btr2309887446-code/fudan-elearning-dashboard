@@ -15,6 +15,9 @@ class OverviewTab extends StatelessWidget {
     required this.termName,
     required this.hideUnsubmitted,
     required this.onSelectCourse,
+    required this.sections,
+    required this.onToggleSection,
+    required this.onOpenAssignment,
   });
 
   final List<CourseSummary> courses;
@@ -23,6 +26,13 @@ class OverviewTab extends StatelessWidget {
   final String termName;
   final bool hideUnsubmitted;
   final void Function(int courseId) onSelectCourse;
+
+  /// 首页各板块的显示开关；缺省视为全开。
+  final Map<String, bool> sections;
+  final void Function(String key) onToggleSection;
+  final void Function(AssignmentRow row) onOpenAssignment;
+
+  bool _show(String key) => sections[key] != false;
 
   @override
   Widget build(BuildContext context) {
@@ -53,9 +63,44 @@ class OverviewTab extends StatelessWidget {
 
     final ranked = [...courses]..sort(courseUrgency);
 
+    /// 所有还没交的作业，逾期的排前面。
+    ///
+    /// 这是「我想看有哪些作业没交」的直接答案：以前首页只有缺交总数，
+    /// 看不出具体是哪些。
+    final unsubmitted = hideUnsubmitted
+        ? (overdue: <AssignmentRow>[], pending: <AssignmentRow>[])
+        : () {
+            final open = assignments.where((a) => !isCompleted(a)).toList();
+            final od = <AssignmentRow>[];
+            final pd = <AssignmentRow>[];
+            for (final a in open) {
+              final t = a.dueAt == null ? null : DateTime.tryParse(a.dueAt!);
+              if (t != null && t.isBefore(now)) {
+                od.add(a);
+              } else {
+                pd.add(a);
+              }
+            }
+            int byDue(AssignmentRow x, AssignmentRow y) {
+              if (x.dueAt == null) return 1;
+              if (y.dueAt == null) return -1;
+              return DateTime.parse(x.dueAt!).compareTo(DateTime.parse(y.dueAt!));
+            }
+
+            od.sort(byDue);
+            pd.sort(byDue);
+            return (overdue: od, pending: pd);
+          }();
+
+    final totalOpen = unsubmitted.overdue.length + unsubmitted.pending.length;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
+        // --- 板块开关 ---
+        _SectionToggles(sections: sections, onToggle: onToggleSection),
+        const SizedBox(height: 14),
+
         // --- 统计 ---
         Row(
           children: [
@@ -116,35 +161,86 @@ class OverviewTab extends StatelessWidget {
         // --- 三天内截止 ---
         if (soon.isNotEmpty) ...[
           Gap.lg,
-          SectionHeader('三天内截止', icon: Icons.schedule, iconColor: p.warn, trailing: _count(soon.length)),
+
+          // --- 未提交的作业 ---
+          if (_show('unsubmitted') && !hideUnsubmitted && totalOpen > 0) ...[
+            SectionHeader(
+              '未提交的作业',
+              icon: Icons.inbox_outlined,
+              iconColor: p.warn,
+              trailing: _count(totalOpen),
+            ),
+            if (unsubmitted.overdue.isNotEmpty) ...[
+              _TodoGroupTitle(
+                label: '已逾期 ${unsubmitted.overdue.length} 项',
+                color: p.bad,
+                icon: Icons.priority_high,
+              ),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < unsubmitted.overdue.length; i++) ...[
+                      if (i > 0) Divider(height: 1, color: p.border),
+                      _DueRow(row: unsubmitted.overdue[i], onTap: onOpenAssignment),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+            if (unsubmitted.pending.isNotEmpty) ...[
+              _TodoGroupTitle(
+                label: '尚未到期 ${unsubmitted.pending.length} 项',
+                color: p.textDim,
+                icon: Icons.schedule,
+              ),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < unsubmitted.pending.length; i++) ...[
+                      if (i > 0) Divider(height: 1, color: p.border),
+                      _DueRow(row: unsubmitted.pending[i], onTap: onOpenAssignment),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+            Gap.lg,
+          ],
+
+          if (_show('soon') && soon.isNotEmpty) ...[
+            SectionHeader('三天内截止', icon: Icons.schedule, iconColor: p.warn, trailing: _count(soon.length)),
+            AppCard(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  for (var i = 0; i < soon.length; i++) ...[
+                    if (i > 0) Divider(height: 1, color: p.border),
+                    _DueRow(row: soon[i], onTap: onOpenAssignment),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+
+        // --- 得分图 ---
+        if (_show('charts')) ...[
+          Gap.lg,
+          const SectionHeader('各课程当前得分', icon: Icons.bar_chart, iconColor: null),
+          AppCard(
+            child: ScoreBars(courses: courses, onTap: onSelectCourse),
+          ),
+
+          // --- 需要关注 ---
+          Gap.lg,
+          SectionHeader('需要关注', icon: Icons.priority_high, iconColor: p.bad),
           AppCard(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Column(
               children: [
-                for (var i = 0; i < soon.length; i++) ...[
-                  if (i > 0) Divider(height: 1, color: p.border),
-                  _DueRow(row: soon[i]),
-                ],
-              ],
-            ),
-          ),
-        ],
-
-        // --- 得分图 ---
-        Gap.lg,
-        const SectionHeader('各课程当前得分', icon: Icons.bar_chart, iconColor: null),
-        AppCard(
-          child: ScoreBars(courses: courses, onTap: onSelectCourse),
-        ),
-
-        // --- 需要关注 ---
-        Gap.lg,
-        SectionHeader('需要关注', icon: Icons.priority_high, iconColor: p.bad),
-        AppCard(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            children: [
-              for (var i = 0; i < (ranked.length > 4 ? 4 : ranked.length); i++) ...[
+                for (var i = 0; i < (ranked.length > 4 ? 4 : ranked.length); i++) ...[
                 if (i > 0) Divider(height: 1, color: p.border),
                 InkWell(
                   onTap: () => onSelectCourse(ranked[i].id),
@@ -188,19 +284,22 @@ class OverviewTab extends StatelessWidget {
               ],
             ],
           ),
-        ),
+          ),
+        ],
 
         // --- 全部课程 ---
-        Gap.lg,
-        SectionHeader('课程', trailing: _count(courses.length)),
-        for (final c in courses) ...[
-          CourseCard(
-            course: c,
-            onTap: () => onSelectCourse(c.id),
-            showTerm: true,
-            hideUnsubmitted: hideUnsubmitted,
-          ),
-          const SizedBox(height: 12),
+        if (_show('courses')) ...[
+          Gap.lg,
+          SectionHeader('课程', trailing: _count(courses.length)),
+          for (final c in courses) ...[
+            CourseCard(
+              course: c,
+              onTap: () => onSelectCourse(c.id),
+              showTerm: true,
+              hideUnsubmitted: hideUnsubmitted,
+            ),
+            const SizedBox(height: 12),
+          ],
         ],
       ],
     );
@@ -212,9 +311,12 @@ class OverviewTab extends StatelessWidget {
 }
 
 class _DueRow extends StatelessWidget {
-  const _DueRow({required this.row});
+  const _DueRow({required this.row, this.onTap});
 
   final AssignmentRow row;
+
+  /// 点击打开作业详情；不传就只是展示。
+  final void Function(AssignmentRow row)? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -222,7 +324,7 @@ class _DueRow extends StatelessWidget {
     final rel = dueRelative(row.dueAt, false);
     final color = rel.tone == DueTone.overdue ? p.bad : p.warn;
 
-    return Padding(
+    final body = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       child: Row(
         children: [
@@ -256,6 +358,93 @@ class _DueRow extends StatelessWidget {
           Text(rel.text, style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w600)),
         ],
       ),
+    );
+
+    if (onTap == null) return body;
+    return InkWell(onTap: () => onTap!(row), child: body);
+  }
+}
+
+/// 「已逾期 N 项」这类分组小标题。
+class _TodoGroupTitle extends StatelessWidget {
+  const _TodoGroupTitle({required this.label, required this.color, required this.icon});
+
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 首页板块开关。
+///
+/// 放在首页最上面而不是塞进设置里：这些开关调的就是当前这一页，
+/// 就地能改比翻菜单直观。
+class _SectionToggles extends StatelessWidget {
+  const _SectionToggles({required this.sections, required this.onToggle});
+
+  final Map<String, bool> sections;
+  final void Function(String key) onToggle;
+
+  static const _items = <({String key, String label, IconData icon})>[
+    (key: 'stats', label: '数据概览', icon: Icons.insights_outlined),
+    (key: 'unsubmitted', label: '未提交作业', icon: Icons.inbox_outlined),
+    (key: 'soon', label: '三天内截止', icon: Icons.schedule),
+    (key: 'charts', label: '得分与关注', icon: Icons.bar_chart),
+    (key: 'courses', label: '课程卡片', icon: Icons.menu_book_outlined),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Wrap(
+      spacing: 7,
+      runSpacing: 7,
+      children: [
+        for (final it in _items)
+          Builder(builder: (context) {
+            final on = sections[it.key] != false;
+            return InkWell(
+              onTap: () => onToggle(it.key),
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                decoration: BoxDecoration(
+                  color: on ? p.accent.withValues(alpha: 0.12) : p.surface,
+                  border: Border.all(color: on ? p.accent : p.border),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(it.icon, size: 13, color: on ? p.accent : p.muted),
+                    const SizedBox(width: 5),
+                    Text(
+                      it.label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: on ? p.accent : p.textDim,
+                        fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+      ],
     );
   }
 }

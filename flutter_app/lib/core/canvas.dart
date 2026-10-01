@@ -158,6 +158,21 @@ class CanvasClient {
         {'include': ['submission'], 'per_page': 100, 'order_by': 'due_at'},
       );
 
+  /// 单条作业，带完整 description。
+  ///
+  /// 列表接口也会返回 description，但那条数据不进本地缓存
+  ///（单条常有几十 KB）。详情页按需拉一次。
+  Future<CanvasAssignment> getAssignment(int courseId, int assignmentId) async {
+    final data = await get(
+      '/api/v1/courses/$courseId/assignments/$assignmentId',
+      {'include': ['submission']},
+    );
+    if (data is! Map<String, dynamic>) {
+      throw CanvasException(0, '/api/v1/courses/$courseId/assignments/$assignmentId', '作业详情返回了非预期的格式');
+    }
+    return CanvasAssignment.fromJson(data);
+  }
+
   Future<List<CanvasTodoItem>> getTodo() async {
     final data = await get('/api/v1/users/self/todo');
     if (data is! List) return const [];

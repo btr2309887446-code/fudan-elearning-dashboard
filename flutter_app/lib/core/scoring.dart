@@ -10,6 +10,7 @@
 
 library;
 
+import 'summary.dart';
 import 'types.dart';
 
 double? _num(Object? v) {
@@ -115,6 +116,7 @@ List<AssignmentRow> toAssignmentRows(
       excused: sub?.excused ?? false,
       omitFromFinalGrade: a.omitFromFinalGrade,
       htmlUrl: a.htmlUrl,
+      descriptionExcerpt: makeExcerpt(a.description),
       percent: percent,
       weightedContribution: (percent != null && weight > 0) ? (percent / 100) * weight : null,
     );

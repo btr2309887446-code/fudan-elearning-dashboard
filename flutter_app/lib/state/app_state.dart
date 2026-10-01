@@ -8,6 +8,7 @@ library;
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/aggregate.dart';
 import '../core/canvas.dart';
@@ -19,6 +20,7 @@ import '../core/http.dart';
 import '../core/rsa.dart';
 import '../core/scoring.dart';
 import '../core/session.dart';
+import '../core/summary.dart';
 import '../core/types.dart';
 import '../core/uis.dart';
 import '../platform/downloads.dart';
@@ -34,6 +36,8 @@ class AppPrefs {
     this.enrollmentState = 'all',
     this.rememberedUsername = '',
     this.rememberPassword = false,
+    this.dashboardSections = const {},
+    this.llm = defaultLlm,
   });
 
   final ThemeMode themeMode;
@@ -44,12 +48,20 @@ class AppPrefs {
   final String rememberedUsername;
   final bool rememberPassword;
 
+  /// 首页各板块的显示开关；缺省视为全开。
+  final Map<String, bool> dashboardSections;
+
+  /// 作业简介用的大模型接口；未配置时降级为截取描述前 100 字。
+  final LlmConfig llm;
+
   AppPrefs copyWith({
     ThemeMode? themeMode,
     bool? hideUnsubmitted,
     String? enrollmentState,
     String? rememberedUsername,
     bool? rememberPassword,
+    Map<String, bool>? dashboardSections,
+    LlmConfig? llm,
   }) =>
       AppPrefs(
         themeMode: themeMode ?? this.themeMode,
@@ -57,6 +69,8 @@ class AppPrefs {
         enrollmentState: enrollmentState ?? this.enrollmentState,
         rememberedUsername: rememberedUsername ?? this.rememberedUsername,
         rememberPassword: rememberPassword ?? this.rememberPassword,
+        dashboardSections: dashboardSections ?? this.dashboardSections,
+        llm: llm ?? this.llm,
       );
 
   Map<String, dynamic> toJson() => {
@@ -65,6 +79,8 @@ class AppPrefs {
         'enrollmentState': enrollmentState,
         'rememberedUsername': rememberedUsername,
         'rememberPassword': rememberPassword,
+        'dashboardSections': dashboardSections,
+        'llm': llm.toJson(),
       };
 
   factory AppPrefs.fromJson(Map<String, dynamic> json) => AppPrefs(
@@ -76,6 +92,11 @@ class AppPrefs {
         enrollmentState: (json['enrollmentState'] as String?) ?? 'all',
         rememberedUsername: (json['rememberedUsername'] as String?) ?? '',
         rememberPassword: json['rememberPassword'] == true,
+        dashboardSections: ((json['dashboardSections'] as Map?) ?? const {})
+            .map((k, v) => MapEntry(k.toString(), v == true)),
+        llm: json['llm'] is Map<String, dynamic>
+            ? LlmConfig.fromJson(json['llm'] as Map<String, dynamic>)
+            : defaultLlm,
       );
 }
 
@@ -453,5 +474,106 @@ class AppState extends ChangeNotifier {
     downloadProgress = progress.copy();
     notifyListeners();
     return downloadProgress!;
+  }
+
+  // --- 首页板块 -------------------------------------------------------------
+
+  /// 用系统浏览器打开 Canvas 网页版。
+  ///
+  /// 富文本说明、附件与提交入口只有网页版有，所以详情页留了这个出口。
+  Future<void> openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      error = '打不开浏览器：${e.toString().replaceFirst('Exception: ', '')}';
+      notifyListeners();
+    }
+  }
+
+  /// 板块开关。未出现的板块视为显示，这样新增板块时老用户也能看到。
+  Future<void> toggleDashboardSection(String key) async {
+    final next = Map<String, bool>.from(prefs.dashboardSections);
+    next[key] = prefs.dashboardSections[key] == false;
+    prefs = prefs.copyWith(dashboardSections: next);
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  // --- 大模型配置 -----------------------------------------------------------
+
+  Future<void> setLlm(LlmConfig cfg) async {
+    prefs = prefs.copyWith(llm: cfg);
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  // --- 作业详情与简介 -------------------------------------------------------
+
+  /// 简介缓存，键是 [summaryCacheKey]。
+  final Map<String, String> _summaryCache = {};
+
+  static const int _summaryCacheLimit = 400;
+
+  /// 取作业详情并生成 100 字以内简介。
+  ///
+  /// 完整说明按需拉取（快照里只有 600 字摘录）；[excerptHint] 是本地已有的摘录，
+  /// 网络失败时用它兜底，不至于白屏。
+  Future<({String description, String summary, String source, String? error})> loadAssignmentDetail({
+    required int courseId,
+    required int assignmentId,
+    required String name,
+    String? excerptHint,
+  }) async {
+    String description = '';
+
+    if (demo) {
+      description = excerptHint ?? '';
+    } else {
+      final jar = _jar;
+      if (jar == null) {
+        return (
+          description: excerptHint ?? '',
+          summary: fallbackSummary(excerptHint),
+          source: 'fallback',
+          error: '尚未登录',
+        );
+      }
+      try {
+        final client = CanvasClient(HttpClientLite(jar: jar));
+        final a = await client.getAssignment(courseId, assignmentId);
+        description = a.description ?? '';
+      } catch (e) {
+        return (
+          description: excerptHint ?? '',
+          summary: fallbackSummary(excerptHint),
+          source: 'fallback',
+          error: e.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    }
+
+    final key = summaryCacheKey(assignmentId, description);
+    final cached = _summaryCache[key];
+    if (cached != null) {
+      return (description: description, summary: cached, source: 'fallback', error: null);
+    }
+
+    final result = await summarizeAssignment(name, description, prefs.llm);
+    if (result.summary.isNotEmpty) {
+      _summaryCache[key] = result.summary;
+      if (_summaryCache.length > _summaryCacheLimit) {
+        for (final k in _summaryCache.keys.take(_summaryCache.length - _summaryCacheLimit).toList()) {
+          _summaryCache.remove(k);
+        }
+      }
+    }
+    return (
+      description: description,
+      summary: result.summary,
+      source: result.source,
+      error: result.error,
+    );
   }
 }

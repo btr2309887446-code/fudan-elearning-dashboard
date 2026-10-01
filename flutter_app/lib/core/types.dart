@@ -197,6 +197,7 @@ class CanvasAssignment {
     this.gradingType = 'points',
     this.published = true,
     this.htmlUrl,
+    this.description,
     this.submission,
     this.omitFromFinalGrade = false,
   });
@@ -210,6 +211,10 @@ class CanvasAssignment {
   final String gradingType;
   final bool published;
   final String? htmlUrl;
+
+  /// Canvas 返回的作业说明（HTML）。列表接口也会带，
+  /// 但不进本地缓存——快照里只存截取后的摘录。
+  final String? description;
   final CanvasSubmission? submission;
   final bool omitFromFinalGrade;
 
@@ -223,6 +228,7 @@ class CanvasAssignment {
         gradingType: (json['grading_type'] as String?) ?? 'points',
         published: json['published'] != false,
         htmlUrl: json['html_url'] as String?,
+        description: json['description'] as String?,
         omitFromFinalGrade: json['omit_from_final_grade'] == true,
         submission: json['submission'] is Map<String, dynamic>
             ? CanvasSubmission.fromJson(json['submission'] as Map<String, dynamic>)
@@ -501,6 +507,7 @@ class AssignmentRow {
     this.excused = false,
     this.omitFromFinalGrade = false,
     this.htmlUrl,
+    this.descriptionExcerpt,
     this.percent,
     this.weightedContribution,
   });
@@ -524,6 +531,12 @@ class AssignmentRow {
   final bool excused;
   final bool omitFromFinalGrade;
   final String? htmlUrl;
+
+  /// 作业说明的纯文本摘录（已去 HTML、截到 600 字左右）。
+  ///
+  /// 存摘录而不是完整 HTML：Canvas 单条说明常有几十 KB，
+  /// 全部塞进本地缓存会膨胀到好几 MB。
+  final String? descriptionExcerpt;
 
   /// score / pointsPossible，百分比。
   final double? percent;
@@ -551,6 +564,7 @@ class AssignmentRow {
         'excused': excused,
         'omitFromFinalGrade': omitFromFinalGrade,
         'htmlUrl': htmlUrl,
+        'descriptionExcerpt': descriptionExcerpt,
         'percent': percent,
         'weightedContribution': weightedContribution,
       };
@@ -575,6 +589,7 @@ class AssignmentRow {
         excused: json['excused'] == true,
         omitFromFinalGrade: json['omitFromFinalGrade'] == true,
         htmlUrl: json['htmlUrl'] as String?,
+        descriptionExcerpt: json['descriptionExcerpt'] as String?,
         percent: (json['percent'] as num?)?.toDouble(),
         weightedContribution: (json['weightedContribution'] as num?)?.toDouble(),
       );

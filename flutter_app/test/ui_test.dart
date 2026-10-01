@@ -211,16 +211,27 @@ void main() {
             todo: s.todo,
             termName: '全部学期',
             hideUnsubmitted: false,
+            sections: const {},
+            onToggleSection: (_) {},
+            onOpenAssignment: (_) {},
             onSelectCourse: (_) {},
           ),
         ),
       ));
       await tester.pumpAndSettle();
 
+      // 首页最上面是板块开关，下面依次是统计、未提交清单、截止提醒、得分图……
+      // ListView 懒加载，靠后的区块必须先滚进视口才会被构建。
+      expect(find.text('未提交的作业'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('各课程当前得分'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('各课程当前得分'), findsOneWidget);
       expect(find.byType(ScoreBars), findsOneWidget);
 
-      // ListView 是懒加载的，靠后的区块必须先滚进视口才会被构建。
       await tester.scrollUntilVisible(
         find.text('需要关注'),
         300,
