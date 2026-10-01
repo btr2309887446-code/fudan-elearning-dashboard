@@ -430,8 +430,23 @@
     return `${Math.round(r.top)},${Math.round(r.height)}`;
   };
   const layout = content
-    ? `content[top=${Math.round(content.getBoundingClientRect().top)},scrollTop=${Math.round(content.scrollTop)},scrollH=${content.scrollHeight},clientH=${content.clientHeight}] stats[${rect(stats)}] twoCol[${rect(chart)}]`
+    ? `content[top=${Math.round(content.getBoundingClientRect().top)},scrollTop=${Math.round(content.scrollTop)},scrollH=${content.scrollHeight},clientH=${content.clientHeight}] stats[${rect(stats)}] twoCol[${rect(chart)}]${panels(chart)}`
     : 'no content';
 
   return [done, 'cards=' + cards().length, layout].join(' | ');
 })();
+
+/**
+ * 量一下 two-col 里两块面板各自的高度。
+ *
+ * 用户反馈「需要关注」比旁边的得分图高出一大截，所以要有个能直接读的证据，
+ * 而不是靠肉眼看截图。
+ */
+function panels(twoCol) {
+  if (!twoCol) return '';
+  const kids = Array.from(twoCol.children);
+  if (kids.length < 2) return '';
+  const h = kids.map((el) => Math.round(el.getBoundingClientRect().height));
+  const equal = Math.abs(h[0] - h[1]) <= 2;
+  return ` panels=[${h.join(',')}] equal=${equal}`;
+}

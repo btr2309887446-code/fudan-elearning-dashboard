@@ -120,10 +120,10 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
           const SizedBox(height: 14),
 
           // --- 简介 ---
-          // 正文本来就不到 100 字时 _source 是 'none'，摘要栏整个不出现：
-          // 「精简」一段本来就够短的说明，得到的东西和信息量一模一样，
-          // 只会白占一块地方。下面「作业说明」里就是原文。
-          if (_source != 'none') ...[
+          // 只有真的走了大模型才显示这一块。
+          // 没接大模型时截取前 100 字，和下面「作业说明」的原文是同一份内容，
+          // 再摆一个框只是重复；正文本来就短的（source='none'）同理。
+          if (_source == 'llm') ...[
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -136,22 +136,12 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(_source == 'llm' ? Icons.auto_awesome : Icons.article_outlined,
-                        size: 15, color: p.accent),
+                    Icon(Icons.auto_awesome, size: 15, color: p.accent),
                     const SizedBox(width: 6),
                     Text(
-                      _source == 'llm' ? 'AI 摘要' : '原文截取',
+                      'AI 摘要',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: p.accent),
                     ),
-                    const SizedBox(width: 8),
-                    if (_source == 'fallback' && _summaryError == null)
-                      Expanded(
-                        child: Text(
-                          '未接入大模型，直接取描述前 100 字',
-                          style: TextStyle(fontSize: 11.5, color: p.muted),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -159,16 +149,19 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
                   _loading ? '正在生成简介…' : (_summary.isNotEmpty ? _summary : '这条作业没有文字说明。'),
                   style: TextStyle(fontSize: 14, height: 1.6, color: p.text),
                 ),
-                if (_summaryError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '$_summaryError（已降级为截取原文）',
-                    style: TextStyle(fontSize: 11.5, color: p.warn),
-                  ),
-                ],
               ],
             ),
           ),
+          ],
+
+          // 配了大模型但这次没成功：摘要框不出现，但得说一声，
+          // 否则用户只会觉得「怎么没摘要」而不知道是调用失败了。
+          if (_source != 'llm' && _summaryError != null) ...[
+            Text(
+              '$_summaryError（本次未生成摘要，下面是原文）',
+              style: TextStyle(fontSize: 12, color: p.warn),
+            ),
+            const SizedBox(height: 12),
           ],
 
           const SizedBox(height: 18),

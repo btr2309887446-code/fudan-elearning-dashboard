@@ -638,12 +638,50 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  /* 两栏等高：左栏会拉伸到和右栏一致，两块看起来才成对。
+     之前是 align-items: start，各长各的。 */
+  align-items: stretch;
+}
+
+.two-col > .panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 「需要关注」的课程可能很多，把这一栏框住、让列表在内部滚动，
+   否则它会比旁边的得分图高出一大截。
+   高度取自「得分图上常见的高度 + 标题 + 内边距」，两边就差不多齐。 */
+.two-col > .panel:last-child {
+  max-height: 372px;
+}
+
+.two-col > .panel:last-child > .group-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* 滚动时给卡片阴影留一点余量，不然会被裁掉 */
+  padding-right: 2px;
+}
+
+/* 得分图填满拉伸出来的高度，不要在下面留一截空白 */
+.two-col > .panel:first-child > :last-child {
+  flex: 1;
+  min-height: 0;
 }
 
 @media (max-width: 1180px) {
   .two-col {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 窄屏时两栏上下排，就不必再框高度了 */
+  .two-col > .panel:last-child {
+    max-height: none;
+  }
+
+  .two-col > .panel:last-child > .group-list {
+    overflow-y: visible;
   }
 }
 

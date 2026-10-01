@@ -1,6 +1,6 @@
 {
   "name": "fudan-elearning-dashboard",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "复旦大学 eLearning (Canvas) 课程 / 作业 / 成绩 图形化看板",
   "main": "./out/main/index.js",
   "author": "ksar",

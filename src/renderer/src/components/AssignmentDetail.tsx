@@ -152,28 +152,28 @@ export default function AssignmentDetail({
 
         <div className="modal-body">
           {/* --- 简介 ---
-              正文本来就不到 100 字时 source 是 'none'，此时摘要栏整个不出现：
-              「精简」一段本来就够短的说明，得到的东西和信息量一模一样，
-              只会白占一块地方。下面「完整说明」里就是原文。 */}
-          {source !== 'none' && (
+              只有真的走了大模型才显示这一块。
+              没接大模型时截取前 100 字，和下面「完整说明」的原文是同一份内容，
+              再摆一个蓝框只是重复；正文本来就短的（source='none'）同理。 */}
+          {source === 'llm' && (
             <div className="summary-block">
               <div className="summary-head">
-                <Icon name={source === 'llm' ? 'sparkle' : 'file'} size={15} />
-                <span>{source === 'llm' ? 'AI 摘要' : '原文截取'}</span>
+                <Icon name="sparkle" size={15} />
+                <span>AI 摘要</span>
                 {cached && <span className="summary-note">已缓存</span>}
-                {source === 'fallback' && !summaryError && (
-                  <span className="summary-note">未接入大模型，直接取描述前 100 字</span>
-                )}
               </div>
               <div className="summary-text">
                 {loading ? '正在生成简介…' : summary || '这条作业没有文字说明。'}
               </div>
-              {summaryError && (
-                <div className="summary-err">
-                  {summaryError}
-                  <span style={{ color: 'var(--muted)' }}>（已降级为截取原文）</span>
-                </div>
-              )}
+            </div>
+          )}
+
+          {/* 配了大模型但这次没成功：摘要框不出现，但得说一声，
+              否则用户只会觉得「怎么没摘要」而不知道是调用失败了。 */}
+          {source !== 'llm' && summaryError && (
+            <div className="summary-err" style={{ marginBottom: 14 }}>
+              {summaryError}
+              <span style={{ color: 'var(--muted)' }}>（本次未生成摘要，下面是原文）</span>
             </div>
           )}
 
