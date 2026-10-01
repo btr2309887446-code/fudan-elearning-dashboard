@@ -225,6 +225,31 @@
     } else {
       done = 'settings: button not found';
     }
+  } else if (target === 'order') {
+    // 把「数据警告」一路顶到最前，再用实际渲染位置验证视觉顺序真的变了。
+    const visualOrder = () =>
+      Array.from(document.querySelectorAll('.dash-body > *'))
+        .filter((el) => !el.classList.contains('dash-customise'))
+        .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+        .map((el) => (el.textContent || '').trim().slice(0, 6));
+
+    const before = visualOrder();
+    const chips = Array.from(document.querySelectorAll('.dash-toggle'));
+    // 必须挑一个「当前真的渲染出来」的板块：数据警告在演示数据里没有内容，
+    // 移它不会产生任何视觉变化，测了等于没测。
+    const target = chips.find((c) => c.textContent.includes('课程卡片'));
+    if (!target) {
+      done = 'order: 课程卡片 chip not found';
+    } else {
+      const up = target.querySelectorAll('.dash-move')[0];
+      for (let i = 0; i < 6; i++) {
+        up.click();
+        await sleep(160);
+      }
+      await sleep(700);
+      const after = visualOrder();
+      done = `order; before=${JSON.stringify(before.slice(0, 3))}; after=${JSON.stringify(after.slice(0, 3))}; moved=${before[0] !== after[0]}`;
+    }
   } else if (target === 'darkReload') {
     // Seed localStorage, then reload so the very first paint is already dark -
     // capturePage only reliably returns the first composed frame here.

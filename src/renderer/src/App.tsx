@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AssignmentRow, CanvasProfile, Snapshot } from '../../core/types';
 import AssignmentDetail from './components/AssignmentDetail';
 import CourseDetail from './components/CourseDetail';
-import Dashboard from './components/Dashboard';
+import Dashboard, { SECTIONS } from './components/Dashboard';
 import Icon from './components/Icon';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
@@ -26,6 +26,8 @@ export default function App() {
   const [hideUnsubmitted, setHideUnsubmitted] = useState(false);
   /** 首页各板块的显示开关（key -> 是否显示）。 */
   const [dashboardSections, setDashboardSections] = useState<Record<string, boolean>>({});
+  /** 用户排定的板块顺序；空数组表示用默认顺序。 */
+  const [dashboardOrder, setDashboardOrder] = useState<string[]>([]);
   /** 当前打开的作业详情；null 表示浮层关闭。 */
   const [openAssignment, setOpenAssignment] = useState<AssignmentRow | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -80,6 +82,7 @@ export default function App() {
       const p = await window.elearning.prefs.get();
       setHideUnsubmitted(p.hideUnsubmitted === true);
       setDashboardSections(p.dashboardSections ?? {});
+      setDashboardOrder(p.dashboardOrder ?? []);
       // Never let a slow disk read undo a choice the user just made.
       if (!themeTouched.current) {
         if (p.theme === 'dark' || p.theme === 'light') {
@@ -153,6 +156,47 @@ export default function App() {
     } catch {
       /* 同上：偏好写失败不该影响界面 */
     }
+  }
+
+  /**
+   * 调整板块顺序。
+   *
+   * 顺序表里没提到的板块按默认顺序补在后面，所以先在渲染层算好完整顺序，
+   * 这里只负责把相邻两项对调。
+   */
+  async function moveDashboardSection(key: string, direction: -1 | 1) {
+    const full = effectiveOrder();
+    const i = full.indexOf(key);
+    const j = i + direction;
+    if (i < 0 || j < 0 || j >= full.length) return;
+    const next = [...full];
+    [next[i], next[j]] = [next[j], next[i]];
+    setDashboardOrder(next);
+    try {
+      await window.elearning.prefs.set({ dashboardOrder: next });
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  async function resetDashboardOrder() {
+    setDashboardOrder([]);
+    try {
+      await window.elearning.prefs.set({ dashboardOrder: [] });
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  /**
+   * 完整的板块顺序：先按用户排的，没提到的按默认顺序补在后面。
+   * 这样以后新增板块时，老用户的顺序表不会把它漏掉。
+   */
+  function effectiveOrder(): string[] {
+    const defaults = SECTIONS.map((s) => s.key);
+    const out = dashboardOrder.filter((k) => defaults.includes(k));
+    for (const k of defaults) if (!out.includes(k)) out.push(k);
+    return out;
   }
 
   function toggleTheme() {
@@ -331,7 +375,10 @@ export default function App() {
               termFilter={termFilter}
               hideUnsubmitted={hideUnsubmitted}
               sections={dashboardSections}
+              sectionOrder={dashboardOrder}
               onToggleSection={toggleDashboardSection}
+              onMoveSection={moveDashboardSection}
+              onResetOrder={resetDashboardOrder}
               onOpenAssignment={setOpenAssignment}
               onSelectCourse={(id) => setSelectedCourse(id)}
             />

@@ -15,8 +15,8 @@ import Icon, { type IconName } from './Icon';
 import ScoreRing from './ScoreRing';
 import { CourseScoreChart } from './charts';
 
-/** 首页板块。顺序即显示顺序；key 存进偏好里，改动要保持兼容。 */
-const SECTIONS: { key: string; label: string; icon: IconName }[] = [
+/** 首页板块。顺序即默认显示顺序；key 存进偏好里，改动要保持兼容。 */
+export const SECTIONS: { key: string; label: string; icon: IconName }[] = [
   { key: 'stats', label: '数据概览', icon: 'chart' },
   { key: 'unsubmitted', label: '未提交作业', icon: 'inbox' },
   { key: 'soon', label: '三天内截止', icon: 'clock' },
@@ -34,6 +34,10 @@ interface Props {
   onToggleSection: (key: string) => void;
   onOpenAssignment: (row: AssignmentRow) => void;
   onSelectCourse: (id: number) => void;
+  /** 用户排定的板块顺序（section key 列表）。 */
+  sectionOrder: string[];
+  onMoveSection: (key: string, direction: -1 | 1) => void;
+  onResetOrder: () => void;
 }
 
 export default function Dashboard({
@@ -44,7 +48,38 @@ export default function Dashboard({
   onToggleSection,
   onOpenAssignment,
   onSelectCourse,
+  sectionOrder,
+  onMoveSection,
+  onResetOrder,
 }: Props) {
+  /**
+   * 按用户排的顺序整理板块。
+   *
+   * 不认识的 key 忽略；顺序里没提到的板块按默认顺序补在后面——
+   * 这样以后新增板块时，老用户的顺序表不会把它漏掉。
+   */
+  const orderedSections = useMemo(() => {
+    const known = new Map(SECTIONS.map((s) => [s.key, s]));
+    const out: typeof SECTIONS = [];
+    for (const k of sectionOrder) {
+      const s = known.get(k);
+      if (s && !out.includes(s)) out.push(s);
+    }
+    for (const s of SECTIONS) if (!out.includes(s)) out.push(s);
+    return out;
+  }, [sectionOrder]);
+
+  /**
+   * 板块的显示序号。
+   *
+   * 用 CSS 的 `order` 在 flex 容器里重排，而不是把 JSX 拆成一堆回调——
+   * 板块内容长且各带条件渲染，拆开只会让这段代码难读。
+   */
+  const ord = (key: string) => {
+    const i = orderedSections.findIndex((s) => s.key === key);
+    return i < 0 ? 100 : i;
+  };
+
   // Everything on this page is scoped to the selected semester: averaging
   // scores across semesters would not mean anything.
   const view = useMemo(() => {
@@ -115,28 +150,53 @@ export default function Dashboard({
   const totalOpen = unsubmitted.overdue.length + unsubmitted.pending.length;
 
   return (
-    <>
-      {/* 板块开关：放在最上面，随时可调 */}
+    <div className="dash-body">
+      {/* 板块开关与排序：放在最上面，随时可调 */}
       <div className="dash-customise">
         <span className="dash-customise-label">
           <Icon name="sliders" size={15} />
           首页板块
         </span>
-        {SECTIONS.map((s) => (
-          <button
-            key={s.key}
-            className={`dash-toggle ${show(s.key) ? 'on' : ''}`}
-            onClick={() => onToggleSection(s.key)}
-            title={show(s.key) ? '点击隐藏这个板块' : '点击显示这个板块'}
-          >
-            <Icon name={s.icon} size={13} />
-            {s.label}
-          </button>
+        {orderedSections.map((s, i) => (
+          <span key={s.key} className={`dash-toggle ${show(s.key) ? 'on' : ''}`}>
+            <button
+              className="dash-toggle-main"
+              onClick={() => onToggleSection(s.key)}
+              title={show(s.key) ? '点击隐藏这个板块' : '点击显示这个板块'}
+            >
+              <Icon name={s.icon} size={13} />
+              {s.label}
+            </button>
+            {/* 排序：用 CSS order 重排，不动 JSX 结构 */}
+            <button
+              className="dash-move"
+              onClick={() => onMoveSection(s.key, -1)}
+              disabled={i === 0}
+              title="上移"
+            >
+              ▲
+            </button>
+            <button
+              className="dash-move"
+              onClick={() => onMoveSection(s.key, 1)}
+              disabled={i === orderedSections.length - 1}
+              title="下移"
+            >
+              ▼
+            </button>
+          </span>
         ))}
+        <button
+          className="dash-toggle dash-reset"
+          onClick={onResetOrder}
+          title="恢复默认顺序"
+        >
+          恢复默认
+        </button>
       </div>
 
       {show('stats') && (
-        <div className="stat-grid">
+        <div className="stat-grid" style={{ order: ord('stats') }}>
           <div className="stat">
             <div className="stat-icon">
               <Icon name="chart" size={19} />
@@ -215,7 +275,7 @@ export default function Dashboard({
       )}
 
       {show('unsubmitted') && !hideUnsubmitted && totalOpen > 0 && (
-        <div className="panel" style={{ marginBottom: 18 }}>
+        <div className="panel" style={{ marginBottom: 18, order: ord('unsubmitted') }}>
           <h3 className="panel-title">
             <Icon name="inbox" size={17} style={{ color: 'var(--warn)' }} />
             未提交的作业
@@ -253,7 +313,7 @@ export default function Dashboard({
       )}
 
       {show('soon') && soon.length > 0 && (
-        <div className="panel" style={{ marginBottom: 18 }}>
+        <div className="panel" style={{ marginBottom: 18, order: ord('soon') }}>
           <h3 className="panel-title">
             <Icon name="clock" size={17} style={{ color: 'var(--warn)' }} />
             三天内截止
@@ -268,7 +328,7 @@ export default function Dashboard({
       )}
 
       {show('charts') && (
-        <div className="two-col" style={{ marginBottom: 18 }}>
+        <div className="two-col" style={{ marginBottom: 18, order: ord('charts') }}>
           <div className="panel">
             <h3 className="panel-title">
               <Icon name="chart" size={17} style={{ color: 'var(--accent)' }} />
@@ -306,7 +366,7 @@ export default function Dashboard({
       )}
 
       {show('courses') && (
-        <>
+        <div style={{ order: ord('courses') }}>
           <div className="section-head">
             <h2>课程</h2>
             <small style={{ color: 'var(--muted)' }}>{view.courses.length} 门</small>
@@ -362,11 +422,11 @@ export default function Dashboard({
               </button>
             ))}
           </div>
-        </>
+        </div>
       )}
 
       {show('warnings') && snapshot.warnings.length > 0 && (
-        <div className="panel" style={{ marginTop: 18 }}>
+        <div className="panel" style={{ marginTop: 18, order: ord('warnings') }}>
           <h3 className="panel-title">
             <Icon name="alert" size={17} style={{ color: 'var(--warn)' }} />
             部分数据未能获取
@@ -379,7 +439,7 @@ export default function Dashboard({
           </ul>
         </div>
       )}
-    </>
+    </div>
   );
 }
 

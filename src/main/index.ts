@@ -48,6 +48,8 @@ interface Prefs {
   downloadRoot?: string;
   /** 首页各板块的显示开关；缺省视为全开。 */
   dashboardSections?: Record<string, boolean>;
+  /** 首页板块的排列顺序（section key 列表）；空数组表示默认顺序。 */
+  dashboardOrder?: string[];
   /** 大模型配置；未配置时作业简介降级为截取描述前 100 字。 */
   llm?: LlmConfig;
   /** 作业简介缓存，键是 summaryCacheKey()。 */

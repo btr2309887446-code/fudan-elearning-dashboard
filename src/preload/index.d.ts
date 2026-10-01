@@ -18,6 +18,8 @@ export interface Prefs {
   downloadRoot?: string;
   /** 首页各板块的显示开关；缺省视为全开。 */
   dashboardSections?: Record<string, boolean>;
+  /** 首页板块的排列顺序（section key 列表）；空数组表示默认顺序。 */
+  dashboardOrder?: string[];
 }
 
 export type { CanvasFile, DownloadProgress, FileNode };
