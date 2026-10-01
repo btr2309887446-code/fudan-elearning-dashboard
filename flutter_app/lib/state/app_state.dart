@@ -14,6 +14,7 @@ import '../core/aggregate.dart';
 import '../core/canvas.dart';
 import '../core/cookies.dart';
 import '../core/demo.dart';
+import '../core/diag.dart';
 import '../core/errors.dart';
 import '../core/files.dart';
 import '../core/http.dart';
@@ -251,17 +252,30 @@ class AppState extends ChangeNotifier {
   }) async {
     try {
       error = null;
+      diag('login', '开始登录 user=${redact(username, keep: 4)}');
+      final t0 = DateTime.now();
+
       final ctx = _pendingLogin ?? await beginLogin(jar: CookieJar(), encryptor: rsaPkcs1Encrypt);
       _pendingLogin = null;
+      diag('login', 'beginLogin 完成（${DateTime.now().difference(t0).inMilliseconds} ms）');
 
       final result = await completeLogin(
         ctx,
         Credentials(username: username, password: password, captchaCode: captchaCode),
       );
+      diag('login', 'completeLogin 完成，落点 ${result.finalUrl}');
 
-      final client = CanvasClient(HttpClientLite(jar: result.jar));
       // 确认会话真的有效，再落盘。
-      await client.getProfile();
+      // 这一步失败时，下面的 catch 会把它翻译成一句笼统的「登录状态已失效」——
+      // 所以这里必须先把真实的状态码与响应体记下来。
+      final client = CanvasClient(HttpClientLite(jar: result.jar));
+      try {
+        await client.getProfile();
+        diag('login', '✓ getProfile 成功，Canvas 会话有效');
+      } catch (e) {
+        diagError('login', e);
+        rethrow;
+      }
 
       _jar = result.jar;
       await _repo.writeSession(result.jar.toJsonString());
@@ -283,7 +297,9 @@ class AppState extends ChangeNotifier {
       await refresh(force: true);
       return true;
     } catch (e) {
+      diagError('login', e);
       error = e is LoginException ? e.message : describeCanvasError(e);
+      diag('login', '呈现在界面上的错误：$error');
       notifyListeners();
       return false;
     }

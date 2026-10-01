@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'diag_screen.dart';
 import 'widgets.dart';
 
 /// 首页板块。顺序即默认顺序；key 存进偏好里，改动要保持兼容。
@@ -58,6 +59,27 @@ class SettingsScreen extends StatelessWidget {
                         _themeChip(context, '跟随系统', ThemeMode.system),
                       ],
                     ),
+                  ],
+                ),
+              ),
+
+              Gap.lg,
+
+              // --- 诊断 ---
+              const SectionHeader('排查'),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('诊断日志', style: TextStyle(fontSize: 13, color: p.textDim)),
+                    const SizedBox(height: 6),
+                    Text(
+                      '记录登录链与每一次网络请求的结果。登录不上时把这里的内容'
+                      '复制出来发给开发者，就能定位到是哪一步出了问题。',
+                      style: TextStyle(fontSize: 11.5, color: p.muted, height: 1.6),
+                    ),
+                    const SizedBox(height: 10),
+                    const DiagEntryLink(),
                   ],
                 ),
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'diag_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.state});
@@ -303,6 +304,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     Gap.md,
                     _Alert(text: _detail!, tone: 'info'),
                   ],
+
+                  Gap.lg,
+
+                  // 侧载安装时没法看控制台，登录失败只能靠这个入口把过程导出。
+                  const Center(child: DiagEntryLink()),
 
                   Gap.lg,
                   Text(

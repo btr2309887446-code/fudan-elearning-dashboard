@@ -28,6 +28,7 @@ library;
 import 'dart:convert';
 
 import 'cookies.dart';
+import 'diag.dart';
 import 'endpoints.dart';
 import 'errors.dart';
 import 'http.dart';
@@ -408,6 +409,7 @@ Future<LoginResult> completeLogin(
 
   final loginToken = body['loginToken'] as String?;
   if (codeStr != '200' || loginToken == null || loginToken.isEmpty) {
+    diag('uis', 'authExecute 失败 code=$codeStr message=${body['message']}');
     if (codeStr == '4340' && body['data'] is String) {
       throw LoginException(
         LoginFailureKind.protocol,
@@ -417,6 +419,7 @@ Future<LoginResult> completeLogin(
     }
     throw classifyAuthResult(body['code'], body['message'] as String?);
   }
+  diag('uis', 'authExecute 成功，拿到 loginToken ${redact(loginToken, keep: 6)}');
 
   // 用 loginToken 换 CAS 服务票据，再去 Canvas 兑换会话。
   final engineRes = await ctx.http.postForm(
@@ -427,6 +430,7 @@ Future<LoginResult> completeLogin(
 
   final target = extractTicketTarget(engineRes.body);
   if (target == null) {
+    diag('uis', '✗ authnEngine 页面里找不到 #logon/#ticket（HTTP ${engineRes.statusCode}）');
     throw LoginException(
       LoginFailureKind.protocol,
       '登录成功，但从认证服务器返回的页面里找不到服务票据。',
@@ -436,6 +440,7 @@ Future<LoginResult> completeLogin(
           ),
     );
   }
+  diag('uis', '拿到服务票据 action=${target.action} ticket=${redact(target.ticket, keep: 10)}');
 
   final ticketUrl = Uri.parse(target.action).replace(
     queryParameters: {
@@ -447,11 +452,23 @@ Future<LoginResult> completeLogin(
   final finalRes = await ctx.http.request(ticketUrl.toString(), HttpRequestOptions(timeout: timeout));
 
   if (!finalRes.uri.host.contains(canvasHost)) {
+    diag('uis', '✗ 票据校验后没回到 eLearning，落点是 ${finalRes.uri}');
     throw LoginException(
       LoginFailureKind.protocol,
       '票据校验后未回到 eLearning（落点：${finalRes.uri}）。',
     );
   }
+
+  // 登录链结束后 jar 里应当有 Canvas 域的会话 cookie。
+  // 只记名字与域名，不记值——这条日志是给用户复制发出来的。
+  final jarSummary = ctx.jar
+      .all()
+      .map((c) => '${c.domain}:${c.name}')
+      .take(12)
+      .join(', ');
+  diag('uis', '票据校验完成，落点 ${finalRes.uri}；'
+      'jar 里共 ${ctx.jar.all().length} 条 cookie'
+      '${jarSummary.isNotEmpty ? ' [$jarSummary]' : '（空！）'}');
 
   return LoginResult(
     jar: ctx.jar,

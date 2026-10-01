@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'cookies.dart';
+import 'diag.dart';
 import 'transport.dart';
 
 const String defaultUserAgent =
@@ -170,14 +171,32 @@ class HttpClientLite {
       jar.setFromResponse(response.uri.toString(), response.setCookies);
     }
 
+    // 记进全局诊断日志。
+    //
+    // 侧载的 iPhone 上没有任何控制台可看，登录链出问题时只有这里能还原
+    // 「发到了哪、回来什么状态、有没有拿到 Set-Cookie」。
+    // 只记 cookie 的名字，不记值。
+    final location = response.headers.entries
+        .where((e) => e.key.toLowerCase() == 'location')
+        .expand((e) => e.value)
+        .firstOrNull;
+    final cookieNames = response.setCookies
+        .map((c) => c.split('=').first.trim())
+        .where((n) => n.isNotEmpty)
+        .join(',');
+    diag(
+      'http',
+      '$method $url → ${response.statusCode}'
+      '${location != null ? ' → $location' : ''}'
+      '${cookieNames.isNotEmpty ? '  [set-cookie: $cookieNames]' : ''}'
+      '${cookie != null ? '  [sent: ${cookie.split(';').map((p) => p.split('=').first.trim()).join(',')}]' : ''}',
+    );
+
     trace.add(HttpTrace(
       method,
       url,
       response.statusCode,
-      response.headers.entries
-          .where((e) => e.key.toLowerCase() == 'location')
-          .expand((e) => e.value)
-          .firstOrNull,
+      location,
       response.setCookies,
     ));
 
