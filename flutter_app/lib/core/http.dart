@@ -16,9 +16,26 @@ import 'cookies.dart';
 import 'diag.dart';
 import 'transport.dart';
 
+/// 所有请求共用的 User-Agent。
+///
+/// **必须与桌面端（`src/core/http.ts` 的 DEFAULT_UA）保持一致。**
+///
+/// 这里踩过一个坑：原先写的是 iPhone Safari 的 UA，结果
+/// `GET /login/cas` 会被统一身份认证重定向到 **`/ac-h5/`（手机版 SPA）**，
+/// 而桌面端用 Chrome UA 落在 **`/ac/`（桌面版 SPA）**。两套 SPA 的
+/// `authExecute` / `authnEngine` 契约并不相同——`/ac-h5/` 那条路从未被
+/// 验证过，表现为登录走完却拿不到 Canvas 会话，最后只报一句
+/// 「登录状态已失效」，把真实原因盖住了。
+///
+/// 实测（`tool/probe_login.dart` 加不加 `desktop` 参数）：
+///   iPhone UA  → https://id.fudan.edu.cn/ac-h5/#/index
+///   Chrome UA  → https://id.fudan.edu.cn/ac/#/index
+///
+/// 换成桌面 UA 之后，端的只是认证中心的 SPA 版本；应用调用的
+/// Canvas REST 接口与 UA 无关。
 const String defaultUserAgent =
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 '
-    '(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 /// 传输层返回的原始响应。
 class RawResponse {

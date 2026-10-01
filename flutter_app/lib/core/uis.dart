@@ -202,9 +202,13 @@ LoginException classifyAuthResult(Object? code, String? message) {
 // ---------------------------------------------------------------------------
 
 /// 第 1-3 步：抵达认证服务器、取公钥、问清楚认证方式。
+///
+/// [http] 只在需要观察请求轨迹时传（比如 tool/probe_login.dart）；
+/// 平时留空，内部按 [jar] 自建。
 Future<LoginContext> beginLogin({
   CookieJar? jar,
   PasswordEncryptor? encryptor,
+  HttpClientLite? http,
   Duration timeout = const Duration(seconds: 20),
 }) async {
   if (encryptor == null) {
@@ -218,9 +222,9 @@ Future<LoginContext> beginLogin({
   final theJar = jar ?? CookieJar();
   // 强制走一次真实认证，而不是复用残留的 CAS 票据。
   theJar.deleteByName('CASTGC');
-  final http = HttpClientLite(jar: theJar);
+  final theHttp = http ?? HttpClientLite(jar: theJar);
 
-  final entry = await http.request(loginEntry, HttpRequestOptions(timeout: timeout));
+  final entry = await theHttp.request(loginEntry, HttpRequestOptions(timeout: timeout));
 
   if (!entry.uri.host.contains(idHost)) {
     throw LoginException(
@@ -241,7 +245,7 @@ Future<LoginContext> beginLogin({
     );
   }
 
-  final pkRes = await http.postJson(
+  final pkRes = await theHttp.postJson(
     '$idBase/idp/authn/getJsPublicKey',
     const <String, dynamic>{},
     HttpRequestOptions(
@@ -265,7 +269,7 @@ Future<LoginContext> beginLogin({
     );
   }
 
-  final qRes = await http.postJson(
+  final qRes = await theHttp.postJson(
     '$idBase/idp/authn/queryAuthMethods',
     {'lck': idp.lck, 'entityId': idp.entityId},
     HttpRequestOptions(
@@ -319,7 +323,7 @@ Future<LoginContext> beginLogin({
 
   return LoginContext(
     jar: theJar,
-    http: http,
+    http: theHttp,
     spaUrl: entry.uri.toString(),
     lck: idp.lck,
     entityId: idp.entityId,
