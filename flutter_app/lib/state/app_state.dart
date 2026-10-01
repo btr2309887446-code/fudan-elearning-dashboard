@@ -37,6 +37,7 @@ class AppPrefs {
     this.rememberedUsername = '',
     this.rememberPassword = false,
     this.dashboardSections = const {},
+    this.dashboardOrder = const [],
     this.llm = defaultLlm,
   });
 
@@ -51,6 +52,9 @@ class AppPrefs {
   /// 首页各板块的显示开关；缺省视为全开。
   final Map<String, bool> dashboardSections;
 
+  /// 首页板块的排列顺序；空列表表示默认顺序。
+  final List<String> dashboardOrder;
+
   /// 作业简介用的大模型接口；未配置时降级为截取描述前 100 字。
   final LlmConfig llm;
 
@@ -61,6 +65,7 @@ class AppPrefs {
     String? rememberedUsername,
     bool? rememberPassword,
     Map<String, bool>? dashboardSections,
+    List<String>? dashboardOrder,
     LlmConfig? llm,
   }) =>
       AppPrefs(
@@ -70,6 +75,7 @@ class AppPrefs {
         rememberedUsername: rememberedUsername ?? this.rememberedUsername,
         rememberPassword: rememberPassword ?? this.rememberPassword,
         dashboardSections: dashboardSections ?? this.dashboardSections,
+        dashboardOrder: dashboardOrder ?? this.dashboardOrder,
         llm: llm ?? this.llm,
       );
 
@@ -80,6 +86,7 @@ class AppPrefs {
         'rememberedUsername': rememberedUsername,
         'rememberPassword': rememberPassword,
         'dashboardSections': dashboardSections,
+        'dashboardOrder': dashboardOrder,
         'llm': llm.toJson(),
       };
 
@@ -94,6 +101,9 @@ class AppPrefs {
         rememberPassword: json['rememberPassword'] == true,
         dashboardSections: ((json['dashboardSections'] as Map?) ?? const {})
             .map((k, v) => MapEntry(k.toString(), v == true)),
+        dashboardOrder: ((json['dashboardOrder'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
         llm: json['llm'] is Map<String, dynamic>
             ? LlmConfig.fromJson(json['llm'] as Map<String, dynamic>)
             : defaultLlm,
@@ -497,6 +507,48 @@ class AppState extends ChangeNotifier {
     final next = Map<String, bool>.from(prefs.dashboardSections);
     next[key] = prefs.dashboardSections[key] == false;
     prefs = prefs.copyWith(dashboardSections: next);
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  /// 默认板块顺序。与 `overview_tab.dart` 里的保持一致。
+  static const List<String> defaultSectionOrder = [
+    'stats',
+    'unsubmitted',
+    'soon',
+    'charts',
+    'courses',
+  ];
+
+  /// 完整顺序：先按用户排的，顺序表里没提到的按默认补在后面。
+  List<String> effectiveSectionOrder() {
+    final out = <String>[];
+    for (final k in prefs.dashboardOrder) {
+      if (defaultSectionOrder.contains(k) && !out.contains(k)) out.add(k);
+    }
+    for (final k in defaultSectionOrder) {
+      if (!out.contains(k)) out.add(k);
+    }
+    return out;
+  }
+
+  /// 把某个板块上移或下移一位。
+  Future<void> moveDashboardSection(String key, int direction) async {
+    final full = effectiveSectionOrder();
+    final i = full.indexOf(key);
+    final j = i + direction;
+    if (i < 0 || j < 0 || j >= full.length) return;
+    final next = [...full];
+    final tmp = next[i];
+    next[i] = next[j];
+    next[j] = tmp;
+    prefs = prefs.copyWith(dashboardOrder: next);
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  Future<void> resetDashboardOrder() async {
+    prefs = prefs.copyWith(dashboardOrder: const []);
     notifyListeners();
     await _savePrefs();
   }

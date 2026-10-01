@@ -18,6 +18,9 @@ class OverviewTab extends StatelessWidget {
     required this.sections,
     required this.onToggleSection,
     required this.onOpenAssignment,
+    required this.sectionOrder,
+    required this.onMoveSection,
+    required this.onResetOrder,
   });
 
   final List<CourseSummary> courses;
@@ -31,6 +34,11 @@ class OverviewTab extends StatelessWidget {
   final Map<String, bool> sections;
   final void Function(String key) onToggleSection;
   final void Function(AssignmentRow row) onOpenAssignment;
+
+  /// 用户排定的板块顺序；空列表表示默认顺序。
+  final List<String> sectionOrder;
+  final void Function(String key, int direction) onMoveSection;
+  final VoidCallback onResetOrder;
 
   bool _show(String key) => sections[key] != false;
 
@@ -94,14 +102,12 @@ class OverviewTab extends StatelessWidget {
 
     final totalOpen = unsubmitted.overdue.length + unsubmitted.pending.length;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: [
-        // --- 板块开关 ---
-        _SectionToggles(sections: sections, onToggle: onToggleSection),
-        const SizedBox(height: 14),
-
-        // --- 统计 ---
+    // 各板块的 Widget 列表。用 Map 存起来再按用户排的顺序拼，
+    // 而不是把整段拆成回调——板块内容长且各带条件渲染，拆开只会更难读。
+    // 每个板块自带前导 Gap.lg，换顺序时间距依然对。
+    final blocks = <String, List<Widget>>{
+      // --- 统计 ---
+      'stats': [
         Row(
           children: [
             Expanded(
@@ -157,12 +163,13 @@ class OverviewTab extends StatelessWidget {
             ),
           ],
         ),
+      ],
 
-        // --- 未提交的作业 ---
-        // 注意：这一段必须独立于「三天内截止」——三天内没有截止作业时
-        // 未提交清单仍然要显示，否则越是有欠交的人越看不到自己欠了什么。
-        Gap.lg,
+      // --- 未提交的作业 ---
+      // 与「三天内截止」各自独立：关掉一个不该连带关掉另一个。
+      'unsubmitted': [
         if (_show('unsubmitted') && !hideUnsubmitted && totalOpen > 0) ...[
+            Gap.lg,
             SectionHeader(
               '未提交的作业',
               icon: Icons.inbox_outlined,
@@ -206,11 +213,13 @@ class OverviewTab extends StatelessWidget {
               ),
             ],
         ],
-        Gap.lg,
+      ],
 
-        // 这一段必须与上面的「未提交的作业」并列，不能嵌在里面——
-        // 否则没有欠交作业的人反而看不到临近的截止。
+      // --- 三天内截止 ---
+      // 与「未提交的作业」各自独立：关掉一个不该连带关掉另一个。
+      'soon': [
         if (_show('soon') && soon.isNotEmpty) ...[
+          Gap.lg,
           SectionHeader('三天内截止', icon: Icons.schedule, iconColor: p.warn, trailing: _count(soon.length)),
             AppCard(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -224,8 +233,10 @@ class OverviewTab extends StatelessWidget {
               ),
             ),
           ],
+      ],
 
-        // --- 得分图 ---
+      // --- 得分图 ---
+      'charts': [
         if (_show('charts')) ...[
           Gap.lg,
           const SectionHeader('各课程当前得分', icon: Icons.bar_chart, iconColor: null),
@@ -286,8 +297,10 @@ class OverviewTab extends StatelessWidget {
           ),
           ),
         ],
+      ],
 
-        // --- 全部课程 ---
+      // --- 全部课程 ---
+      'courses': [
         if (_show('courses')) ...[
           Gap.lg,
           SectionHeader('课程', trailing: _count(courses.length)),
@@ -302,7 +315,45 @@ class OverviewTab extends StatelessWidget {
           ],
         ],
       ],
+    };
+
+    // 按用户排的顺序拼；顺序表里没提到的按默认顺序补在后面，
+    // 所以以后新增板块时老用户也不会漏看。
+    final orderedKeys = _orderedSectionKeys();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      children: [
+        _SectionToggles(
+          sections: sections,
+          order: orderedKeys,
+          onToggle: onToggleSection,
+          onMove: onMoveSection,
+          onReset: onResetOrder,
+        ),
+        const SizedBox(height: 14),
+        for (final k in orderedKeys) ...(blocks[k] ?? const <Widget>[]),
+      ],
     );
+  }
+
+  /// 默认的板块顺序。
+  static const List<String> _defaultSectionOrder = [
+    'stats',
+    'unsubmitted',
+    'soon',
+    'charts',
+    'courses',
+  ];
+
+  List<String> _orderedSectionKeys() {
+    final out = <String>[];
+    for (final k in sectionOrder) {
+      if (_defaultSectionOrder.contains(k) && !out.contains(k)) out.add(k);
+    }
+    for (final k in _defaultSectionOrder) {
+      if (!out.contains(k)) out.add(k);
+    }
+    return out;
   }
 
   Widget _count(int n) => Builder(
@@ -393,10 +444,21 @@ class _TodoGroupTitle extends StatelessWidget {
 /// 放在首页最上面而不是塞进设置里：这些开关调的就是当前这一页，
 /// 就地能改比翻菜单直观。
 class _SectionToggles extends StatelessWidget {
-  const _SectionToggles({required this.sections, required this.onToggle});
+  const _SectionToggles({
+    required this.sections,
+    required this.order,
+    required this.onToggle,
+    required this.onMove,
+    required this.onReset,
+  });
 
   final Map<String, bool> sections;
+
+  /// 已经算好的完整顺序（含默认补位）。
+  final List<String> order;
   final void Function(String key) onToggle;
+  final void Function(String key, int direction) onMove;
+  final VoidCallback onReset;
 
   static const _items = <({String key, String label, IconData icon})>[
     (key: 'stats', label: '数据概览', icon: Icons.insights_outlined),
@@ -409,42 +471,117 @@ class _SectionToggles extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    // 胶囊也按用户排的顺序显示，和下面的板块一一对应。
+    final byKey = {for (final it in _items) it.key: it};
+    final ordered = [
+      for (final k in order)
+        if (byKey.containsKey(k)) byKey[k]!,
+      for (final it in _items)
+        if (!order.contains(it.key)) it,
+    ];
+    final canReset = order.length != _items.length ||
+        !List.generate(_items.length, (i) => order[i] == _items[i].key).every((x) => x);
+
     return Wrap(
       spacing: 7,
       runSpacing: 7,
       children: [
-        for (final it in _items)
+        for (var i = 0; i < ordered.length; i++)
           Builder(builder: (context) {
+            final it = ordered[i];
             final on = sections[it.key] != false;
-            return InkWell(
-              onTap: () => onToggle(it.key),
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                decoration: BoxDecoration(
-                  color: on ? p.accent.withValues(alpha: 0.12) : p.surface,
-                  border: Border.all(color: on ? p.accent : p.border),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(it.icon, size: 13, color: on ? p.accent : p.muted),
-                    const SizedBox(width: 5),
-                    Text(
-                      it.label,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: on ? p.accent : p.textDim,
-                        fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+            return Container(
+              decoration: BoxDecoration(
+                color: on ? p.accent.withValues(alpha: 0.12) : p.surface,
+                border: Border.all(color: on ? p.accent : p.border),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: () => onToggle(it.key),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(11, 6, 4, 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(it.icon, size: 13, color: on ? p.accent : p.muted),
+                          const SizedBox(width: 5),
+                          Text(
+                            it.label,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: on ? p.accent : p.textDim,
+                              fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  // 排序：和桌面端的 ▲▼ 语义一致
+                  _MoveButton(
+                    label: '▲',
+                    enabled: i > 0,
+                    onTap: () => onMove(it.key, -1),
+                    color: on ? p.accent : p.muted,
+                  ),
+                  _MoveButton(
+                    label: '▼',
+                    enabled: i < ordered.length - 1,
+                    onTap: () => onMove(it.key, 1),
+                    color: on ? p.accent : p.muted,
+                  ),
+                  const SizedBox(width: 4),
+                ],
               ),
             );
           }),
+        if (canReset)
+          InkWell(
+            onTap: onReset,
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+              decoration: BoxDecoration(
+                color: p.surface,
+                border: Border.all(color: p.border),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text('恢复默认', style: TextStyle(fontSize: 12.5, color: p.textDim)),
+            ),
+          ),
       ],
+    );
+  }
+}
+
+/// 排序用的小三角。
+class _MoveButton extends StatelessWidget {
+  const _MoveButton({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+    required this.color,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+        child: Text(
+          label,
+          style: TextStyle(fontSize: 8, height: 1, color: color.withValues(alpha: enabled ? 1 : 0.25)),
+        ),
+      ),
     );
   }
 }

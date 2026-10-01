@@ -214,6 +214,9 @@ void main() {
             hideUnsubmitted: false,
             sections: const {},
             onToggleSection: (_) {},
+            sectionOrder: const [],
+            onMoveSection: (_, __) {},
+            onResetOrder: () {},
             onOpenAssignment: (_) {},
             onSelectCourse: (_) {},
           ),
@@ -269,6 +272,9 @@ void main() {
             hideUnsubmitted: false,
             sections: const {},
             onToggleSection: (_) {},
+            sectionOrder: const [],
+            onMoveSection: (_, __) {},
+            onResetOrder: () {},
             onOpenAssignment: (_) {},
             onSelectCourse: (_) {},
           ),
@@ -311,6 +317,9 @@ void main() {
             hideUnsubmitted: false,
             sections: const {'unsubmitted': false},
             onToggleSection: (_) {},
+            sectionOrder: const [],
+            onMoveSection: (_, __) {},
+            onResetOrder: () {},
             onOpenAssignment: (_) {},
             onSelectCourse: (_) {},
           ),
@@ -417,6 +426,143 @@ void main() {
 
       // 外壳启动后会自动选中当前学期。
       expect(find.text('$currentCount'), findsWidgets);
+    });
+  });
+
+  group('首页板块排序', () {
+    test('effectiveSectionOrder 总是给出完整且不重复的顺序', () {
+      final s = AppState(store: MemoryStore(), demo: true);
+      // 新装的用户顺序表是空的，应当拿到完整默认顺序。
+      expect(s.effectiveSectionOrder(), AppState.defaultSectionOrder);
+      expect(s.effectiveSectionOrder().toSet().length, AppState.defaultSectionOrder.length);
+    });
+
+    testWidgets('按 sectionOrder 决定渲染先后', (tester) async {
+      // 视口要够高，否则 ListView 懒加载会把靠后的板块整块跳过，
+      // find.byType(...).first 直接抛 No element。
+      tester.view.physicalSize = const Size(1200, 9000);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final s = buildDemoSnapshot();
+
+      Future<void> pumpWith(List<String> order) async {
+        await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(
+            body: OverviewTab(
+              courses: s.courses,
+              assignments: s.assignments,
+              todo: s.todo,
+              termName: '全部学期',
+              hideUnsubmitted: false,
+              sections: const {},
+              sectionOrder: order,
+              onToggleSection: (_) {},
+              onMoveSection: (_, __) {},
+              onResetOrder: () {},
+              onOpenAssignment: (_) {},
+              onSelectCourse: (_) {},
+            ),
+          ),
+        ));
+        await tester.pumpAndSettle();
+      }
+
+      // 默认顺序：统计卡在前，课程卡在后。
+      await pumpWith(const []);
+      final statY1 = tester.getTopLeft(find.byType(StatCard).first).dy;
+      final courseY1 = tester.getTopLeft(find.byType(CourseCard).first).dy;
+      expect(statY1 < courseY1, isTrue, reason: '默认顺序里统计卡应当在课程卡上面');
+
+      // 把课程卡片排到最前，位置应当真的换过来。
+      await pumpWith(const ['courses', 'stats', 'unsubmitted', 'soon', 'charts']);
+      final statY2 = tester.getTopLeft(find.byType(StatCard).first).dy;
+      final courseY2 = tester.getTopLeft(find.byType(CourseCard).first).dy;
+      expect(courseY2 < statY2, isTrue, reason: '调换顺序后课程卡应当跑到统计卡上面');
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('胶囊上的 ▲▼ 都渲染出来了', (tester) async {
+      // 点击行为交给下面的纯状态测试覆盖；这里只确认按钮确实画出来了，
+      // 免得出现「逻辑对但界面上根本没有入口」。
+      tester.view.physicalSize = const Size(1200, 3000);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final s = buildDemoSnapshot();
+      final state = AppState(store: MemoryStore(), demo: true);
+      await state.boot();
+
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: AnimatedBuilder(
+            animation: state,
+            builder: (context, _) => OverviewTab(
+              courses: s.courses,
+              assignments: s.assignments,
+              todo: s.todo,
+              termName: '全部学期',
+              hideUnsubmitted: false,
+              sections: state.prefs.dashboardSections,
+              sectionOrder: state.effectiveSectionOrder(),
+              onToggleSection: (k) => state.toggleDashboardSection(k),
+              onMoveSection: (k, d) => state.moveDashboardSection(k, d),
+              onResetOrder: () => state.resetDashboardOrder(),
+              onOpenAssignment: (_) {},
+              onSelectCourse: (_) {},
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // 5 个板块各一个上移一个下移。
+      expect(find.text('▲'), findsNWidgets(5));
+      expect(find.text('▼'), findsNWidgets(5));
+      expect(tester.takeException(), isNull);
+    });
+
+    test('moveDashboardSection 上移下移与边界', () async {
+      final s = AppState(store: MemoryStore(), demo: true);
+      await s.boot();
+
+      expect(s.effectiveSectionOrder().first, 'stats');
+
+      // 「课程卡片」原本在最后，上移一位应当变成倒数第二。
+      await s.moveDashboardSection('courses', -1);
+      var order = s.effectiveSectionOrder();
+      expect(order[order.length - 2], 'courses');
+
+      // 再上移一次，继续往前。
+      await s.moveDashboardSection('courses', -1);
+      order = s.effectiveSectionOrder();
+      expect(order[order.length - 3], 'courses');
+
+      // 已经在最前时再上移不该出事，也不该把它挪走。
+      await s.moveDashboardSection(order.first, -1);
+      expect(s.effectiveSectionOrder().first, order.first);
+
+      // 顺序表里没提到过的板块也要在，且不重复。
+      expect(s.effectiveSectionOrder().toSet().length, AppState.defaultSectionOrder.length);
+
+      await s.resetDashboardOrder();
+      expect(s.effectiveSectionOrder(), AppState.defaultSectionOrder);
+    });
+
+    test('顺序能存进偏好并读回来', () async {
+      final store = MemoryStore();
+      final a = AppState(store: store, demo: true);
+      await a.boot();
+      await a.moveDashboardSection('courses', -1);
+      final expected = a.effectiveSectionOrder();
+
+      // 同一个 store 新建实例，模拟重开应用。
+      final b = AppState(store: store, demo: true);
+      await b.boot();
+      expect(b.effectiveSectionOrder(), expected);
     });
   });
 }
