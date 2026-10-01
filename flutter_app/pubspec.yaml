@@ -1,7 +1,7 @@
 name: fudan_elearning
 description: 复旦大学 eLearning 学习看板 — iOS / Android 客户端
 publish_to: 'none'
-version: 0.7.6+10
+version: 0.7.7+11
 
 environment:
   sdk: '>=3.5.0 <4.0.0'

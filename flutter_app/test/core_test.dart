@@ -360,4 +360,181 @@ void main() {
       expect(CanvasClient.parseNextLink(''), isNull);
     });
   });
+
+  group('getAllPages 真的会解析出对象', () {
+    // 这一组是补的回归测试。
+    //
+    // 原先 getAllPages 用的是 `data.whereType<T>()`，而 JSON 解出来的是
+    // Map<String, dynamic> —— whereType<CanvasAssignment>() 一个都匹配不上，
+    // 于是作业和作业分组在所有平台上恒为空列表，课程却正常显示。
+    //
+    // 之前的测试只覆盖了 buildQuery 和 parseNextLink，从没跑过 getAllPages
+    // 本身，所以这个 bug 一路潜伏到了真机上。
+    test('作业会被解析成 CanvasAssignment，而不是空列表', () async {
+      final t = _JsonTransport({
+        '/api/v1/courses/7/assignments': [
+          {
+            'id': 101,
+            'name': '实验一',
+            'points_possible': 100,
+            'due_at': '2026-10-01T23:59:00Z',
+            'submission': {'workflow_state': 'unsubmitted'},
+          },
+          {
+            'id': 102,
+            'name': '实验二',
+            'points_possible': 50,
+            'due_at': null,
+            'submission': {'score': 45, 'workflow_state': 'graded'},
+          },
+        ],
+      });
+      final client = CanvasClient(HttpClientLite(jar: CookieJar(), transport: t));
+
+      final rows = await client.getAssignments(7);
+      expect(rows.length, 2, reason: '解析不出对象的话这里会是 0');
+      expect(rows.first.id, 101);
+      expect(rows.first.name, '实验一');
+      expect(rows.first.pointsPossible, 100);
+      expect(rows[1].submission?.score, 45);
+    });
+
+    test('作业分组会被解析成对象', () async {
+      final t = _JsonTransport({
+        '/api/v1/courses/7/assignment_groups': [
+          {'id': 1, 'name': '平时作业', 'group_weight': 40},
+          {'id': 2, 'name': '期末考试', 'group_weight': 60},
+        ],
+      });
+      final client = CanvasClient(HttpClientLite(jar: CookieJar(), transport: t));
+
+      final groups = await client.getAssignmentGroups(7);
+      expect(groups.length, 2);
+      expect(groups.first.name, '平时作业');
+      expect(groups.first.groupWeight, 40);
+    });
+
+    test('课程昵称会被解析成对象', () async {
+      final t = _JsonTransport({
+        '/api/v1/users/self/course_nicknames': [
+          {'course_id': 7, 'name': '数据结构', 'nickname': 'DS'},
+        ],
+      });
+      final client = CanvasClient(HttpClientLite(jar: CookieJar(), transport: t));
+
+      final nicks = await client.getCourseNicknames();
+      expect(nicks.length, 1);
+      expect(nicks.first.nickname, 'DS');
+    });
+
+    test('跟随 Link 头翻页并合并', () async {
+      final t = _JsonTransport({
+        '/api/v1/courses/7/assignments': [
+          {'id': 1, 'name': '第一页'},
+        ],
+        '/api/v1/courses/7/assignments?page=2': [
+          {'id': 2, 'name': '第二页'},
+        ],
+      }, linkFor: {
+        '/api/v1/courses/7/assignments':
+            '<https://elearning.fudan.edu.cn/api/v1/courses/7/assignments?page=2>; rel="next"',
+      });
+      final client = CanvasClient(HttpClientLite(jar: CookieJar(), transport: t));
+
+      final rows = await client.getAssignments(7);
+      expect(rows.map((a) => a.id).toList(), [1, 2]);
+      // 第一页带 include[]/per_page/order_by，所以只断言「确实翻了第二页」
+      expect(t.seen.length, 2, reason: '翻页应当恰好请求两次');
+      expect(t.seen.last, endsWith('page=2'));
+    });
+
+    test('列表里的非对象项被跳过，不会抛异常', () async {
+      final t = _JsonTransport({
+        '/api/v1/courses/7/assignments': [
+          {'id': 1, 'name': '正常'},
+          'oops',
+          42,
+          null,
+        ],
+      });
+      final client = CanvasClient(HttpClientLite(jar: CookieJar(), transport: t));
+
+      final rows = await client.getAssignments(7);
+      expect(rows.length, 1);
+      expect(rows.first.id, 1);
+    });
+  });
+}
+
+/// 按路径返回固定 JSON 的假传输层。
+///
+/// 直接返回**真实的 JSON 字符串**（而不是解析好的对象），
+/// 这样才能覆盖「JSON → Map → 模型」这条真正的链路——
+/// 之前那个 bug 恰恰出在这一段。
+///
+/// 查找顺序：
+///   1. `路径?page=N`（翻页测试用这个键区分第几页）
+///   2. `路径`
+///
+/// 查询串的其余部分一律忽略——真实请求带的是
+/// `?include%5B%5D=submission&per_page=100&order_by=due_at`，
+/// 让每个测试去拼它只会让夹具又长又脆。
+class _JsonTransport implements HttpTransport {
+  _JsonTransport(this.routes, {this.linkFor = const {}});
+
+  final Map<String, Object?> routes;
+  final Map<String, String> linkFor;
+
+  /// 实际发出的请求（路径 + 查询串），用来断言翻页真的发生了。
+  final List<String> seen = [];
+
+  /// 查找规则：**有 `page` 参数时只认精确键**，否则认路径。
+  ///
+  /// 这里不能对带 page 的请求回退到路径——那样第 2 页会又拿到第 1 页的
+  /// next 链接，翻页永远停不下来（第一版夹具就是这么写的，跑了满 40 页
+  /// 才被 getAllPages 的 maxPages 兜住）。
+  static T? _lookup<T>(Map<String, T> map, Uri uri) {
+    final page = uri.queryParameters['page'];
+    if (page != null) return map['${uri.path}?page=$page'];
+    return map[uri.path];
+  }
+
+  @override
+  Future<RawResponse> send(
+    String url, {
+    required String method,
+    required Map<String, String> headers,
+    String? body,
+    required Duration timeout,
+  }) async {
+    final uri = Uri.parse(url);
+    seen.add(uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path);
+
+    final payload = _lookup(routes, uri);
+    if (payload == null) {
+      return RawResponse(
+        statusCode: 404,
+        uri: uri,
+        headers: const {},
+        setCookies: const [],
+        body: '{"errors":[{"message":"no route for ${uri.path}"}]}',
+      );
+    }
+
+    final link = _lookup(linkFor, uri);
+    return RawResponse(
+      statusCode: 200,
+      uri: uri,
+      headers: link == null
+          ? const {}
+          : {
+              'link': [link],
+            },
+      setCookies: const [],
+      body: jsonEncode(payload),
+    );
+  }
+
+  @override
+  void close() {}
 }

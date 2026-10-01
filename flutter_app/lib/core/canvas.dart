@@ -73,11 +73,22 @@ class CanvasClient {
   }
 
   /// 跟随 Canvas 分页直到取完（带页数上限以防意外）。
+  ///
+  /// [parse] 是**必填**的，这是刻意的：
+  ///
+  /// 原先的写法是 `data.whereType<T>()`，看起来聪明，实际上永远返回空——
+  /// JSON 解出来的是 `Map<String, dynamic>`，`whereType<CanvasAssignment>()`
+  /// 一个都匹配不上。结果就是作业和作业分组在任何平台上恒为空，
+  /// 而课程还能正常显示（因为它恰好走了「先取 Map 再 map」的写法）。
+  ///
+  /// 改成显式传解析函数后，类型系统就挡住这类错误了：
+  /// 想让 T 是模型类型，就必须给出 `T Function(Map)`；给不出就说明写错了。
   Future<List<T>> getAllPages<T>(
-    String path, [
+    String path,
     Map<String, Object?>? params,
+    T Function(Map<String, dynamic>) parse, {
     int maxPages = 40,
-  ]) async {
+  }) async {
     String? url = path.startsWith('http') ? path : '$canvasBase$path${buildQuery(params)}';
     final out = <T>[];
     var pages = 0;
@@ -86,7 +97,9 @@ class CanvasClient {
       final res = await _fetchJson(url);
       final data = res.data;
       if (data is List) {
-        out.addAll(data.whereType<T>());
+        for (final item in data) {
+          if (item is Map<String, dynamic>) out.add(parse(item));
+        }
       }
       url = parseNextLink(res.link);
       pages++;
@@ -113,9 +126,10 @@ class CanvasClient {
     final includes = <String>['enrollments', 'term'];
     if (includeTotalScores) includes.add('total_scores');
 
-    final base = await getAllPages<Map<String, dynamic>>(
+    final base = await getAllPages(
       '/api/v1/courses',
       {'include': includes, 'per_page': 100},
+        (m) => m,
     );
     final courses = base.map(CanvasCourse.fromJson).toList();
 
@@ -131,9 +145,10 @@ class CanvasClient {
 
     final merged = <int, CanvasCourse>{for (final c in courses) c.id: c};
     try {
-      final completed = await getAllPages<Map<String, dynamic>>(
+      final completed = await getAllPages(
         '/api/v1/courses',
         {'include': includes, 'per_page': 100, 'enrollment_state': 'completed'},
+        (m) => m,
       );
       for (final raw in completed) {
         final c = CanvasCourse.fromJson(raw);
@@ -145,17 +160,18 @@ class CanvasClient {
     return merged.values.toList();
   }
 
-  Future<List<CanvasAssignmentGroup>> getAssignmentGroups(int courseId) => getAllPages<
-      CanvasAssignmentGroup>(
-    '/api/v1/courses/$courseId/assignment_groups',
-    {'per_page': 100},
-  );
+  Future<List<CanvasAssignmentGroup>> getAssignmentGroups(int courseId) => getAllPages(
+        '/api/v1/courses/$courseId/assignment_groups',
+        {'per_page': 100},
+        CanvasAssignmentGroup.fromJson,
+      );
 
   /// 某门课的作业，每条都带上当前用户的提交记录。
   Future<List<CanvasAssignment>> getAssignments(int courseId) =>
-      getAllPages<CanvasAssignment>(
+      getAllPages(
         '/api/v1/courses/$courseId/assignments',
         {'include': ['submission'], 'per_page': 100, 'order_by': 'due_at'},
+        CanvasAssignment.fromJson,
       );
 
   /// 单条作业，带完整 description。
@@ -179,25 +195,28 @@ class CanvasClient {
     return data.whereType<Map<String, dynamic>>().map(CanvasTodoItem.fromJson).toList();
   }
 
-  Future<List<CanvasNickname>> getCourseNicknames() => getAllPages<CanvasNickname>(
+  Future<List<CanvasNickname>> getCourseNicknames() => getAllPages(
         '/api/v1/users/self/course_nicknames',
         {'per_page': 100},
+        CanvasNickname.fromJson,
       );
 
   /// 课程里的文件夹（扁平列表，用 parent_folder_id 表达层级）。
   Future<List<CanvasFolder>> getCourseFolders(int courseId) async {
-    final rows = await getAllPages<Map<String, dynamic>>(
+    final rows = await getAllPages(
       '/api/v1/courses/$courseId/folders',
       {'per_page': 100},
+        (m) => m,
     );
     return rows.map(CanvasFolder.fromJson).toList();
   }
 
   /// 课程里的文件（扁平列表，用 folder_id 归属到文件夹）。
   Future<List<CanvasFile>> getCourseFiles(int courseId) async {
-    final rows = await getAllPages<Map<String, dynamic>>(
+    final rows = await getAllPages(
       '/api/v1/courses/$courseId/files',
       {'per_page': 100},
+        (m) => m,
     );
     // 隐藏的、以及没有下载地址的（通常是锁定文件）直接丢掉，界面上点了也没用。
     return rows
