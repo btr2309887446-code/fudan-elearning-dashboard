@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { filterIgnored, toIgnoredSet } from '../../../core/ignored';
 import type { AssignmentRow, Snapshot } from '../../../core/types';
 import { dueRelative, formatDate, isCompleted } from '../util';
 import type { TermFilter } from '../types';
@@ -7,6 +8,8 @@ interface Props {
   snapshot: Snapshot;
   termFilter: TermFilter;
   hideUnsubmitted: boolean;
+  /** 手动标记为「无需提交」的作业键；不进时间线。 */
+  ignoredKeys: string[];
   onSelectCourse: (id: number) => void;
   /** 点「详情」时把原始作业行交出去，由 App 打开浮层。 */
   onOpenAssignment: (row: AssignmentRow) => void;
@@ -32,17 +35,23 @@ export default function Timeline({
   snapshot,
   termFilter,
   hideUnsubmitted,
+  ignoredKeys,
   onSelectCourse,
   onOpenAssignment,
 }: Props) {
   const [showCompleted, setShowCompleted] = useState(false);
+  // 标记为「无需提交」的不进时间线——它们永远不会有截止动作。
+  const ignoredSet = useMemo(() => toIgnoredSet(ignoredKeys), [ignoredKeys]);
 
   const items = useMemo<Item[]>(() => {
     // Scope to the selected semester before doing anything else.
     const courses =
       termFilter === 'all' ? snapshot.courses : snapshot.courses.filter((c) => c.termId === termFilter);
     const ids = new Set(courses.map((c) => c.id));
-    const scoped = snapshot.assignments.filter((a) => ids.has(a.courseId));
+    const scoped = filterIgnored(
+      snapshot.assignments.filter((a) => ids.has(a.courseId)),
+      ignoredSet
+    );
     const scopedTodo = snapshot.todo.filter((t) => t.courseId === null || ids.has(t.courseId));
 
     const byAssignment = new Map<number, Item>();
@@ -94,7 +103,7 @@ export default function Timeline({
       const tb = b.dueAt ? Date.parse(b.dueAt) : Number.MAX_SAFE_INTEGER;
       return ta - tb;
     });
-  }, [snapshot, termFilter]);
+  }, [snapshot, termFilter, ignoredSet]);
 
   const now = Date.now();
   // While ignoring unsubmitted work, finished items are the whole point of the

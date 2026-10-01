@@ -325,6 +325,61 @@
         }
       }
     }
+  } else if (target === 'ignore') {
+    // 「无需提交」标记：点一条未交作业 → 标记 → 它应当从未交清单里消失。
+    const countRows = () => document.querySelectorAll('.todo-group .tl-item').length;
+    const before = countRows();
+    const item = document.querySelector('.todo-group .tl-item');
+    if (!item) {
+      done = 'ignore: 未交清单是空的';
+    } else {
+      const title = (item.querySelector('.tl-title') || {}).textContent || '';
+      item.click();
+      await sleep(500);
+
+      const btn = Array.from(document.querySelectorAll('.modal-foot .btn')).find((b) =>
+        b.textContent.includes('无需提交')
+      );
+      if (!btn) {
+        done = `ignore: 详情页没有「无需提交」按钮 (按钮=${Array.from(document.querySelectorAll('.modal-foot .btn')).map((b) => b.textContent.trim()).join('|')})`;
+      } else {
+        btn.click();
+        await sleep(400);
+        const marked = !!Array.from(document.querySelectorAll('.modal-foot .btn')).find((b) =>
+          b.textContent.includes('已标记')
+        );
+        // 关掉详情
+        const closeBtn = Array.from(document.querySelectorAll('.modal-foot .btn')).find((b) =>
+          b.textContent.includes('关闭')
+        );
+        if (closeBtn) closeBtn.click();
+        await sleep(500);
+        const after = countRows();
+        done = `ignore; marked=${marked}; rows ${before}->${after}; removed=${after === before - 1}; title=${title.trim().slice(0, 12)}`;
+      }
+    }
+  } else if (target === 'settingsPanel') {
+    // 设置面板：外观页应当有主题按钮与板块列表，主界面不该再有板块栏。
+    const openBtn = Array.from(document.querySelectorAll('.icon-btn')).find((b) =>
+      (b.getAttribute('title') || '').includes('设置')
+    );
+    const strayBar = !!document.querySelector('.dash-customise');
+    const strayTheme = Array.from(document.querySelectorAll('.icon-btn')).some((b) =>
+      (b.getAttribute('title') || '').includes('深浅')
+    );
+    if (!openBtn) {
+      done = 'settingsPanel: 找不到设置按钮';
+    } else {
+      openBtn.click();
+      await sleep(500);
+      const tabs = Array.from(document.querySelectorAll('.settings-tab')).map((t) => t.textContent.trim());
+      const rows = document.querySelectorAll('.settings-section-row').length;
+      const themeBtn = Array.from(document.querySelectorAll('.modal .btn')).find((b) =>
+        b.textContent.includes('切换到')
+      );
+      done = `settingsPanel; tabs=[${tabs.join(',')}]; sectionRows=${rows}; themeBtn=${!!themeBtn}; 主界面板块栏=${strayBar}; 主界面主题钮=${strayTheme}`;
+      await sleep(400);
+    }
   } else if (target === 'darkReload') {
     // Seed localStorage, then reload so the very first paint is already dark -
     // capturePage only reliably returns the first composed frame here.

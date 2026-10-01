@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { filterIgnored, isIgnored, toIgnoredSet } from '../../../core/ignored';
 import type { AssignmentRow, Snapshot } from '../../../core/types';
 import type { TermFilter } from '../types';
 import {
@@ -29,15 +30,18 @@ interface Props {
   snapshot: Snapshot;
   termFilter: TermFilter;
   hideUnsubmitted: boolean;
-  /** 板块开关；缺省视为显示，新增板块老用户也能看到。 */
+  /** 板块开关；缺省视为显示，新增板块老用户也能看到。开关界面在设置面板里。 */
   sections: Record<string, boolean>;
-  onToggleSection: (key: string) => void;
   onOpenAssignment: (row: AssignmentRow) => void;
   onSelectCourse: (id: number) => void;
-  /** 用户排定的板块顺序（section key 列表）。 */
+  /**
+   * 用户排定的板块顺序（section key 列表）。
+   *
+   * 开关与排序的界面已经收进设置面板，这里只用来算 CSS `order`。
+   */
   sectionOrder: string[];
-  onMoveSection: (key: string, direction: -1 | 1) => void;
-  onResetOrder: () => void;
+  /** 被手动标记为「无需提交」的作业键；这些不计入缺交、也不出现在未交清单。 */
+  ignoredKeys: string[];
 }
 
 export default function Dashboard({
@@ -45,12 +49,10 @@ export default function Dashboard({
   termFilter,
   hideUnsubmitted,
   sections,
-  onToggleSection,
   onOpenAssignment,
   onSelectCourse,
   sectionOrder,
-  onMoveSection,
-  onResetOrder,
+  ignoredKeys,
 }: Props) {
   /**
    * 按用户排的顺序整理板块。
@@ -95,10 +97,35 @@ export default function Dashboard({
     };
   }, [snapshot, termFilter]);
 
+  // 被标记为「无需提交」的不算缺交。
+  const ignoredSet = useMemo(() => toIgnoredSet(ignoredKeys), [ignoredKeys]);
+
   const avg = averageScore(view.courses);
+
+  /**
+   * 每门课真正要交的数量。
+   *
+   * 从作业行现算，而不是直接用 `course.missingCount`——后者是主进程算好的，
+   * 不知道用户在本机标记了哪些「无需提交」。
+   */
+  const missingByCourse = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const a of view.assignments) {
+      if (a.missing && !isIgnored(ignoredSet, a.courseId, a.id)) {
+        m.set(a.courseId, (m.get(a.courseId) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [view.assignments, ignoredSet]);
+
+  const missingTotal = useMemo(
+    () => [...missingByCourse.values()].reduce((s, n) => s + n, 0),
+    [missingByCourse]
+  );
+
   // Unsubmitted work is what the "缺交" figure is made of, so ignoring it has
   // to zero the counter too.
-  const missing = hideUnsubmitted ? 0 : view.courses.reduce((s, c) => s + c.missingCount, 0);
+  const missing = hideUnsubmitted ? 0 : missingTotal;
   const late = view.courses.reduce((s, c) => s + c.lateCount, 0);
   const graded = view.courses.filter((c) => c.currentScore !== null).length;
   const upcoming = hideUnsubmitted ? 0 : view.todo.length;
@@ -107,8 +134,10 @@ export default function Dashboard({
   // page - unless it has already been handed in.
   const soon = hideUnsubmitted
     ? []
-    : view.assignments
-        .filter((a) => !isCompleted(a))
+    : filterIgnored(
+        view.assignments.filter((a) => !isCompleted(a)),
+        ignoredSet
+      )
         .filter((a) => a.dueAt && Date.parse(a.dueAt) > Date.now())
         .filter((a) => Date.parse(a.dueAt as string) - Date.now() < 3 * 86_400_000)
         .sort((a, b) => Date.parse(a.dueAt as string) - Date.parse(b.dueAt as string));
@@ -121,7 +150,12 @@ export default function Dashboard({
    */
   const unsubmitted = useMemo(() => {
     if (hideUnsubmitted) return { overdue: [] as AssignmentRow[], pending: [] as AssignmentRow[] };
-    const open = view.assignments.filter((a) => !isCompleted(a));
+    // 手动标记为「无需提交」的作业不出现在这里——否则签到、选做之类的东西
+    // 会一直挂着，把真正要交的淹掉。
+    const open = filterIgnored(
+      view.assignments.filter((a) => !isCompleted(a)),
+      ignoredSet
+    );
     const now = Date.now();
     const overdue: AssignmentRow[] = [];
     const pending: AssignmentRow[] = [];
@@ -137,7 +171,7 @@ export default function Dashboard({
     overdue.sort(byDue);
     pending.sort(byDue);
     return { overdue, pending };
-  }, [view.assignments, hideUnsubmitted]);
+  }, [view.assignments, hideUnsubmitted, ignoredSet]);
 
   const ranked = [...view.courses].sort(courseUrgency);
 
@@ -151,49 +185,6 @@ export default function Dashboard({
 
   return (
     <div className="dash-body">
-      {/* 板块开关与排序：放在最上面，随时可调 */}
-      <div className="dash-customise">
-        <span className="dash-customise-label">
-          <Icon name="sliders" size={15} />
-          首页板块
-        </span>
-        {orderedSections.map((s, i) => (
-          <span key={s.key} className={`dash-toggle ${show(s.key) ? 'on' : ''}`}>
-            <button
-              className="dash-toggle-main"
-              onClick={() => onToggleSection(s.key)}
-              title={show(s.key) ? '点击隐藏这个板块' : '点击显示这个板块'}
-            >
-              <Icon name={s.icon} size={13} />
-              {s.label}
-            </button>
-            {/* 排序：用 CSS order 重排，不动 JSX 结构 */}
-            <button
-              className="dash-move"
-              onClick={() => onMoveSection(s.key, -1)}
-              disabled={i === 0}
-              title="上移"
-            >
-              ▲
-            </button>
-            <button
-              className="dash-move"
-              onClick={() => onMoveSection(s.key, 1)}
-              disabled={i === orderedSections.length - 1}
-              title="下移"
-            >
-              ▼
-            </button>
-          </span>
-        ))}
-        <button
-          className="dash-toggle dash-reset"
-          onClick={onResetOrder}
-          title="恢复默认顺序"
-        >
-          恢复默认
-        </button>
-      </div>
 
       {show('stats') && (
         <div className="stat-grid" style={{ order: ord('stats') }}>
@@ -351,7 +342,7 @@ export default function Dashboard({
                   <div className="mini-body">
                     <div className="mini-title">{c.displayName}</div>
                     <div className="mini-sub">
-                      {!hideUnsubmitted && c.missingCount > 0 ? `缺交 ${c.missingCount} 项 · ` : ''}
+                      {!hideUnsubmitted && (missingByCourse.get(c.id) ?? 0) > 0 ? `缺交 ${(missingByCourse.get(c.id) ?? 0)} 项 · ` : ''}
                       {c.currentScore !== null ? scoreLabel(c.currentScore) : '暂无得分'}
                       {c.assignmentCount > 0 ? ` · 共 ${c.assignmentCount} 项作业` : ''}
                     </div>
@@ -409,13 +400,13 @@ export default function Dashboard({
                   {termFilter === 'all' && <span className="chip">{c.termName}</span>}
                   <span className="chip">{c.assignmentCount} 项作业</span>
                   {c.gradedCount > 0 && <span className="chip">已评分 {c.gradedCount}</span>}
-                  {!hideUnsubmitted && c.missingCount > 0 && (
-                    <span className="chip chip-bad">缺交 {c.missingCount}</span>
+                  {!hideUnsubmitted && (missingByCourse.get(c.id) ?? 0) > 0 && (
+                    <span className="chip chip-bad">缺交 {(missingByCourse.get(c.id) ?? 0)}</span>
                   )}
                   {!hideUnsubmitted && c.lateCount > 0 && (
                     <span className="chip chip-warn">迟交 {c.lateCount}</span>
                   )}
-                  {!hideUnsubmitted && c.missingCount === 0 && c.lateCount === 0 && c.assignmentCount > 0 && (
+                  {!hideUnsubmitted && (missingByCourse.get(c.id) ?? 0) === 0 && c.lateCount === 0 && c.assignmentCount > 0 && (
                     <span className="chip">全部按时</span>
                   )}
                 </div>

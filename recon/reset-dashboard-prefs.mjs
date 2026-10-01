@@ -23,13 +23,16 @@ const prefs = JSON.parse(readFileSync(path, 'utf8'));
 const before = {
   sections: JSON.stringify(prefs.dashboardSections ?? null),
   order: JSON.stringify(prefs.dashboardOrder ?? null),
+  ignored: JSON.stringify(prefs.ignoredAssignments ?? null),
 };
 
 delete prefs.dashboardSections;
 delete prefs.dashboardOrder;
+delete prefs.ignoredAssignments;
 
 writeFileSync(path, JSON.stringify(prefs, null, 2), 'utf8');
 console.log('已清除：');
-console.log('  dashboardSections =', before.sections);
-console.log('  dashboardOrder    =', before.order);
+console.log('  dashboardSections  =', before.sections);
+console.log('  dashboardOrder     =', before.order);
+console.log('  ignoredAssignments =', before.ignored);
 console.log('其余偏好保留：', Object.keys(prefs).join(', '));

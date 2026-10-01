@@ -14,8 +14,10 @@ import {
   htmlToPlainText,
   llmReady,
   makeExcerpt,
+  needsSummary,
   summarizeAssignment,
   summaryCacheKey,
+  summarySourceText,
   truncate,
   DEFAULT_LLM,
   EXCERPT_LENGTH,
@@ -135,7 +137,13 @@ console.log('\n[4] makeExcerpt / fallbackSummary');
 // [5] 大模型调用 -------------------------------------------------------------
 console.log('\n[5] summarizeAssignment');
 {
-  const html = '<p>写一份关于二叉搜索树的实验报告，包含插入、删除、查找三种操作的复杂度分析。</p>';
+  // 夹具必须超过 100 字，否则会被摘要门槛挡下、根本走不到大模型那条路。
+  // 门槛本身在 [6] 里单独测。
+  const html =
+    '<p>写一份关于二叉搜索树的实验报告，包含插入、删除、查找三种操作的复杂度分析。' +
+    '要求给出每种操作的平均情况与最坏情况时间复杂度推导过程，画出至少三种不同形态的树' +
+    '（平衡、退化成链、随机插入）并对比它们的查找效率，最后总结在什么情况下会退化以及' +
+    '如何用平衡树避免。</p>';
 
   // 未配置 → 直接降级
   eq('未配置时走降级', (await summarizeAssignment('实验五', html, DEFAULT_LLM)).source, 'fallback');
@@ -224,6 +232,47 @@ console.log('\n[6] summaryCacheKey');
   const x = summaryCacheKey(5, 'abcdefghij');
   const y = summaryCacheKey(5, 'abcdefghij'.split('').reverse().join(''));
   check('等长不同内容能区分', x !== y, `${x} vs ${y}`);
+}
+
+// [7] 摘要门槛 ---------------------------------------------------------------
+console.log('\n[7] needsSummary');
+{
+  // 大部分作业的要求本来就不到 100 字，这时候「精简」出来的东西
+  // 和原文信息量完全一样，白白调一次接口。所以短的直接不做摘要。
+  check('短正文不需要精简', !needsSummary('<p>交一份实验报告。</p>'));
+  check('刚好 100 字不需要精简', !needsSummary('字'.repeat(SUMMARY_LENGTH)));
+  check('101 字需要精简', needsSummary('字'.repeat(SUMMARY_LENGTH + 1)));
+  check('空正文不需要精简', !needsSummary('') && !needsSummary(null) && !needsSummary(undefined));
+  check('纯标签不算正文', !needsSummary('<p></p><div>   </div>'));
+  // HTML 标签本身不该被算进长度
+  check('标签不计入长度', !needsSummary(`<p>${'字'.repeat(SUMMARY_LENGTH)}</p>`));
+  check('首尾空白不计入长度', !needsSummary(`  ${'字'.repeat(SUMMARY_LENGTH)}  `));
+
+  eq('summarySourceText 去标签并 trim', summarySourceText('  <p>你好</p>  '), '你好');
+
+  // 短正文一次接口都不该调
+  {
+    let called = false;
+    const spy = (async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const cfg: LlmConfig = {
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'sk-test',
+      model: 'm',
+      enabled: true,
+    };
+    const shortRes = await summarizeAssignment('短作业', '<p>交一份报告。</p>', cfg, spy);
+    eq('短正文不调用接口', called, false);
+    eq('短正文来源是 none', shortRes.source, 'none');
+    eq('短正文不给摘要', shortRes.summary, '');
+
+    // 长正文才真的发请求
+    called = false;
+    await summarizeAssignment('长作业', '字'.repeat(SUMMARY_LENGTH + 1), cfg, spy);
+    eq('长正文会调用接口', called, true);
+  }
 }
 
 console.log(`\n=== 结果：${passed}/${passed + failed} 项通过 ===`);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { AssignmentRow, CanvasProfile, Snapshot } from '../../core/types';
+import { toggleIgnored } from '../../core/ignored';
 import AssignmentDetail from './components/AssignmentDetail';
 import CourseDetail from './components/CourseDetail';
 import Dashboard, { SECTIONS } from './components/Dashboard';
@@ -30,6 +31,8 @@ export default function App() {
   const [dashboardSections, setDashboardSections] = useState<Record<string, boolean>>({});
   /** 用户排定的板块顺序；空数组表示用默认顺序。 */
   const [dashboardOrder, setDashboardOrder] = useState<string[]>([]);
+  /** 手动标记为「无需提交」的作业键（courseId:assignmentId）。只影响显示。 */
+  const [ignoredAssignments, setIgnoredAssignments] = useState<string[]>([]);
   /** 当前打开的作业详情；null 表示浮层关闭。 */
   const [openAssignment, setOpenAssignment] = useState<AssignmentRow | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -85,6 +88,7 @@ export default function App() {
       setHideUnsubmitted(p.hideUnsubmitted === true);
       setDashboardSections(p.dashboardSections ?? {});
       setDashboardOrder(p.dashboardOrder ?? []);
+      setIgnoredAssignments(p.ignoredAssignments ?? []);
       // Never let a slow disk read undo a choice the user just made.
       if (!themeTouched.current) {
         if (p.theme === 'dark' || p.theme === 'light') {
@@ -178,6 +182,21 @@ export default function App() {
       await window.elearning.prefs.set({ dashboardOrder: next });
     } catch {
       /* 忽略 */
+    }
+  }
+
+  /**
+   * 打上或取消「无需提交」标记。
+   *
+   * 只写偏好、不动数据：标记是显示层的事，得分该怎样还怎样。
+   */
+  async function toggleIgnoredAssignment(courseId: number, id: number) {
+    const next = toggleIgnored(ignoredAssignments, courseId, id);
+    setIgnoredAssignments(next);
+    try {
+      await window.elearning.prefs.set({ ignoredAssignments: next });
+    } catch {
+      /* 偏好写失败不该影响界面 */
     }
   }
 
@@ -362,15 +381,13 @@ export default function App() {
             忽略未提交
           </button>
 
+          {/* 主题切换与「首页板块」都收进了设置面板：
+              这些是偶尔改一次的东西，常驻工具栏只会挤占视线。 */}
           <button
             className="icon-btn"
-            onClick={(e) => toggleTheme(e)}
-            title={theme === 'light' ? '切换到深色' : '切换到浅色'}
+            onClick={() => setSettingsOpen(true)}
+            title="设置（外观、首页板块、作业简介）"
           >
-            <Icon name={theme === 'light' ? 'moon' : 'sun'} size={18} />
-          </button>
-
-          <button className="icon-btn" onClick={() => setSettingsOpen(true)} title="设置（作业简介的大模型接口）">
             <Icon name="sliders" size={18} />
           </button>
 
@@ -402,9 +419,7 @@ export default function App() {
               hideUnsubmitted={hideUnsubmitted}
               sections={dashboardSections}
               sectionOrder={dashboardOrder}
-              onToggleSection={toggleDashboardSection}
-              onMoveSection={moveDashboardSection}
-              onResetOrder={resetDashboardOrder}
+              ignoredKeys={ignoredAssignments}
               onOpenAssignment={setOpenAssignment}
               onSelectCourse={openCourse}
             />
@@ -415,6 +430,7 @@ export default function App() {
               snapshot={snapshot}
               courseId={selectedCourse}
               hideUnsubmitted={hideUnsubmitted}
+              ignoredKeys={ignoredAssignments}
               onBack={closeCourse}
               onOpenAssignment={setOpenAssignment}
             />
@@ -425,6 +441,7 @@ export default function App() {
               snapshot={snapshot}
               termFilter={termFilter}
               hideUnsubmitted={hideUnsubmitted}
+              ignoredKeys={ignoredAssignments}
               onOpenAssignment={setOpenAssignment}
               onSelectCourse={(id) => {
                 setTab('overview');
@@ -437,10 +454,28 @@ export default function App() {
 
       {/* 作业详情浮层：点作业不再直接跳浏览器 */}
       {openAssignment && (
-        <AssignmentDetail row={openAssignment} onClose={() => setOpenAssignment(null)} />
+        <AssignmentDetail
+          row={openAssignment}
+          ignored={ignoredAssignments.includes(
+            `${openAssignment.courseId}:${openAssignment.id}`
+          )}
+          onToggleIgnored={() => toggleIgnoredAssignment(openAssignment.courseId, openAssignment.id)}
+          onClose={() => setOpenAssignment(null)}
+        />
       )}
 
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          theme={theme}
+          onToggleTheme={() => toggleTheme()}
+          sections={dashboardSections}
+          sectionOrder={effectiveOrder()}
+          onToggleSection={toggleDashboardSection}
+          onMoveSection={moveDashboardSection}
+          onResetOrder={resetDashboardOrder}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { isIgnored, toIgnoredSet } from '../../../core/ignored';
 import { buildCourseDetail } from '../../../core/scoring';
 import type { AssignmentRow, Snapshot } from '../../../core/types';
 import {
@@ -18,6 +19,8 @@ interface Props {
   snapshot: Snapshot;
   courseId: number;
   hideUnsubmitted: boolean;
+  /** 手动标记为「无需提交」的作业键；这些不计入本页的缺交数。 */
+  ignoredKeys: string[];
   onBack: () => void;
   onOpenAssignment: (row: AssignmentRow) => void;
 }
@@ -28,10 +31,12 @@ export default function CourseDetail({
   snapshot,
   courseId,
   hideUnsubmitted,
+  ignoredKeys,
   onBack,
   onOpenAssignment,
 }: Props) {
   const detail = useMemo(() => buildCourseDetail(snapshot, courseId), [snapshot, courseId]);
+  const ignoredSet = useMemo(() => toIgnoredSet(ignoredKeys), [ignoredKeys]);
   const [sort, setSort] = useState<SortKey>('due');
   const [onlyUnfinished, setOnlyUnfinished] = useState(false);
 
@@ -46,6 +51,13 @@ export default function CourseDetail({
     );
   }
   const { course, groups, assignments } = detail;
+
+  // 被标记为「无需提交」的不算缺交。这里现算，而不是直接用主进程给的
+  // course.missingCount——后者不知道用户在本机标了什么。
+  const missingCount = assignments.filter(
+    (r) => r.missing && !isIgnored(ignoredSet, r.courseId, r.id)
+  ).length;
+  const ignoredCount = assignments.filter((r) => isIgnored(ignoredSet, r.courseId, r.id)).length;
 
   let rows = [...assignments];
   if (hideUnsubmitted) rows = rows.filter((r) => isCompleted(r));
@@ -79,7 +91,8 @@ export default function CourseDetail({
               {course.finalScore !== null && <span className="chip">最终分 {formatScore(course.finalScore)}</span>}
               <span className="chip">{detail.gradingScheme === 'weighted' ? '按权重计分' : '按总分计分'}</span>
               <span className="chip">共 {course.assignmentCount} 项</span>
-              {course.missingCount > 0 && <span className="chip chip-bad">缺交 {course.missingCount}</span>}
+              {missingCount > 0 && <span className="chip chip-bad">缺交 {missingCount}</span>}
+              {ignoredCount > 0 && <span className="chip">已标记无需提交 {ignoredCount}</span>}
               {course.lateCount > 0 && <span className="chip chip-warn">迟交 {course.lateCount}</span>}
             </div>
           </div>

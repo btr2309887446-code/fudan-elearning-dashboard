@@ -23,10 +23,18 @@ import Icon from './Icon';
 
 interface Props {
   row: AssignmentRow;
+  /** 这条作业是否已被标记为「无需提交」。 */
+  ignored: boolean;
+  onToggleIgnored: () => void;
   onClose: () => void;
 }
 
-export default function AssignmentDetail({ row, onClose }: Props) {
+export default function AssignmentDetail({
+  row,
+  ignored,
+  onToggleIgnored,
+  onClose,
+}: Props) {
   // 退场动画期间先别卸载：直接消失和入场动画不对称。
   const backdropRef = useRef<HTMLDivElement>(null);
   const closing = useRef(false);
@@ -39,7 +47,7 @@ export default function AssignmentDetail({ row, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [description, setDescription] = useState('');
   const [summary, setSummary] = useState('');
-  const [source, setSource] = useState<'llm' | 'fallback'>('fallback');
+  const [source, setSource] = useState<'llm' | 'fallback' | 'none'>('none');
   const [summaryError, setSummaryError] = useState<string | undefined>();
   const [cached, setCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,26 +151,31 @@ export default function AssignmentDetail({ row, onClose }: Props) {
         </div>
 
         <div className="modal-body">
-          {/* --- 简介 --- */}
-          <div className="summary-block">
-            <div className="summary-head">
-              <Icon name={source === 'llm' ? 'sparkle' : 'file'} size={15} />
-              <span>{source === 'llm' ? 'AI 摘要' : '原文截取'}</span>
-              {cached && <span className="summary-note">已缓存</span>}
-              {source === 'fallback' && !summaryError && (
-                <span className="summary-note">未接入大模型，直接取描述前 100 字</span>
+          {/* --- 简介 ---
+              正文本来就不到 100 字时 source 是 'none'，此时摘要栏整个不出现：
+              「精简」一段本来就够短的说明，得到的东西和信息量一模一样，
+              只会白占一块地方。下面「完整说明」里就是原文。 */}
+          {source !== 'none' && (
+            <div className="summary-block">
+              <div className="summary-head">
+                <Icon name={source === 'llm' ? 'sparkle' : 'file'} size={15} />
+                <span>{source === 'llm' ? 'AI 摘要' : '原文截取'}</span>
+                {cached && <span className="summary-note">已缓存</span>}
+                {source === 'fallback' && !summaryError && (
+                  <span className="summary-note">未接入大模型，直接取描述前 100 字</span>
+                )}
+              </div>
+              <div className="summary-text">
+                {loading ? '正在生成简介…' : summary || '这条作业没有文字说明。'}
+              </div>
+              {summaryError && (
+                <div className="summary-err">
+                  {summaryError}
+                  <span style={{ color: 'var(--muted)' }}>（已降级为截取原文）</span>
+                </div>
               )}
             </div>
-            <div className="summary-text">
-              {loading ? '正在生成简介…' : summary || '这条作业没有文字说明。'}
-            </div>
-            {summaryError && (
-              <div className="summary-err">
-                {summaryError}
-                <span style={{ color: 'var(--muted)' }}>（已降级为截取原文）</span>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* --- 完整说明 --- */}
           <div className="section-head" style={{ marginTop: 18, marginBottom: 8 }}>
@@ -195,8 +208,27 @@ export default function AssignmentDetail({ row, onClose }: Props) {
 
         <div className="modal-foot">
           <div style={{ flex: 1, fontSize: 12, color: 'var(--muted)' }}>
-            {row.htmlUrl ? '富文本排版、附件与提交入口在网页版' : '这条作业没有网页版链接'}
+            {ignored
+              ? '已标记为「无需提交」，不会出现在未交清单里'
+              : row.htmlUrl
+                ? '富文本排版、附件与提交入口在网页版'
+                : '这条作业没有网页版链接'}
           </div>
+          {/* 有些作业本质上不用交（签到、选做、老师明说不用交的），
+              但 Canvas 仍算它们 unsubmitted，于是永远挂在未交清单里。
+              这里让用户手动摘掉——只影响显示，不改得分。 */}
+          <button
+            className={`btn ${ignored ? 'btn-primary' : ''}`}
+            onClick={onToggleIgnored}
+            title={
+              ignored
+                ? '恢复：重新计入未交清单'
+                : '标记为无需提交：从未交清单与缺交统计里移除'
+            }
+          >
+            <Icon name={ignored ? 'check' : 'inbox'} size={15} />
+            {ignored ? '已标记无需提交' : '无需提交'}
+          </button>
           {row.htmlUrl && (
             <button className="btn" onClick={() => void window.elearning.open(row.htmlUrl as string)}>
               <Icon name="external" size={15} /> 在浏览器中打开

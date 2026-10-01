@@ -133,13 +133,31 @@ export function makeExcerpt(html: string | null | undefined, limit = EXCERPT_LEN
 }
 
 /**
+ * 去掉 HTML、压掉空白后的正文。判断「要不要精简」和喂给大模型都用它。
+ */
+export function summarySourceText(description: string | null | undefined): string {
+  return htmlToPlainText(description).trim();
+}
+
+/**
+ * 正文长到需要精简吗？
+ *
+ * 门槛就是摘要长度本身：大部分作业的要求本来就不到 100 字，
+ * 这时候「精简」出来的东西和原文信息量完全一样，纯属白调一次接口。
+ * 所以短的直接显示原文，摘要栏整个不出现。
+ */
+export function needsSummary(description: string | null | undefined): boolean {
+  return summarySourceText(description).length > SUMMARY_LENGTH;
+}
+
+/**
  * 降级简介：没接大模型时直接截取描述前 100 字。
  *
  * 之所以不走 [makeExcerpt] 的截断结果，是因为摘录可能被截到 600 字，
  * 这里要的是「前 100 字」，两者长度不同。
  */
 export function fallbackSummary(description: string | null | undefined): string {
-  const text = htmlToPlainText(description);
+  const text = summarySourceText(description);
   if (!text) return '';
   return truncate(text, SUMMARY_LENGTH);
 }
@@ -176,8 +194,12 @@ const SYSTEM_PROMPT =
 
 export interface SummarizeResult {
   summary: string;
-  /** 走了大模型还是降级截取。 */
-  source: 'llm' | 'fallback';
+  /**
+   * llm      = 走大模型精简
+   * fallback = 没接大模型，退回截取
+   * none     = 正文本来就不长，不需要精简（此时 summary 为空）
+   */
+  source: 'llm' | 'fallback' | 'none';
   error?: string;
 }
 
@@ -186,6 +208,8 @@ export interface SummarizeResult {
  *
  * 调用方传进来完整描述；失败时**不会抛错**，而是退回截取结果——
  * 简介只是锦上添花，不该因为它把详情页弄崩。
+ *
+ * 正文不超过 100 字时直接返回 `source: 'none'`，**一次接口都不调**。
  */
 export async function summarizeAssignment(
   title: string,
@@ -193,10 +217,11 @@ export async function summarizeAssignment(
   cfg: LlmConfig | null | undefined,
   fetchImpl: typeof fetch = fetch
 ): Promise<SummarizeResult> {
-  const plain = htmlToPlainText(description);
+  const plain = summarySourceText(description);
   const fallback = fallbackSummary(description);
 
-  if (!plain) return { summary: '', source: 'fallback' };
+  // 没有正文，或者正文本来就够短——都不需要精简。
+  if (!plain || !needsSummary(description)) return { summary: '', source: 'none' };
   if (!llmReady(cfg)) return { summary: fallback, source: 'fallback' };
 
   const base = cfg!.baseUrl.replace(/\/+$/, '');

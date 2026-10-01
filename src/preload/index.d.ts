@@ -20,6 +20,8 @@ export interface Prefs {
   dashboardSections?: Record<string, boolean>;
   /** 首页板块的排列顺序（section key 列表）；空数组表示默认顺序。 */
   dashboardOrder?: string[];
+  /** 手动标记为「无需提交」的作业键（`courseId:assignmentId`）。只影响显示。 */
+  ignoredAssignments?: string[];
 }
 
 export type { CanvasFile, DownloadProgress, FileNode };
@@ -78,7 +80,7 @@ export interface ElearningApi {
       IpcResult<{
         description: string;
         summary: string;
-        summarySource: 'llm' | 'fallback';
+        summarySource: 'llm' | 'fallback' | 'none';
         summaryError?: string;
         cached: boolean;
       }>
@@ -87,7 +89,7 @@ export interface ElearningApi {
       assignmentId: number;
       name: string;
       description: string;
-    }): Promise<IpcResult<{ summary: string; summarySource: 'llm' | 'fallback'; summaryError?: string }>>;
+    }): Promise<IpcResult<{ summary: string; summarySource: 'llm' | 'fallback' | 'none'; summaryError?: string }>>;
   };
   /** 大模型配置。apiKey 回传时是打码串，不是真实密钥。 */
   llm: {

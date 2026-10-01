@@ -11,10 +11,21 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { closeWithAnimation } from '../motion';
+import { SECTIONS } from './Dashboard';
 import Icon from './Icon';
 
 interface Props {
   onClose: () => void;
+  /* --- 外观 --- */
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
+  /** 首页各板块的显示开关（key -> 是否显示）。 */
+  sections: Record<string, boolean>;
+  /** 已算好的完整板块顺序。 */
+  sectionOrder: string[];
+  onToggleSection: (key: string) => void;
+  onMoveSection: (key: string, direction: -1 | 1) => void;
+  onResetOrder: () => void;
 }
 
 /** 常见服务商的预填项，省得用户自己查 base URL。 */
@@ -26,7 +37,16 @@ const PRESETS: { label: string; baseUrl: string; model: string }[] = [
   { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
 ];
 
-export default function SettingsModal({ onClose }: Props) {
+export default function SettingsModal({
+  onClose,
+  theme,
+  onToggleTheme,
+  sections,
+  sectionOrder,
+  onToggleSection,
+  onMoveSection,
+  onResetOrder,
+}: Props) {
   // 退场动画期间先别卸载：直接消失和入场动画不对称。
   const backdropRef = useRef<HTMLDivElement>(null);
   const closing = useRef(false);
@@ -36,6 +56,8 @@ export default function SettingsModal({ onClose }: Props) {
     closing.current = true;
     closeWithAnimation(backdropRef.current, onClose);
   }
+  /** 分页放，否则一屏塞不下。 */
+  const [tab, setTab] = useState<'appearance' | 'llm'>('appearance');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -82,14 +104,105 @@ export default function SettingsModal({ onClose }: Props) {
         <div className="modal-head">
           <div style={{ flex: 1 }}>
             <div className="modal-title">设置</div>
-            <div className="modal-sub">作业简介的生成方式</div>
+            <div className="modal-sub">
+              {tab === 'appearance' ? '外观与首页板块' : '作业简介的生成方式'}
+            </div>
           </div>
           <button className="icon-btn" onClick={requestClose} title="关闭（Esc）">
             <Icon name="close" size={17} />
           </button>
         </div>
 
+        {/* 分页：外观与简介是两件不相干的事，堆在一屏里只会都看不全。 */}
+        <div className="settings-tabs">
+          <button
+            className={`settings-tab ${tab === 'appearance' ? 'on' : ''}`}
+            onClick={() => setTab('appearance')}
+          >
+            <Icon name="sliders" size={15} /> 外观
+          </button>
+          <button
+            className={`settings-tab ${tab === 'llm' ? 'on' : ''}`}
+            onClick={() => setTab('llm')}
+          >
+            <Icon name="sparkle" size={15} /> 作业简介
+          </button>
+        </div>
+
         <div className="modal-body">
+          {tab === 'appearance' && (
+            <>
+              <div className="field">
+                <label>主题</label>
+                <div className="settings-inline">
+                  <button className="btn" onClick={onToggleTheme}>
+                    <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
+                    {theme === 'dark' ? '切换到浅色' : '切换到深色'}
+                  </button>
+                  <span className="settings-hint">
+                    当前：{theme === 'dark' ? '深色' : '浅色'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="field" style={{ marginTop: 20 }}>
+                <label>首页板块</label>
+                <div className="settings-hint" style={{ marginBottom: 8 }}>
+                  点名字开关板块，点 ▲▼ 调整顺序。改动会记住。
+                </div>
+                <div className="settings-sections">
+                  {sectionOrder.map((key, i) => {
+                    const meta = SECTIONS.find((s) => s.key === key);
+                    if (!meta) return null;
+                    const on = sections[key] !== false;
+                    return (
+                      <div key={key} className={`settings-section-row ${on ? '' : 'off'}`}>
+                        <button
+                          className="settings-section-name"
+                          onClick={() => onToggleSection(key)}
+                          title={on ? '点击隐藏' : '点击显示'}
+                        >
+                          <span className={`settings-check ${on ? 'on' : ''}`}>
+                            {on && <Icon name="check" size={11} />}
+                          </span>
+                          <Icon name={meta.icon} size={14} />
+                          {meta.label}
+                        </button>
+                        <div className="settings-section-move">
+                          <button
+                            className="dash-move"
+                            onClick={() => onMoveSection(key, -1)}
+                            disabled={i === 0}
+                            title="上移"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            className="dash-move"
+                            onClick={() => onMoveSection(key, 1)}
+                            disabled={i === sectionOrder.length - 1}
+                            title="下移"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  className="btn"
+                  style={{ marginTop: 10 }}
+                  onClick={onResetOrder}
+                >
+                  恢复默认顺序
+                </button>
+              </div>
+            </>
+          )}
+
+          {tab === 'llm' && (
+            <>
           <div className="summary-block" style={{ marginBottom: 16 }}>
             <div className="summary-head">
               <Icon name="sparkle" size={15} />
@@ -169,16 +282,20 @@ export default function SettingsModal({ onClose }: Props) {
               {msg.text}
             </div>
           )}
+            </>
+          )}
         </div>
 
         <div className="modal-foot">
           <div style={{ flex: 1 }} />
           <button className="btn" onClick={requestClose}>
-            取消
+            {tab === 'llm' ? '取消' : '关闭'}
           </button>
-          <button className="btn btn-primary" onClick={() => void save()} disabled={saving || !loaded}>
-            {saving ? '保存中…' : '保存'}
-          </button>
+          {tab === 'llm' && (
+            <button className="btn btn-primary" onClick={() => void save()} disabled={saving || !loaded}>
+              {saving ? '保存中…' : '保存'}
+            </button>
+          )}
         </div>
       </div>
     </div>

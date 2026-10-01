@@ -1904,6 +1904,133 @@ table.data tbody tr:hover {
   }
 }
 
+/* ---------- 设置面板：分页与板块列表 ---------- */
+
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 22px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 160ms var(--ease),
+    color 160ms var(--ease),
+    border-color 160ms var(--ease),
+    transform var(--release) var(--ease-spring);
+}
+
+.settings-tab:hover {
+  background: var(--surface-2);
+}
+
+.settings-tab:active {
+  transform: scale(0.97);
+  transition-duration: var(--press);
+}
+
+.settings-tab.on {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 550;
+}
+
+.settings-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.settings-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.settings-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px 2px 4px;
+  background: var(--surface);
+  transition: background 160ms var(--ease);
+}
+
+.settings-section-row + .settings-section-row {
+  border-top: 1px solid var(--border);
+}
+
+.settings-section-row:hover {
+  background: var(--surface-2);
+}
+
+/* 关掉的板块整行压暗，一眼看出哪些不显示 */
+.settings-section-row.off {
+  opacity: 0.5;
+}
+
+.settings-section-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  padding: 9px 6px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  color: #fff;
+  transition:
+    background 160ms var(--ease),
+    border-color 160ms var(--ease);
+}
+
+.settings-check.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.settings-section-move {
+  display: inline-flex;
+  gap: 1px;
+}
+
 /* ---------- 无障碍：关掉动效 ---------- */
 
 @media (prefers-reduced-motion: reduce) {
