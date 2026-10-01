@@ -19,6 +19,7 @@ import 'package:fudan_elearning/ui/format.dart';
 import 'package:fudan_elearning/ui/home_shell.dart';
 import 'package:fudan_elearning/ui/overview_tab.dart';
 import 'package:fudan_elearning/ui/timeline_tab.dart';
+import 'package:fudan_elearning/ui/widgets.dart';
 
 AssignmentRow row({
   double? score,
@@ -238,6 +239,56 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('需要关注'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('三天内没有截止作业时，未提交清单仍然显示', (tester) async {
+      // 回归：曾经「未提交的作业」被误嵌在「三天内截止」的条件里，
+      // 于是三天内没有截止作业时整块消失——越是有欠交的人越看不到欠了什么。
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final s = buildDemoSnapshot();
+      final now = DateTime.now();
+      // 只留下「已逾期」和「三天以后才到期」的，保证 soon 为空。
+      final noSoon = s.assignments.where((a) {
+        final t = a.dueAt == null ? null : DateTime.tryParse(a.dueAt!);
+        if (t == null) return true;
+        return t.isBefore(now) || t.difference(now).inDays >= 3;
+      }).toList();
+
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: OverviewTab(
+            courses: s.courses,
+            assignments: noSoon,
+            todo: s.todo,
+            termName: '全部学期',
+            hideUnsubmitted: false,
+            sections: const {},
+            onToggleSection: (_) {},
+            onOpenAssignment: (_) {},
+            onSelectCourse: (_) {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // 注意用 widgetWithText 限定到 SectionHeader：
+      // 板块开关的胶囊上也有「三天内截止／未提交作业」这些字，
+      // 直接 find.text 会匹配到胶囊，测的就不是板块本身了。
+      expect(
+        find.widgetWithText(SectionHeader, '三天内截止'),
+        findsNothing,
+        reason: '这个用例里不该有三天内截止的作业',
+      );
+      expect(
+        find.widgetWithText(SectionHeader, '未提交的作业'),
+        findsOneWidget,
+        reason: '未提交清单必须独立于三天内截止',
+      );
       expect(tester.takeException(), isNull);
     });
 

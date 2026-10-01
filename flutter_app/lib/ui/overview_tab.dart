@@ -158,12 +158,10 @@ class OverviewTab extends StatelessWidget {
           ],
         ),
 
-        // --- 三天内截止 ---
-        if (soon.isNotEmpty) ...[
-          Gap.lg,
-
-          // --- 未提交的作业 ---
-          if (_show('unsubmitted') && !hideUnsubmitted && totalOpen > 0) ...[
+        // --- 未提交的作业 ---
+        // 注意：这一段必须独立于「三天内截止」——三天内没有截止作业时
+        // 未提交清单仍然要显示，否则越是有欠交的人越看不到自己欠了什么。
+        if (_show('unsubmitted') && !hideUnsubmitted && totalOpen > 0) ...[
             SectionHeader(
               '未提交的作业',
               icon: Icons.inbox_outlined,
@@ -206,11 +204,10 @@ class OverviewTab extends StatelessWidget {
                 ),
               ),
             ],
-            Gap.lg,
-          ],
+        Gap.lg,
 
-          if (_show('soon') && soon.isNotEmpty) ...[
-            SectionHeader('三天内截止', icon: Icons.schedule, iconColor: p.warn, trailing: _count(soon.length)),
+        if (_show('soon') && soon.isNotEmpty) ...[
+          SectionHeader('三天内截止', icon: Icons.schedule, iconColor: p.warn, trailing: _count(soon.length)),
             AppCard(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Column(
