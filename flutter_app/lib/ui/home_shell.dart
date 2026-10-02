@@ -46,8 +46,9 @@ class _HomeShellState extends State<HomeShell> {
   void _onStateChanged() {
     final terms = state.snapshot?.terms ?? const <TermGroup>[];
     if (terms.isEmpty) return;
-    if (_termTouched && _term != 'all' && terms.any((t) => t.id == _term))
+    if (_termTouched && _term != 'all' && terms.any((t) => t.id == _term)) {
       return;
+    }
 
     final current =
         terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first);
