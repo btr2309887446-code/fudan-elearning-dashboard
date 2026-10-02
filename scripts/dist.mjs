@@ -7,13 +7,19 @@
  *
  *   npm run dist            # build the NSIS installer
  *   npm run dist -- --dir   # unpacked build only (no installer)
+ *
+ * CI 上设 `DIST_NO_MIRROR=1` 可以跳过镜像、直连 GitHub——
+ * GitHub Actions 到 GitHub Releases 是最快的路径，绕镜像反而慢，
+ * 也少一个第三方依赖。
  */
 
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const DEFAULT_MIRROR = 'https://npmmirror.com/mirrors/electron-builder-binaries/';
-if (!process.env.ELECTRON_BUILDER_BINARIES_MIRROR) {
+if (process.env.DIST_NO_MIRROR === '1') {
+  console.log('[dist] DIST_NO_MIRROR=1，直连 GitHub 拉取 electron-builder 的辅助二进制');
+} else if (!process.env.ELECTRON_BUILDER_BINARIES_MIRROR) {
   process.env.ELECTRON_BUILDER_BINARIES_MIRROR = DEFAULT_MIRROR;
   console.log(`[dist] using binaries mirror: ${DEFAULT_MIRROR}`);
 }

@@ -1,0 +1,208 @@
+# 打 tag 时自动构建并发布 Release。
+#
+# 目的：让安装包有一个**固定的下载地址**，不用每次进 Actions 页面翻 Artifacts。
+#
+#   https://github.com/btr2308987446-code/fudan-elearning-dashboard/releases/latest
+#
+# 触发方式：
+#   git tag v0.9.1 && git push origin v0.9.1
+#
+# 产出：
+#   · Fudan-eLearning-Dashboard-<版本>-setup.exe   Windows 安装包（NSIS）
+#   · app-unsigned.ipa                             iOS 未签名包（侧载用）
+#   · fudan-elearning-macos.zip                    macOS 应用
+#
+# iOS 包是**未签名**的：没有付费开发者账号时签名证书只能维持 7 天，
+# 所以这里直接产出未签名 IPA，由使用者用 Sideloadly / SideStore / AltStore
+# 自己签。仓库不保存任何证书。
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # 也允许手动重跑（比如某次构建失败后补发）
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布到的 tag（例如 v0.9.1）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------- iOS
+  ios:
+    name: iOS 未签名 IPA
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: 依赖
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: 静态分析
+        working-directory: flutter_app
+        run: flutter analyze
+
+      - name: 单元与组件测试
+        working-directory: flutter_app
+        # golden 图依赖具体平台的字体与光栅化，跨机器必然有像素差异，故跳过。
+        run: flutter test --exclude-tags golden
+
+      # --no-codesign 是关键：没有签名证书也能编译出可运行的 .app。
+      - name: 构建（不签名）
+        working-directory: flutter_app
+        run: flutter build ios --release --no-codesign
+
+      - name: 打成 IPA
+        working-directory: flutter_app
+        run: |
+          set -euo pipefail
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          test -d "$APP_PATH"
+          rm -rf Payload app-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry app-unsigned.ipa Payload
+          ls -lh app-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipa
+          path: flutter_app/app-unsigned.ipa
+          if-no-files-found: error
+
+  # ------------------------------------------------------------ macOS
+  macos:
+    name: macOS 应用
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: 依赖
+        working-directory: flutter_app
+        run: flutter pub get
+
+      # 没有开发者证书时用 ad-hoc 签名（CODE_SIGN_IDENTITY=-）。
+      # 首次打开需要右键 → 打开，或执行 xattr -cr /Applications/fudan_elearning.app
+      # 绕过 Gatekeeper（因为未做公证 notarization）。
+      - name: 构建
+        working-directory: flutter_app
+        env:
+          CODE_SIGN_IDENTITY: '-'
+        run: flutter build macos --release
+
+      - name: 打包
+        working-directory: flutter_app
+        run: |
+          set -euo pipefail
+          APP="build/macos/Build/Products/Release/fudan_elearning.app"
+          test -d "$APP"
+          rm -f fudan-elearning-macos.zip
+          ditto -c -k --sequesterRsrc --keepParent "$APP" fudan-elearning-macos.zip
+          ls -lh fudan-elearning-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: flutter_app/fudan-elearning-macos.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------- Windows
+  desktop:
+    name: Windows 安装包
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 必须 22.18+：cli 里的测试直接 `node cli/x.ts` 跑 TypeScript，
+          # 靠的是 Node 内置的类型擦除。
+          node-version: '24'
+          cache: npm
+
+      - name: 依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 测试
+        run: npm test
+
+      - name: 打包
+        # CI 到 GitHub Releases 是最快的路径，不绕镜像。
+        env:
+          DIST_NO_MIRROR: '1'
+        run: npm run dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: release/*.exe
+          if-no-files-found: error
+
+  # ---------------------------------------------------------- Release
+  publish:
+    name: 发布 Release
+    needs: [ios, macos, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 汇总产物
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          find artifacts -name '*.ipa' -exec cp {} out/ \;
+          find artifacts -name '*.exe' -exec cp {} out/ \;
+          find artifacts -name '*.zip' -exec cp {} out/ \;
+          echo '--- 将发布的文件 ---'
+          ls -lh out
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          # push tag 时用 tag 名；手动触发时用输入的那个
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: out/*
+          generate_release_notes: true
+          body: |
+            ## 下载
+
+            | 平台 | 文件 | 说明 |
+            | --- | --- | --- |
+            | **Windows** | `Fudan-eLearning-Dashboard-*-setup.exe` | 双击安装，会在桌面和开始菜单创建快捷方式 |
+            | **iOS** | `app-unsigned.ipa` | **未签名**，需用 Sideloadly / SideStore / AltStore 自行签名后安装 |
+            | **macOS** | `fudan-elearning-macos.zip` | 解压后把 `.app` 拖进「应用程序」；首次打开需右键 →「打开」 |
+
+            ## 登录
+
+            用复旦 UIS 学号和密码登录。密码默认不落盘，也不会发往除复旦认证服务器
+            与 eLearning 之外的任何地址。
+
+            ## 说明
+
+            - iOS 包**没有签名**：免费开发者账号的证书只能维持 7 天，所以这里直接
+              产出未签名包，由使用者自己签。仓库不保存任何证书。
+            - macOS 包是 ad-hoc 签名、未做公证，首次打开可能被 Gatekeeper 拦下。
+            - 这些包都是 CI 自动构建的，构建日志见本次运行的 Actions 页面。
