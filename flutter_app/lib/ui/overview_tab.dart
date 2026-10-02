@@ -6,6 +6,7 @@ import '../core/types.dart';
 import '../theme.dart';
 import 'charts.dart';
 import 'format.dart';
+import 'overview_detail_screen.dart';
 import 'widgets.dart';
 
 class OverviewTab extends StatelessWidget {
@@ -20,6 +21,7 @@ class OverviewTab extends StatelessWidget {
     required this.sections,
     required this.onOpenAssignment,
     required this.sectionOrder,
+    this.onOpenMetric,
     this.onRefresh,
     this.profileName,
     this.ignoredSet = const {},
@@ -47,6 +49,7 @@ class OverviewTab extends StatelessWidget {
 
   /// 用户排定的板块顺序；空列表表示默认顺序。
   final List<String> sectionOrder;
+  final ValueChanged<OverviewDetailKind>? onOpenMetric;
   bool _show(String key) => sections[key] != false;
 
   @override
@@ -156,7 +159,7 @@ class OverviewTab extends StatelessWidget {
               crossAxisCount: columns,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: columns == 4 ? 1.62 : 1.32,
+              childAspectRatio: columns == 4 ? 1.95 : 1.5,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
@@ -167,6 +170,9 @@ class OverviewTab extends StatelessWidget {
                   unit: '分',
                   hint: '${hideUnsubmitted ? '' : '$termName · '}$graded 门已有得分',
                   tone: avg == null ? p.cyan : p.forScore(avg),
+                  onTap: onOpenMetric == null
+                      ? null
+                      : () => onOpenMetric!(OverviewDetailKind.scores),
                 ),
                 StatCard(
                   icon: Icons.menu_book_outlined,
@@ -175,6 +181,9 @@ class OverviewTab extends StatelessWidget {
                   unit: '门',
                   hint: '共 ${assignments.length} 项作业',
                   tone: p.purple,
+                  onTap: onOpenMetric == null
+                      ? null
+                      : () => onOpenMetric!(OverviewDetailKind.courses),
                 ),
                 StatCard(
                   icon: missing > 0
@@ -189,6 +198,9 @@ class OverviewTab extends StatelessWidget {
                           ? (late > 0 ? '另有 $late 项迟交' : '建议优先处理')
                           : '保持得不错',
                   tone: !hideUnsubmitted && missing > 0 ? p.bad : p.good,
+                  onTap: onOpenMetric == null
+                      ? null
+                      : () => onOpenMetric!(OverviewDetailKind.missing),
                 ),
                 StatCard(
                   icon: Icons.schedule,
@@ -200,6 +212,9 @@ class OverviewTab extends StatelessWidget {
                           ? '其中 ${soon.length} 项 3 天内截止'
                           : '暂无紧迫任务'),
                   tone: !hideUnsubmitted && upcoming > 0 ? p.warn : p.muted,
+                  onTap: onOpenMetric == null
+                      ? null
+                      : () => onOpenMetric!(OverviewDetailKind.upcoming),
                 ),
               ],
             );
@@ -470,9 +485,9 @@ class _DashboardIntro extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: p.text,
-            fontSize: 26,
+            fontSize: 22,
             fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
+            letterSpacing: 0,
           ),
         ),
         const SizedBox(height: 5),

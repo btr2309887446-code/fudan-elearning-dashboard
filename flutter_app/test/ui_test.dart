@@ -222,6 +222,26 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('点击总览成绩卡片进入明细，再点课程进入课程详情', (tester) async {
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final state = await bootedDemoState();
+      await tester.pumpWidget(wrap(state));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('当前平均分'));
+      await tester.pumpAndSettle();
+      expect(find.text('课程成绩'), findsOneWidget);
+      expect(find.byType(CourseCard), findsWidgets);
+
+      await tester.tap(find.byType(CourseCard).first);
+      await tester.pumpAndSettle();
+      expect(find.byType(CourseDetailScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('课程详情作业行可以打开作业详情', (tester) async {
       tester.view.physicalSize = const Size(1170, 2532);
       tester.view.devicePixelRatio = 3.0;

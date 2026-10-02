@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../core/types.dart';
@@ -7,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import 'assignment_detail_screen.dart';
 import 'course_detail_screen.dart';
+import 'overview_detail_screen.dart';
 import 'overview_tab.dart';
 import 'settings_screen.dart';
 import 'timeline_tab.dart';
@@ -85,7 +87,7 @@ class _HomeShellState extends State<HomeShell> {
   /// 打开作业详情。以前是直接跳浏览器，等于把人赶出应用。
   void _openAssignment(AssignmentRow row) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      _detailRoute(
         builder: (_) => AssignmentDetailScreen(state: state, row: row),
       ),
     );
@@ -95,7 +97,7 @@ class _HomeShellState extends State<HomeShell> {
     final snapshot = state.snapshot;
     if (snapshot == null) return;
     Navigator.of(context).push(
-      MaterialPageRoute(
+      _detailRoute(
         builder: (_) => CourseDetailScreen(
           state: state,
           snapshot: snapshot,
@@ -105,6 +107,40 @@ class _HomeShellState extends State<HomeShell> {
         ),
       ),
     );
+  }
+
+  void _openMetric(OverviewDetailKind kind) {
+    final snapshot = state.snapshot;
+    if (snapshot == null) return;
+    final courseIds = _scopedCourses.map((course) => course.id).toSet();
+    final todo = snapshot.todo
+        .where((entry) =>
+            entry.courseId == null || courseIds.contains(entry.courseId))
+        .toList();
+    Navigator.of(context).push(
+      _detailRoute(
+        builder: (_) => OverviewDetailScreen(
+          kind: kind,
+          courses: _scopedCourses,
+          assignments: _scopedAssignments,
+          todo: todo,
+          ignoredSet: state.ignoredSet,
+          onOpenCourse: _openCourse,
+          onOpenAssignment: _openAssignment,
+          onOpenUrl: state.openUrl,
+        ),
+      ),
+    );
+  }
+
+  PageRoute<void> _detailRoute({required WidgetBuilder builder}) {
+    // DanXi keeps detail pages in the native iOS navigation rhythm. Android
+    // and desktop retain Material's familiar transition.
+    if (Theme.of(context).platform == TargetPlatform.iOS ||
+        Theme.of(context).platform == TargetPlatform.macOS) {
+      return CupertinoPageRoute<void>(builder: builder);
+    }
+    return MaterialPageRoute<void>(builder: builder);
   }
 
   @override
@@ -186,12 +222,16 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      body: snapshot == null
-          ? Center(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (snapshot == null)
+            Center(
               child:
                   Text('还没有数据', style: TextStyle(color: p.muted, fontSize: 14)),
             )
-          : Row(
+          else
+            Row(
               children: [
                 if (wide) ...[
                   Container(
@@ -312,6 +352,7 @@ class _HomeShellState extends State<HomeShell> {
                                   reusedCourseCount: snapshot.reusedCourseCount,
                                   onOpenAssignment: _openAssignment,
                                   onSelectCourse: _openCourse,
+                                  onOpenMetric: _openMetric,
                                   onRefresh: state.busy
                                       ? null
                                       : () => state.refresh(force: true),
@@ -334,26 +375,35 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ],
             ),
-      // 让内容延伸到导航栏下方，毛玻璃才有东西可以透。
-      extendBody: !wide && snapshot != null,
-      bottomNavigationBar: (wide || snapshot == null)
-          ? null
-          : _GlassDock(
-              index: _tab,
-              onSelect: (i) => setState(() => _tab = i),
-              items: const [
-                (
-                  icon: Icons.dashboard_outlined,
-                  active: Icons.dashboard,
-                  label: '总览'
+          if (!wide && snapshot != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: _GlassDock(
+                    index: _tab,
+                    onSelect: (i) => setState(() => _tab = i),
+                    items: const [
+                      (
+                        icon: Icons.dashboard_outlined,
+                        active: Icons.dashboard,
+                        label: '总览'
+                      ),
+                      (
+                        icon: Icons.checklist_outlined,
+                        active: Icons.checklist,
+                        label: '作业与截止'
+                      ),
+                    ],
+                  ),
                 ),
-                (
-                  icon: Icons.checklist_outlined,
-                  active: Icons.checklist,
-                  label: '作业与截止'
-                ),
-              ],
+              ),
             ),
+        ],
+      ),
     );
   }
 }
@@ -437,42 +487,44 @@ class _GlassDock extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-      child: DecoratedBox(
+      minimum: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+      child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(26),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.14),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
+              color: Colors.black.withValues(alpha: isDark ? 0.58 : 0.16),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(26),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+            // Keep the backdrop filter as the first visual layer. A nearly
+            // opaque child would hide the content behind the dock entirely.
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            blendMode: BlendMode.srcOver,
             child: Container(
-              height: 60,
+              height: 58,
               decoration: BoxDecoration(
-                // 低不透明度是玻璃效果的关键；遮罩太实会看起来像普通色块。
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                   colors: isDark
                       ? [
-                          const Color(0xFF25252A).withValues(alpha: 0.62),
-                          const Color(0xFF111114).withValues(alpha: 0.48),
+                          Colors.white.withValues(alpha: 0.08),
+                          const Color(0xFF5B5B61).withValues(alpha: 0.18),
                         ]
                       : [
-                          Colors.white.withValues(alpha: 0.58),
-                          const Color(0xFFF7F8FC).withValues(alpha: 0.40),
+                          Colors.white.withValues(alpha: 0.62),
+                          const Color(0xFFE3E6ED).withValues(alpha: 0.46),
                         ],
                 ),
-                borderRadius: BorderRadius.circular(28),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: isDark ? 0.18 : 0.62),
+                  color: Colors.white.withValues(alpha: isDark ? 0.24 : 0.55),
+                  width: 0.8,
                 ),
               ),
               child: Row(

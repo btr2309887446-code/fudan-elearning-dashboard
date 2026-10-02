@@ -126,7 +126,9 @@ class _LoginScreenState extends State<LoginScreen> {
           IconButton(
             tooltip: '切换明暗',
             icon: Icon(
-              Theme.of(context).brightness == Brightness.dark ? Icons.light_mode : Icons.dark_mode,
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
               size: 21,
             ),
             onPressed: () {
@@ -167,14 +169,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         padding: const EdgeInsets.all(3),
                         // 用纯图形版：完整版里的「复旦 eLearning」在 42 像素下糊成一团。
-                        child: Image.asset('assets/brand/mark.png', fit: BoxFit.contain),
+                        child: Image.asset('assets/brand/mark.png',
+                            fit: BoxFit.contain),
                       ),
                       const SizedBox(width: 11),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('eLearning 学习看板',
-                              style: TextStyle(color: p.text, fontSize: 15, fontWeight: FontWeight.w700)),
+                              style: TextStyle(
+                                  color: p.text,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700)),
                           Text('elearning.fudan.edu.cn',
                               style: TextStyle(color: p.muted, fontSize: 11.5)),
                         ],
@@ -184,24 +190,31 @@ class _LoginScreenState extends State<LoginScreen> {
                   Gap.xl,
                   Text('登录统一身份认证',
                       style: TextStyle(
-                          color: p.text, fontSize: 25, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
+                          color: p.text,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0)),
                   Gap.sm,
                   Text(
                     '使用你的复旦 UIS 学号和密码登录，数据直接来自 eLearning（Canvas）官方接口。\n'
                     '密码默认不写入磁盘，也不会发送到除复旦认证服务器以外的任何地方。',
-                    style: TextStyle(color: p.muted, fontSize: 13, height: 1.65),
+                    style:
+                        TextStyle(color: p.muted, fontSize: 13, height: 1.65),
                   ),
                   Gap.lg,
 
-                  if (state.notice != null) _Alert(text: state.notice!, tone: 'warn'),
-                  if (_localError != null) _Alert(text: _localError!, tone: 'error'),
+                  if (state.notice != null)
+                    _Alert(text: state.notice!, tone: 'warn'),
+                  if (_localError != null)
+                    _Alert(text: _localError!, tone: 'error'),
 
                   TextField(
                     controller: _username,
                     enabled: !_busy,
                     autofillHints: const [AutofillHints.username],
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '学号', hintText: '例如 20302010001'),
+                    decoration: const InputDecoration(
+                        labelText: '学号', hintText: '例如 20302010001'),
                     onEditingComplete: _checkCaptcha,
                     onTapOutside: (_) {
                       FocusScope.of(context).unfocus();
@@ -217,7 +230,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: InputDecoration(
                       labelText: '密码',
                       suffixIcon: IconButton(
-                        icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 20),
+                        icon: Icon(
+                            _obscure ? Icons.visibility_off : Icons.visibility,
+                            size: 20),
                         onPressed: () => setState(() => _obscure = !_obscure),
                       ),
                     ),
@@ -232,7 +247,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: TextField(
                             controller: _captcha,
                             enabled: !_busy,
-                            decoration: const InputDecoration(labelText: '验证码', hintText: '输入图中字符'),
+                            decoration: const InputDecoration(
+                                labelText: '验证码', hintText: '输入图中字符'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -251,8 +267,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: Image.network(
                                 _captchaImage!,
                                 fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) =>
-                                    Center(child: Text('点此刷新', style: TextStyle(color: p.muted, fontSize: 12))),
+                                errorBuilder: (_, __, ___) => Center(
+                                    child: Text('点此刷新',
+                                        style: TextStyle(
+                                            color: p.muted, fontSize: 12))),
                               ),
                             ),
                           ),
@@ -265,7 +283,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Checkbox(
                         value: _remember,
-                        onChanged: _busy ? null : (v) => setState(() => _remember = v ?? false),
+                        onChanged: _busy
+                            ? null
+                            : (v) => setState(() => _remember = v ?? false),
                         visualDensity: VisualDensity.compact,
                       ),
                       Expanded(
@@ -287,7 +307,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white)),
                               Gap.hSm,
                               Text('请稍候…'),
                             ],
@@ -297,7 +318,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   if (_stage.isNotEmpty) ...[
                     Gap.md,
-                    Center(child: Text(_stage, style: TextStyle(color: p.muted, fontSize: 12.5))),
+                    Center(
+                        child: Text(_stage,
+                            style: TextStyle(color: p.muted, fontSize: 12.5))),
                   ],
 
                   if (_detail != null) ...[
@@ -314,7 +337,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   Text(
                     '提示：多次输错密码后，学校认证系统会要求验证码甚至临时锁定账号。'
                     '本应用会在提交前先向认证服务器确认是否需要验证码，尽量避免浪费尝试次数。',
-                    style: TextStyle(color: p.muted, fontSize: 11.5, height: 1.6),
+                    style:
+                        TextStyle(color: p.muted, fontSize: 11.5, height: 1.6),
                   ),
                 ],
               ),
@@ -349,7 +373,8 @@ class _Alert extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
-      child: Text(text, style: TextStyle(color: color, fontSize: 13, height: 1.55)),
+      child: Text(text,
+          style: TextStyle(color: color, fontSize: 13, height: 1.55)),
     );
   }
 }

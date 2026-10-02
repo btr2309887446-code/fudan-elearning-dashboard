@@ -9,6 +9,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 
 @immutable
 class AppPalette extends ThemeExtension<AppPalette> {
@@ -61,7 +63,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
     background: Color(0xFFF2F2F7),
     surface: Color(0xFFFFFFFF),
     surfaceAlt: Color(0xFFF7F8FA),
-    cardBorder: Color(0xFFE8EAF0),
+    cardBorder: Colors.transparent,
     border: Color(0xFFE5E7EE),
     text: Color(0xFF1C1C1E),
     textDim: Color(0xFF5B6070),
@@ -81,12 +83,12 @@ class AppPalette extends ThemeExtension<AppPalette> {
     surface: Color(0xFF1C1C1E),
     surfaceAlt: Color(0xFF2C2C2E),
     // 深色下几乎看不见，只用来在纯黑背景上给卡片一个极其克制的边界。
-    cardBorder: Color(0xFF232326),
+    cardBorder: Colors.transparent,
     border: Color(0xFF2E2E31),
     text: Color(0xFFF2F2F7),
     textDim: Color(0xFFA8ADBB),
     muted: Color(0xFF74747E),
-    accent: Color(0xFF0A84FF),
+    accent: Color(0xFF007AFF),
     // 深色下提饱和度，才有「荧光功能色」的味道
     cyan: Color(0xFF3DD9E8),
     purple: Color(0xFFBF7AF5),
@@ -179,14 +181,31 @@ class AppPalette extends ThemeExtension<AppPalette> {
 }
 
 extension PaletteContext on BuildContext {
-  AppPalette get palette => Theme.of(this).extension<AppPalette>() ?? AppPalette.light;
+  AppPalette get palette =>
+      Theme.of(this).extension<AppPalette>() ?? AppPalette.light;
 }
 
 class AppTheme {
-  static ThemeData light({String? fontFamily}) => _build(AppPalette.light, Brightness.light, fontFamily);
-  static ThemeData dark({String? fontFamily}) => _build(AppPalette.dark, Brightness.dark, fontFamily);
+  static ThemeData light({
+    String? fontFamily,
+    TargetPlatform? platform,
+  }) =>
+      _build(AppPalette.light, Brightness.light, fontFamily, platform);
+  static ThemeData dark({
+    String? fontFamily,
+    TargetPlatform? platform,
+  }) =>
+      _build(AppPalette.dark, Brightness.dark, fontFamily, platform);
 
-  static ThemeData _build(AppPalette p, Brightness brightness, String? fontFamily) {
+  static ThemeData _build(
+    AppPalette p,
+    Brightness brightness,
+    String? fontFamily,
+    TargetPlatform? platform,
+  ) {
+    final effectivePlatform = platform ?? defaultTargetPlatform;
+    final isIos = effectivePlatform == TargetPlatform.iOS;
+
     // 主题里显式写的 TextStyle **不会**继承 textTheme 的字体，
     // 所以要逐个带上 fontFamily，否则这些控件会退回平台默认字体。
     TextStyle styled({
@@ -213,11 +232,18 @@ class AppTheme {
       primary: p.accent,
       error: p.bad,
     );
+    final textTheme = isIos
+        ? (brightness == Brightness.dark
+            ? Typography.whiteCupertino
+            : Typography.blackCupertino)
+        : null;
 
     final themed = ThemeData(
       useMaterial3: true,
       brightness: brightness,
+      platform: effectivePlatform,
       colorScheme: scheme,
+      textTheme: textTheme,
       scaffoldBackgroundColor: p.background,
       canvasColor: p.background,
       extensions: [p],
@@ -229,7 +255,10 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: styled(size: 22, weight: FontWeight.w700, color: p.text, letterSpacing: -0.4),
+        // DanXi uses the compact Cupertino navigation-bar scale rather than
+        // an oversized Material headline.
+        titleTextStyle:
+            styled(size: 18, weight: FontWeight.w600, color: p.text),
       ),
       cardTheme: CardThemeData(
         color: p.surface,
@@ -238,7 +267,7 @@ class AppTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: p.border),
+          side: BorderSide(color: p.cardBorder),
         ),
       ),
       dividerTheme: DividerThemeData(color: p.border, thickness: 1, space: 1),
@@ -252,7 +281,9 @@ class AppTheme {
           (states) => TextStyle(
             fontSize: 11.5,
             fontFamily: fontFamily,
-            fontWeight: states.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w600
+                : FontWeight.w500,
             color: states.contains(WidgetState.selected) ? p.accent : p.muted,
           ),
         ),
@@ -266,35 +297,43 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: p.surfaceAlt,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: p.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: p.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: p.accent, width: 1.6),
         ),
-        hintStyle: TextStyle(color: p.muted, fontSize: 15, fontFamily: fontFamily),
-        labelStyle: TextStyle(color: p.textDim, fontSize: 14, fontFamily: fontFamily),
+        hintStyle:
+            TextStyle(color: p.muted, fontSize: 15, fontFamily: fontFamily),
+        labelStyle:
+            TextStyle(color: p.textDim, fontSize: 14, fontFamily: fontFamily),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: p.accent,
           foregroundColor: Colors.white,
           minimumSize: const Size.fromHeight(48),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, fontFamily: fontFamily),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              fontFamily: fontFamily),
         ),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: p.surface,
         side: BorderSide(color: p.border),
-        labelStyle: TextStyle(color: p.textDim, fontSize: 13, fontFamily: fontFamily),
+        labelStyle:
+            TextStyle(color: p.textDim, fontSize: 13, fontFamily: fontFamily),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
       listTileTheme: ListTileThemeData(

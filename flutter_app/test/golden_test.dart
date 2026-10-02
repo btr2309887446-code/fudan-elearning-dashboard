@@ -66,7 +66,7 @@ void usePhoneViewport(WidgetTester tester) {
   tester.view.devicePixelRatio = 3.0;
 }
 
-/// iPad 横屏：宽度过 760，应当切到左侧导航栏。
+/// iPad 横屏。
 void useTabletViewport(WidgetTester tester) {
   tester.view.physicalSize = const Size(2388, 1668);
   tester.view.devicePixelRatio = 2.0;
@@ -109,7 +109,10 @@ void main() {
     await state.boot();
 
     await tester.pumpWidget(
-      wrapGolden(HomeShell(state: state), AppTheme.light(fontFamily: _fontFamily)),
+      wrapGolden(
+        HomeShell(state: state),
+        AppTheme.light(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -127,7 +130,10 @@ void main() {
     await state.boot();
 
     await tester.pumpWidget(
-      wrapGolden(HomeShell(state: state), AppTheme.dark(fontFamily: _fontFamily)),
+      wrapGolden(
+        HomeShell(state: state),
+        AppTheme.dark(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -145,7 +151,10 @@ void main() {
     await state.boot();
 
     await tester.pumpWidget(
-      wrapGolden(HomeShell(state: state), AppTheme.light(fontFamily: _fontFamily)),
+      wrapGolden(
+        HomeShell(state: state),
+        AppTheme.light(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -178,7 +187,7 @@ void main() {
           courseId: course.id,
           hideUnsubmitted: false,
         ),
-        AppTheme.light(fontFamily: _fontFamily),
+        AppTheme.light(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
       ),
     );
     await tester.pumpAndSettle();
@@ -189,7 +198,7 @@ void main() {
     );
   });
 
-  testWidgets('iPad 横屏（自适应：左侧导航栏）', (tester) async {
+  testWidgets('iPad 横屏（保留 iOS 悬浮导航栏）', (tester) async {
     useTabletViewport(tester);
     addTearDown(tester.view.reset);
 
@@ -197,13 +206,15 @@ void main() {
     await state.boot();
 
     await tester.pumpWidget(
-      wrapGolden(HomeShell(state: state), AppTheme.light(fontFamily: _fontFamily)),
+      wrapGolden(
+        HomeShell(state: state),
+        AppTheme.light(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
+      ),
     );
     await tester.pumpAndSettle();
 
-    // 宽屏应当用 NavigationRail 而不是底部导航。
-    expect(find.byType(NavigationRail), findsOneWidget);
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(find.text('总览'), findsOneWidget);
 
     await expectLater(
       find.byType(HomeShell),
@@ -211,14 +222,18 @@ void main() {
     );
   });
 
-  testWidgets('Mac 窗口（自适应：左侧导航栏）', (tester) async {    useDesktopViewport(tester);
+  testWidgets('Mac 窗口（自适应：左侧导航栏）', (tester) async {
+    useDesktopViewport(tester);
     addTearDown(tester.view.reset);
 
     final state = AppState(store: MemoryStore(), demo: true);
     await state.boot();
 
     await tester.pumpWidget(
-      wrapGolden(HomeShell(state: state), AppTheme.dark(fontFamily: _fontFamily)),
+      wrapGolden(
+        HomeShell(state: state),
+        AppTheme.dark(fontFamily: _fontFamily, platform: TargetPlatform.macOS),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -248,7 +263,7 @@ void main() {
           courseId: course.id,
           hideUnsubmitted: false,
         ),
-        AppTheme.light(fontFamily: _fontFamily),
+        AppTheme.light(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
       ),
     );
     await tester.pumpAndSettle();
@@ -280,7 +295,10 @@ void main() {
     await state.boot();
 
     await tester.pumpWidget(
-      wrapGolden(LoginScreen(state: state), AppTheme.light(fontFamily: _fontFamily)),
+      wrapGolden(
+        LoginScreen(state: state),
+        AppTheme.light(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -317,7 +335,7 @@ void main() {
           courseId: course.id,
           hideUnsubmitted: false,
         ),
-        AppTheme.light(fontFamily: _fontFamily),
+        AppTheme.light(fontFamily: _fontFamily, platform: TargetPlatform.iOS),
       ),
     );
     await tester.pumpAndSettle();

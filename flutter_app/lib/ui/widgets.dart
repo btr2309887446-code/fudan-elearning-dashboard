@@ -5,6 +5,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/types.dart';
 import '../theme.dart';
@@ -55,7 +56,7 @@ class ScoreRing extends StatelessWidget {
                   color: color,
                   fontSize: size * 0.30,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: -0.8,
+                  letterSpacing: 0,
                   height: 1.1,
                 ),
               ),
@@ -117,6 +118,7 @@ class StatCard extends StatelessWidget {
     this.unit,
     this.hint,
     this.tone,
+    this.onTap,
   });
 
   final IconData icon;
@@ -127,17 +129,18 @@ class StatCard extends StatelessWidget {
 
   /// null 表示用主色；否则用 good / bad / warn。
   final Color? tone;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final color = tone ?? p.accent;
 
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: p.cardBorder),
       ),
       child: Column(
@@ -163,6 +166,8 @@ class StatCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (onTap != null)
+                Icon(Icons.chevron_right, size: 18, color: p.muted),
             ],
           ),
           const SizedBox(height: 7),
@@ -176,9 +181,9 @@ class StatCard extends StatelessWidget {
               text: value,
               style: TextStyle(
                 color: color,
-                fontSize: 26,
+                fontSize: 24,
                 fontWeight: FontWeight.w700,
-                letterSpacing: -0.6,
+                letterSpacing: 0,
                 height: 1.1,
               ),
               children: [
@@ -202,6 +207,19 @@ class StatCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+
+    if (onTap == null) return card;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap!();
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: card,
       ),
     );
   }
@@ -298,7 +316,7 @@ class SectionHeader extends StatelessWidget {
                   color: p.text,
                   fontSize: 15.5,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2),
+                  letterSpacing: 0),
             ),
           ),
           if (trailing != null) ...[
@@ -337,12 +355,18 @@ class AppCard extends StatelessWidget {
     );
 
     if (onTap == null) return content;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: content,
+    return Semantics(
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap!();
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: content,
+        ),
       ),
     );
   }
@@ -415,7 +439,7 @@ class CourseCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: p.text,
-                        fontSize: 14.5,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
                         height: 1.35,
                       ),
