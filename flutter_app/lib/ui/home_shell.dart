@@ -455,11 +455,24 @@ class _GlassDock extends StatelessWidget {
             child: Container(
               height: 60,
               decoration: BoxDecoration(
-                // 半透明，让背后的内容透出来一点，玻璃感就来自这里
-                color: (isDark ? const Color(0xFF141416) : Colors.white)
-                    .withValues(alpha: isDark ? 0.72 : 0.78),
+                // 低不透明度是玻璃效果的关键；遮罩太实会看起来像普通色块。
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? [
+                          const Color(0xFF25252A).withValues(alpha: 0.62),
+                          const Color(0xFF111114).withValues(alpha: 0.48),
+                        ]
+                      : [
+                          Colors.white.withValues(alpha: 0.58),
+                          const Color(0xFFF7F8FC).withValues(alpha: 0.40),
+                        ],
+                ),
                 borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: p.border.withValues(alpha: 0.7)),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: isDark ? 0.18 : 0.62),
+                ),
               ),
               child: Row(
                 children: [
