@@ -35,7 +35,24 @@ try {
   process.exit(1);
 }
 
-const args = [cli, '--win', '--config', 'electron-builder.yml', ...process.argv.slice(2)];
+const args = [
+  cli,
+  '--win',
+  '--config',
+  'electron-builder.yml',
+  // 关掉 electron-builder 的「检测到 tag 就自动发布到 GitHub」。
+  //
+  // 它在 tag 上会自己建 Release，需要 GH_TOKEN，而我们没有也不该给——
+  // 发布是 .github/workflows/release.yml 的职责：三个平台（Windows / iOS /
+  // macOS）的产物要汇总到同一个 Release 里。让 electron-builder 各自为政
+  // 会建出互相冲突的 Release。
+  //
+  // 放在这里而不是 workflow 里：本地 checkout 到某个 tag 时同样会踩到，
+  // 而那个报错（缺 GH_TOKEN）和「打包」这件事毫无关系，很难联想到原因。
+  '--publish',
+  'never',
+  ...process.argv.slice(2),
+];
 
 // Spawn node directly rather than going through a shell: it avoids argument
 // escaping issues and the DEP0190 warning, and stdio must be inherited so the

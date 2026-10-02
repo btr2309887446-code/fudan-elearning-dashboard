@@ -8,14 +8,19 @@
 # 装到 iPhone 上（免费开发者账号签名的有效期是 7 天，到期重装即可）。
 #
 # 注意：未签名 IPA 无法上架 App Store，也不支持推送等需要正式签名的能力。
+#
+# 【什么时候用哪个】
+#   · 正式发版 → 推 v* tag，走 release.yml（三个平台一起构建并创建 Release，
+#     安装包有固定下载地址）
+#   · 只想单独拿一个 IPA、不发 Release → 手动跑这个工作流
+#
+# 之所以去掉了这里的 `push: tags: v*`：release.yml 同样在 tag 上触发，
+# 两个都跑会让 IPA 白构建两遍（每次多占约 5 分钟 macOS runner）。
 
 name: Build iOS (unsigned)
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   build:
