@@ -113,9 +113,10 @@ class _HomeShellState extends State<HomeShell> {
     final courses = _scopedCourses;
     final assignments = _scopedAssignments;
 
-    // iPad 横屏与 macOS 窗口都够宽，底部导航会显得很远；
-    // 760 以下是手机（竖屏），沿用底部导航。
-    final wide = MediaQuery.sizeOf(context).width >= 760;
+    // iPad 也沿用 iOS 的悬浮毛玻璃底栏；Windows / Android 的宽屏
+    // 才切换为侧栏，避免 iPad 上底部导航突然消失。
+    final isIos = Theme.of(context).platform == TargetPlatform.iOS;
+    final wide = !isIos && MediaQuery.sizeOf(context).width >= 760;
     // NavigationRail 的标签样式是显式 TextStyle，不会继承 textTheme 的字体，
     // 所以要主动把主题里的字族取出来带上（否则中文会渲染成占位方框）。
     final fontFamily = Theme.of(context).textTheme.bodyMedium?.fontFamily;
