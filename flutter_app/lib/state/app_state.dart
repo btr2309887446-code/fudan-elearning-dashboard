@@ -390,8 +390,9 @@ class AppState extends ChangeNotifier {
   final Map<int, FileNode> _fileTrees = {};
 
   Future<FileNode> loadCourseFiles(int courseId, {bool force = false}) async {
-    if (!force && _fileTrees.containsKey(courseId))
+    if (!force && _fileTrees.containsKey(courseId)) {
       return _fileTrees[courseId]!;
+    }
     if (demo) {
       final tree = buildDemoFileTree(courseId);
       _fileTrees[courseId] = tree;

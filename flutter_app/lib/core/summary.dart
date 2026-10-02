@@ -298,8 +298,9 @@ Future<SummarizeResult> summarizeAssignment(
   if (plain.isEmpty || !needsSummary(description)) {
     return const SummarizeResult(summary: '', source: 'none');
   }
-  if (!llmReady(cfg))
+  if (!llmReady(cfg)) {
     return SummarizeResult(summary: fallback, source: 'fallback');
+  }
 
   final base = cfg!.baseUrl.replaceAll(RegExp(r'/+$'), '');
   final url = '$base/chat/completions';
