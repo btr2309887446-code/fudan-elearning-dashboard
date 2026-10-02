@@ -432,7 +432,6 @@ class _GlassDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SafeArea(
