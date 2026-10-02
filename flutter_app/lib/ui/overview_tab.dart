@@ -20,6 +20,8 @@ class OverviewTab extends StatelessWidget {
     required this.sections,
     required this.onOpenAssignment,
     required this.sectionOrder,
+    this.onRefresh,
+    this.profileName,
     this.ignoredSet = const {},
     this.reusedCourseCount = 0,
   });
@@ -30,6 +32,8 @@ class OverviewTab extends StatelessWidget {
   final String termName;
   final bool hideUnsubmitted;
   final void Function(int courseId) onSelectCourse;
+  final Future<void> Function()? onRefresh;
+  final String? profileName;
 
   /// 首页各板块的显示开关；缺省视为全开。
   final Map<String, bool> sections;
@@ -50,7 +54,25 @@ class OverviewTab extends StatelessWidget {
     final p = context.palette;
 
     if (courses.isEmpty) {
-      return Center(child: Text('这个学期没有课程数据。', style: TextStyle(color: p.muted, fontSize: 13.5)));
+      final empty = ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 52, 16, 104),
+        children: [
+          Center(
+            child: Text(
+              '这个学期没有课程数据。',
+              style: TextStyle(color: p.muted, fontSize: 13.5),
+            ),
+          ),
+        ],
+      );
+      if (onRefresh == null) return empty;
+      return RefreshIndicator(
+        color: p.accent,
+        backgroundColor: p.surface,
+        onRefresh: onRefresh!,
+        child: empty,
+      );
     }
 
     final avg = averageScore(courses);
@@ -80,14 +102,12 @@ class OverviewTab extends StatelessWidget {
     final now = appNow();
     final soon = hideUnsubmitted
         ? <AssignmentRow>[]
-        : (notIgnored
-            .where((a) => !isCompleted(a))
-            .where((a) {
-              final t = a.dueAt == null ? null : DateTime.tryParse(a.dueAt!);
-              return t != null && t.isAfter(now) && t.difference(now).inDays < 3;
-            })
-            .toList()
-          ..sort((a, b) => DateTime.parse(a.dueAt!).compareTo(DateTime.parse(b.dueAt!))));
+        : (notIgnored.where((a) => !isCompleted(a)).where((a) {
+            final t = a.dueAt == null ? null : DateTime.tryParse(a.dueAt!);
+            return t != null && t.isAfter(now) && t.difference(now).inDays < 3;
+          }).toList()
+          ..sort((a, b) =>
+              DateTime.parse(a.dueAt!).compareTo(DateTime.parse(b.dueAt!))));
 
     final ranked = [...courses]..sort(courseUrgency);
 
@@ -112,7 +132,8 @@ class OverviewTab extends StatelessWidget {
             int byDue(AssignmentRow x, AssignmentRow y) {
               if (x.dueAt == null) return 1;
               if (y.dueAt == null) return -1;
-              return DateTime.parse(x.dueAt!).compareTo(DateTime.parse(y.dueAt!));
+              return DateTime.parse(x.dueAt!)
+                  .compareTo(DateTime.parse(y.dueAt!));
             }
 
             od.sort(byDue);
@@ -128,63 +149,61 @@ class OverviewTab extends StatelessWidget {
     final blocks = <String, List<Widget>>{
       // --- 统计 ---
       'stats': [
-        Row(
-          children: [
-            Expanded(
-              child: StatCard(
-                icon: Icons.show_chart,
-                label: '当前平均分',
-                value: formatScore(avg),
-                unit: '分',
-                hint: '${hideUnsubmitted ? '' : '$termName · '}$graded 门已有得分',
-                // 有分数就按分数分档上色；没有分数用青色，
-                // 四张卡片因此各有各的色相，一眼能分辨。
-                tone: avg == null ? p.cyan : p.forScore(avg),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: StatCard(
-                icon: Icons.menu_book_outlined,
-                label: '课程',
-                value: '${courses.length}',
-                unit: '门',
-                hint: '共 ${assignments.length} 项作业',
-                tone: p.purple,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: StatCard(
-                icon: missing > 0 ? Icons.error_outline : Icons.check_circle_outline,
-                label: '缺交作业',
-                value: hideUnsubmitted ? '—' : '$missing',
-                unit: hideUnsubmitted ? null : '项',
-                hint: hideUnsubmitted
-                    ? '已忽略未提交的作业'
-                    : missing > 0
-                        ? (late > 0 ? '另有 $late 项迟交' : '建议优先处理')
-                        : '保持得不错',
-                tone: !hideUnsubmitted && missing > 0 ? p.bad : p.good,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: StatCard(
-                icon: Icons.schedule,
-                label: '近期待办',
-                value: hideUnsubmitted ? '—' : '$upcoming',
-                hint: hideUnsubmitted
-                    ? '已忽略未提交的作业'
-                    : (soon.isNotEmpty ? '其中 ${soon.length} 项 3 天内截止' : '暂无紧迫任务'),
-                tone: !hideUnsubmitted && upcoming > 0 ? p.warn : p.muted,
-              ),
-            ),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 860 ? 4 : 2;
+            return GridView.count(
+              crossAxisCount: columns,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: columns == 4 ? 1.62 : 1.32,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                StatCard(
+                  icon: Icons.show_chart,
+                  label: '当前平均分',
+                  value: formatScore(avg),
+                  unit: '分',
+                  hint: '${hideUnsubmitted ? '' : '$termName · '}$graded 门已有得分',
+                  tone: avg == null ? p.cyan : p.forScore(avg),
+                ),
+                StatCard(
+                  icon: Icons.menu_book_outlined,
+                  label: '课程',
+                  value: '${courses.length}',
+                  unit: '门',
+                  hint: '共 ${assignments.length} 项作业',
+                  tone: p.purple,
+                ),
+                StatCard(
+                  icon: missing > 0
+                      ? Icons.error_outline
+                      : Icons.check_circle_outline,
+                  label: '缺交作业',
+                  value: hideUnsubmitted ? '—' : '$missing',
+                  unit: hideUnsubmitted ? null : '项',
+                  hint: hideUnsubmitted
+                      ? '已忽略未提交的作业'
+                      : missing > 0
+                          ? (late > 0 ? '另有 $late 项迟交' : '建议优先处理')
+                          : '保持得不错',
+                  tone: !hideUnsubmitted && missing > 0 ? p.bad : p.good,
+                ),
+                StatCard(
+                  icon: Icons.schedule,
+                  label: '近期待办',
+                  value: hideUnsubmitted ? '—' : '$upcoming',
+                  hint: hideUnsubmitted
+                      ? '已忽略未提交的作业'
+                      : (soon.isNotEmpty
+                          ? '其中 ${soon.length} 项 3 天内截止'
+                          : '暂无紧迫任务'),
+                  tone: !hideUnsubmitted && upcoming > 0 ? p.warn : p.muted,
+                ),
+              ],
+            );
+          },
         ),
       ],
 
@@ -192,49 +211,51 @@ class OverviewTab extends StatelessWidget {
       // 与「三天内截止」各自独立：关掉一个不该连带关掉另一个。
       'unsubmitted': [
         if (_show('unsubmitted') && !hideUnsubmitted && totalOpen > 0) ...[
-            Gap.lg,
-            SectionHeader(
-              '未提交的作业',
-              icon: Icons.inbox_outlined,
-              iconColor: p.warn,
-              trailing: _count(totalOpen),
+          Gap.lg,
+          SectionHeader(
+            '未提交的作业',
+            icon: Icons.inbox_outlined,
+            iconColor: p.warn,
+            trailing: _count(totalOpen),
+          ),
+          if (unsubmitted.overdue.isNotEmpty) ...[
+            _TodoGroupTitle(
+              label: '已逾期 ${unsubmitted.overdue.length} 项',
+              color: p.bad,
+              icon: Icons.priority_high,
             ),
-            if (unsubmitted.overdue.isNotEmpty) ...[
-              _TodoGroupTitle(
-                label: '已逾期 ${unsubmitted.overdue.length} 项',
-                color: p.bad,
-                icon: Icons.priority_high,
-              ),
-              AppCard(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(
-                  children: [
-                    for (var i = 0; i < unsubmitted.overdue.length; i++) ...[
-                      if (i > 0) Divider(height: 1, color: p.border),
-                      _DueRow(row: unsubmitted.overdue[i], onTap: onOpenAssignment),
-                    ],
+            AppCard(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  for (var i = 0; i < unsubmitted.overdue.length; i++) ...[
+                    if (i > 0) Divider(height: 1, color: p.border),
+                    _DueRow(
+                        row: unsubmitted.overdue[i], onTap: onOpenAssignment),
                   ],
-                ),
+                ],
               ),
-            ],
-            if (unsubmitted.pending.isNotEmpty) ...[
-              _TodoGroupTitle(
-                label: '尚未到期 ${unsubmitted.pending.length} 项',
-                color: p.textDim,
-                icon: Icons.schedule,
-              ),
-              AppCard(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(
-                  children: [
-                    for (var i = 0; i < unsubmitted.pending.length; i++) ...[
-                      if (i > 0) Divider(height: 1, color: p.border),
-                      _DueRow(row: unsubmitted.pending[i], onTap: onOpenAssignment),
-                    ],
+            ),
+          ],
+          if (unsubmitted.pending.isNotEmpty) ...[
+            _TodoGroupTitle(
+              label: '尚未到期 ${unsubmitted.pending.length} 项',
+              color: p.textDim,
+              icon: Icons.schedule,
+            ),
+            AppCard(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  for (var i = 0; i < unsubmitted.pending.length; i++) ...[
+                    if (i > 0) Divider(height: 1, color: p.border),
+                    _DueRow(
+                        row: unsubmitted.pending[i], onTap: onOpenAssignment),
                   ],
-                ),
+                ],
               ),
-            ],
+            ),
+          ],
         ],
       ],
 
@@ -243,26 +264,30 @@ class OverviewTab extends StatelessWidget {
       'soon': [
         if (_show('soon') && soon.isNotEmpty) ...[
           Gap.lg,
-          SectionHeader('三天内截止', icon: Icons.schedule, iconColor: p.warn, trailing: _count(soon.length)),
-            AppCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                children: [
-                  for (var i = 0; i < soon.length; i++) ...[
-                    if (i > 0) Divider(height: 1, color: p.border),
-                    _DueRow(row: soon[i], onTap: onOpenAssignment),
-                  ],
+          SectionHeader('三天内截止',
+              icon: Icons.schedule,
+              iconColor: p.warn,
+              trailing: _count(soon.length)),
+          AppCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                for (var i = 0; i < soon.length; i++) ...[
+                  if (i > 0) Divider(height: 1, color: p.border),
+                  _DueRow(row: soon[i], onTap: onOpenAssignment),
                 ],
-              ),
+              ],
             ),
-          ],
+          ),
+        ],
       ],
 
       // --- 得分图 ---
       'charts': [
         if (_show('charts')) ...[
           Gap.lg,
-          const SectionHeader('各课程当前得分', icon: Icons.bar_chart, iconColor: null),
+          const SectionHeader('各课程当前得分',
+              icon: Icons.bar_chart, iconColor: null),
           AppCard(
             child: ScoreBars(courses: courses, onTap: onSelectCourse),
           ),
@@ -274,50 +299,63 @@ class OverviewTab extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Column(
               children: [
-                for (var i = 0; i < (ranked.length > 4 ? 4 : ranked.length); i++) ...[
-                if (i > 0) Divider(height: 1, color: p.border),
-                InkWell(
-                  onTap: () => onSelectCourse(ranked[i].id),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                    child: Row(
-                      children: [
-                        ScoreRing(score: ranked[i].currentScore, size: 40, stroke: 4.5, showLabel: false),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                ranked[i].displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: p.text, fontSize: 13.5, fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                [
-                                  if (!hideUnsubmitted && missingOf(ranked[i].id) > 0)
-                                    '缺交 ${missingOf(ranked[i].id)} 项',
-                                  if (ranked[i].currentScore != null)
-                                    AppPalette.labelForScore(ranked[i].currentScore),
-                                  '共 ${ranked[i].assignmentCount} 项',
-                                ].join(' · '),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: p.muted, fontSize: 11.5),
-                              ),
-                            ],
+                for (var i = 0;
+                    i < (ranked.length > 4 ? 4 : ranked.length);
+                    i++) ...[
+                  if (i > 0) Divider(height: 1, color: p.border),
+                  InkWell(
+                    onTap: () => onSelectCourse(ranked[i].id),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 11),
+                      child: Row(
+                        children: [
+                          ScoreRing(
+                              score: ranked[i].currentScore,
+                              size: 40,
+                              stroke: 4.5,
+                              showLabel: false),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ranked[i].displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: p.text,
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  [
+                                    if (!hideUnsubmitted &&
+                                        missingOf(ranked[i].id) > 0)
+                                      '缺交 ${missingOf(ranked[i].id)} 项',
+                                    if (ranked[i].currentScore != null)
+                                      AppPalette.labelForScore(
+                                          ranked[i].currentScore),
+                                    '共 ${ranked[i].assignmentCount} 项',
+                                  ].join(' · '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      TextStyle(color: p.muted, fontSize: 11.5),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        Icon(Icons.chevron_right, size: 19, color: p.muted),
-                      ],
+                          Icon(Icons.chevron_right, size: 19, color: p.muted),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
-          ),
+            ),
           ),
         ],
       ],
@@ -345,9 +383,16 @@ class OverviewTab extends StatelessWidget {
     //
     // 开关与排序的界面在设置页里，这里只负责按顺序渲染。
     final orderedKeys = _orderedSectionKeys();
-    return ListView(
+    final list = ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
       children: [
+        _DashboardIntro(
+          profileName: profileName,
+          courseCount: courses.length,
+          openCount: totalOpen,
+        ),
+        const SizedBox(height: 14),
         for (final k in orderedKeys) ...(blocks[k] ?? const <Widget>[]),
 
         // 这次刷新跳过了多少门历史学期的课。写在这里是为了让「怎么这么快」
@@ -362,6 +407,15 @@ class OverviewTab extends StatelessWidget {
           ),
         ],
       ],
+    );
+
+    if (onRefresh == null) return list;
+    return RefreshIndicator(
+      edgeOffset: 8,
+      color: p.accent,
+      backgroundColor: p.surface,
+      onRefresh: onRefresh!,
+      child: list,
     );
   }
 
@@ -386,8 +440,49 @@ class OverviewTab extends StatelessWidget {
   }
 
   Widget _count(int n) => Builder(
-        builder: (context) => Text('$n', style: TextStyle(color: context.palette.muted, fontSize: 12.5)),
+        builder: (context) => Text('$n',
+            style: TextStyle(color: context.palette.muted, fontSize: 12.5)),
       );
+}
+
+class _DashboardIntro extends StatelessWidget {
+  const _DashboardIntro({
+    required this.profileName,
+    required this.courseCount,
+    required this.openCount,
+  });
+
+  final String? profileName;
+  final int courseCount;
+  final int openCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final name = profileName?.trim();
+    final greeting = name == null || name.isEmpty ? '学习总览' : '你好，$name';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          greeting,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: p.text,
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          '$courseCount 门课程 · $openCount 项待处理',
+          style: TextStyle(color: p.muted, fontSize: 11.5),
+        ),
+      ],
+    );
+  }
 }
 
 class _DueRow extends StatelessWidget {
@@ -411,7 +506,8 @@ class _DueRow extends StatelessWidget {
           Container(
             width: 3,
             height: 34,
-            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+            decoration: BoxDecoration(
+                color: color, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(width: 11),
           Expanded(
@@ -422,7 +518,10 @@ class _DueRow extends StatelessWidget {
                   row.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.text, fontSize: 13.5, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                      color: p.text,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -435,7 +534,9 @@ class _DueRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(rel.text, style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w600)),
+          Text(rel.text,
+              style: TextStyle(
+                  color: color, fontSize: 11.5, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -447,7 +548,8 @@ class _DueRow extends StatelessWidget {
 
 /// 「已逾期 N 项」这类分组小标题。
 class _TodoGroupTitle extends StatelessWidget {
-  const _TodoGroupTitle({required this.label, required this.color, required this.icon});
+  const _TodoGroupTitle(
+      {required this.label, required this.color, required this.icon});
 
   final String label;
   final Color color;
@@ -461,7 +563,9 @@ class _TodoGroupTitle extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w600)),
+          Text(label,
+              style: TextStyle(
+                  color: color, fontSize: 12.5, fontWeight: FontWeight.w600)),
         ],
       ),
     );

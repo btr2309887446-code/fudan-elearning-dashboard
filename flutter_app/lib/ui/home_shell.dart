@@ -46,9 +46,11 @@ class _HomeShellState extends State<HomeShell> {
   void _onStateChanged() {
     final terms = state.snapshot?.terms ?? const <TermGroup>[];
     if (terms.isEmpty) return;
-    if (_termTouched && _term != 'all' && terms.any((t) => t.id == _term)) return;
+    if (_termTouched && _term != 'all' && terms.any((t) => t.id == _term))
+      return;
 
-    final current = terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first);
+    final current =
+        terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first);
     if (_term != current.id) {
       // 在帧回调里改状态，避免在 build 期间触发重建。
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -125,7 +127,10 @@ class _HomeShellState extends State<HomeShell> {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 14),
               child: Center(
-                child: SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2)),
+                child: SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
               ),
             ),
           IconButton(
@@ -141,7 +146,8 @@ class _HomeShellState extends State<HomeShell> {
                   await state.setHideUnsubmitted(!state.prefs.hideUnsubmitted);
                 case 'settings':
                   await Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => SettingsScreen(state: state)),
+                    MaterialPageRoute(
+                        builder: (_) => SettingsScreen(state: state)),
                   );
                 case 'logout':
                   final ok = await showDialog<bool>(
@@ -150,8 +156,12 @@ class _HomeShellState extends State<HomeShell> {
                       title: const Text('退出登录'),
                       content: const Text('将清除本机保存的登录状态与缓存数据。'),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-                        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('退出')),
+                        TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('取消')),
+                        TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('退出')),
                       ],
                     ),
                   );
@@ -175,39 +185,95 @@ class _HomeShellState extends State<HomeShell> {
       ),
       body: snapshot == null
           ? Center(
-              child: Text('还没有数据', style: TextStyle(color: p.muted, fontSize: 14)),
+              child:
+                  Text('还没有数据', style: TextStyle(color: p.muted, fontSize: 14)),
             )
           : Row(
               children: [
                 if (wide) ...[
-                  NavigationRail(
-                    selectedIndex: _tab,
-                    onDestinationSelected: (i) => setState(() => _tab = i),
-                    labelType: NavigationRailLabelType.all,
-                    backgroundColor: p.surface,
-                    indicatorColor: p.accent.withValues(alpha: 0.14),
-                    selectedIconTheme: IconThemeData(color: p.accent, size: 24),
-                    unselectedIconTheme: IconThemeData(color: p.muted, size: 23),
-                    selectedLabelTextStyle: TextStyle(
-                      color: p.accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: fontFamily,
+                  Container(
+                    width: MediaQuery.sizeOf(context).width >= 1120 ? 238 : 204,
+                    color: p.surface,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                'assets/brand/mark.png',
+                                width: 34,
+                                height: 34,
+                                fit: BoxFit.contain,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'eLearning',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: p.text,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Divider(height: 1, color: p.border),
+                        Expanded(
+                          child: NavigationRail(
+                            selectedIndex: _tab,
+                            onDestinationSelected: (i) =>
+                                setState(() => _tab = i),
+                            extended: MediaQuery.sizeOf(context).width >= 1120,
+                            minExtendedWidth: 218,
+                            minWidth: 76,
+                            groupAlignment: -0.88,
+                            labelType: MediaQuery.sizeOf(context).width >= 1120
+                                ? NavigationRailLabelType.none
+                                : NavigationRailLabelType.all,
+                            backgroundColor: Colors.transparent,
+                            indicatorColor: p.accent.withValues(alpha: 0.14),
+                            selectedIconTheme:
+                                IconThemeData(color: p.accent, size: 23),
+                            unselectedIconTheme:
+                                IconThemeData(color: p.muted, size: 22),
+                            selectedLabelTextStyle: TextStyle(
+                              color: p.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: fontFamily,
+                            ),
+                            unselectedLabelTextStyle: TextStyle(
+                                color: p.muted,
+                                fontSize: 12,
+                                fontFamily: fontFamily),
+                            destinations: const [
+                              NavigationRailDestination(
+                                icon: Icon(Icons.dashboard_outlined),
+                                selectedIcon: Icon(Icons.dashboard),
+                                label: Text('总览'),
+                              ),
+                              NavigationRailDestination(
+                                icon: Icon(Icons.checklist_outlined),
+                                selectedIcon: Icon(Icons.checklist),
+                                label: Text('作业与截止'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+                          child: _RailProfile(
+                            name: snapshot.profile.name,
+                            termName: _termName,
+                          ),
+                        ),
+                      ],
                     ),
-                    unselectedLabelTextStyle:
-                        TextStyle(color: p.muted, fontSize: 12, fontFamily: fontFamily),
-                    destinations: const [
-                      NavigationRailDestination(
-                        icon: Icon(Icons.dashboard_outlined),
-                        selectedIcon: Icon(Icons.dashboard),
-                        label: Text('总览'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.checklist_outlined),
-                        selectedIcon: Icon(Icons.checklist),
-                        label: Text('作业与截止'),
-                      ),
-                    ],
                   ),
                   VerticalDivider(width: 1, thickness: 1, color: p.border),
                 ],
@@ -243,6 +309,10 @@ class _HomeShellState extends State<HomeShell> {
                                   reusedCourseCount: snapshot.reusedCourseCount,
                                   onOpenAssignment: _openAssignment,
                                   onSelectCourse: _openCourse,
+                                  onRefresh: state.busy
+                                      ? null
+                                      : () => state.refresh(force: true),
+                                  profileName: snapshot.profile.name,
                                 ),
                                 TimelineTab(
                                   courses: courses,
@@ -269,10 +339,74 @@ class _HomeShellState extends State<HomeShell> {
               index: _tab,
               onSelect: (i) => setState(() => _tab = i),
               items: const [
-                (icon: Icons.dashboard_outlined, active: Icons.dashboard, label: '总览'),
-                (icon: Icons.checklist_outlined, active: Icons.checklist, label: '作业与截止'),
+                (
+                  icon: Icons.dashboard_outlined,
+                  active: Icons.dashboard,
+                  label: '总览'
+                ),
+                (
+                  icon: Icons.checklist_outlined,
+                  active: Icons.checklist,
+                  label: '作业与截止'
+                ),
               ],
             ),
+    );
+  }
+}
+
+class _RailProfile extends StatelessWidget {
+  const _RailProfile({required this.name, required this.termName});
+
+  final String name;
+  final String termName;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
+      decoration: BoxDecoration(
+        color: p.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: p.cardBorder),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 17,
+            backgroundColor: p.accent.withValues(alpha: 0.14),
+            child: Text(
+              name.isEmpty ? '?' : name.substring(0, 1),
+              style: TextStyle(color: p.accent, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.isEmpty ? '未登录用户' : name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: p.text,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  termName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: p.muted, fontSize: 10.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -413,7 +547,8 @@ class _TermSelector extends StatelessWidget {
     final p = context.palette;
     if (terms.isEmpty) return const SizedBox.shrink();
 
-    Widget chip(String label, TermFilter value, {bool isCurrent = false, int? count}) {
+    Widget chip(String label, TermFilter value,
+        {bool isCurrent = false, int? count}) {
       final active = selected == value;
       return Padding(
         padding: const EdgeInsets.only(right: 8),
@@ -438,7 +573,8 @@ class _TermSelector extends StatelessWidget {
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: BoxDecoration(color: p.good, shape: BoxShape.circle),
+                      decoration:
+                          BoxDecoration(color: p.good, shape: BoxShape.circle),
                     ),
                     const SizedBox(width: 6),
                   ],
@@ -452,7 +588,8 @@ class _TermSelector extends StatelessWidget {
                   ),
                   if (count != null) ...[
                     const SizedBox(width: 6),
-                    Text('$count', style: TextStyle(color: p.muted, fontSize: 11.5)),
+                    Text('$count',
+                        style: TextStyle(color: p.muted, fontSize: 11.5)),
                   ],
                 ],
               ),
