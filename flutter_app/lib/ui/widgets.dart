@@ -125,11 +125,11 @@ class StatCard extends StatelessWidget {
     final color = tone ?? p.accent;
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: p.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,35 +138,39 @@ class StatCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 27,
+                height: 27,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(9),
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, size: 17, color: color),
+                child: Icon(icon, size: 16, color: color),
               ),
               Gap.hSm,
               Expanded(
                 child: Text(
                   label,
-                  style: TextStyle(color: p.muted, fontSize: 12.5),
+                  style: TextStyle(color: p.muted, fontSize: 12),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: 7),
           // 用 Text.rich 而不是 RichText：后者不会继承 DefaultTextStyle，
           // 主题里的字体设置会失效。
+          //
+          // 数字本身带功能色——这是整张卡片的视觉重心，
+          // 只给小图标上色的话整屏还是白花花一片，分不出哪张卡在说什么。
           Text.rich(
             TextSpan(
               text: value,
               style: TextStyle(
-                color: p.text,
-                fontSize: 25,
+                color: color,
+                fontSize: 26,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.6,
+                height: 1.1,
               ),
               children: [
                 if (unit != null)
@@ -178,7 +182,7 @@ class StatCard extends StatelessWidget {
             ),
           ),
           if (hint != null) ...[
-            const SizedBox(height: 1),
+            const SizedBox(height: 3),
             Text(
               hint!,
               style: TextStyle(color: p.muted, fontSize: 11.5),
@@ -263,7 +267,7 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
           if (icon != null) ...[
@@ -272,7 +276,7 @@ class SectionHeader extends StatelessWidget {
           ],
           Text(
             title,
-            style: TextStyle(color: p.text, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2),
+            style: TextStyle(color: p.text, fontSize: 15.5, fontWeight: FontWeight.w700, letterSpacing: -0.2),
           ),
           const Spacer(),
           if (trailing != null) trailing!,
@@ -283,6 +287,10 @@ class SectionHeader extends StatelessWidget {
 }
 
 /// 卡片外壳，统一圆角与描边。
+///
+/// 描边用 [AppPalette.cardBorder] 而不是 `border`：
+/// 深色下前者几乎看不见，卡片靠灰阶差从纯黑背景里浮出来——
+/// 这才是「深灰圆角块」该有的样子；画一圈看得见的线会变成 Material 味。
 class AppCard extends StatelessWidget {
   const AppCard({super.key, required this.child, this.padding, this.onTap});
 
@@ -294,11 +302,11 @@ class AppCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     final content = Container(
-      padding: padding ?? const EdgeInsets.all(16),
+      padding: padding ?? const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: p.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border),
+        border: Border.all(color: p.cardBorder),
       ),
       child: child,
     );

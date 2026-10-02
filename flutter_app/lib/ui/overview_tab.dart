@@ -137,10 +137,12 @@ class OverviewTab extends StatelessWidget {
                 value: formatScore(avg),
                 unit: '分',
                 hint: '${hideUnsubmitted ? '' : '$termName · '}$graded 门已有得分',
-                tone: avg == null ? null : p.forScore(avg),
+                // 有分数就按分数分档上色；没有分数用青色，
+                // 四张卡片因此各有各的色相，一眼能分辨。
+                tone: avg == null ? p.cyan : p.forScore(avg),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: StatCard(
                 icon: Icons.menu_book_outlined,
@@ -148,11 +150,12 @@ class OverviewTab extends StatelessWidget {
                 value: '${courses.length}',
                 unit: '门',
                 hint: '共 ${assignments.length} 项作业',
+                tone: p.purple,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Row(
           children: [
             Expanded(
@@ -169,7 +172,7 @@ class OverviewTab extends StatelessWidget {
                 tone: !hideUnsubmitted && missing > 0 ? p.bad : p.good,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: StatCard(
                 icon: Icons.schedule,
@@ -178,7 +181,7 @@ class OverviewTab extends StatelessWidget {
                 hint: hideUnsubmitted
                     ? '已忽略未提交的作业'
                     : (soon.isNotEmpty ? '其中 ${soon.length} 项 3 天内截止' : '暂无紧迫任务'),
-                tone: !hideUnsubmitted && upcoming > 0 ? p.warn : null,
+                tone: !hideUnsubmitted && upcoming > 0 ? p.warn : p.muted,
               ),
             ),
           ],
