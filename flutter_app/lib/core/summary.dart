@@ -62,6 +62,27 @@ final RegExp _zeroWidth = RegExp(r'[\u200b-\u200d\ufeff]');
 final RegExp _spaces = RegExp(r'[ \t]+');
 final RegExp _multiNewline = RegExp(r'\n{2,}');
 final RegExp _trailingPipe = RegExp(r'\s*\|\s*$', multiLine: true);
+final RegExp _anchorTag = RegExp(
+  r"""<\s*a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\s*/\s*a\s*>""",
+  caseSensitive: false,
+);
+
+/// 作业说明里的可点击链接。
+///
+/// 说明正文仍然用纯文本展示，避免把远端 HTML 直接交给 WebView；
+/// 但把链接单独提出来，用户不必为了打开一个附件入口再跳整页浏览器。
+List<({String label, String url})> extractHtmlLinks(String? html) {
+  if (html == null || html.isEmpty) return const [];
+  final out = <({String label, String url})>[];
+  final seen = <String>{};
+  for (final match in _anchorTag.allMatches(html)) {
+    final url = decodeEntities(match.group(1) ?? '').trim();
+    if (url.isEmpty || !seen.add(url)) continue;
+    final label = htmlToPlainText(match.group(2)).trim();
+    out.add((label: label.isEmpty ? url : label, url: url));
+  }
+  return out;
+}
 
 /// 解码常见的 HTML 实体（含数字实体）。
 String decodeEntities(String input) {
@@ -69,7 +90,8 @@ String decodeEntities(String input) {
     final body = m.group(1)!;
     if (body.startsWith('#')) {
       final isHex = body.length > 1 && (body[1] == 'x' || body[1] == 'X');
-      final code = int.tryParse(isHex ? body.substring(2) : body.substring(1), radix: isHex ? 16 : 10);
+      final code = int.tryParse(isHex ? body.substring(2) : body.substring(1),
+          radix: isHex ? 16 : 10);
       if (code == null || code <= 0 || code > 0x10ffff) return m.group(0)!;
       try {
         return String.fromCharCode(code);
@@ -137,7 +159,8 @@ String makeExcerpt(String? html, [int limit = excerptLength]) =>
     truncate(htmlToPlainText(html), limit);
 
 /// 去掉 HTML、压掉空白后的正文。判断「要不要精简」和喂给大模型都用它。
-String summarySourceText(String? description) => htmlToPlainText(description).trim();
+String summarySourceText(String? description) =>
+    htmlToPlainText(description).trim();
 
 /// 正文长到需要精简吗？
 ///
@@ -173,15 +196,21 @@ class LlmConfig {
   final String model;
   final bool enabled;
 
-  LlmConfig copyWith({String? baseUrl, String? apiKey, String? model, bool? enabled}) => LlmConfig(
+  LlmConfig copyWith(
+          {String? baseUrl, String? apiKey, String? model, bool? enabled}) =>
+      LlmConfig(
         baseUrl: baseUrl ?? this.baseUrl,
         apiKey: apiKey ?? this.apiKey,
         model: model ?? this.model,
         enabled: enabled ?? this.enabled,
       );
 
-  Map<String, dynamic> toJson() =>
-      {'baseUrl': baseUrl, 'apiKey': apiKey, 'model': model, 'enabled': enabled};
+  Map<String, dynamic> toJson() => {
+        'baseUrl': baseUrl,
+        'apiKey': apiKey,
+        'model': model,
+        'enabled': enabled
+      };
 
   factory LlmConfig.fromJson(Map<String, dynamic> json) => LlmConfig(
         baseUrl: (json['baseUrl'] as String?) ?? 'https://api.deepseek.com/v1',
@@ -200,8 +229,7 @@ bool llmReady(LlmConfig? cfg) =>
     cfg.baseUrl.trim().isNotEmpty &&
     cfg.model.trim().isNotEmpty;
 
-const String _systemPrompt =
-    '你是课程作业的摘要助手。把用户给出的作业说明压缩成一句话简介，'
+const String _systemPrompt = '你是课程作业的摘要助手。把用户给出的作业说明压缩成一句话简介，'
     '不超过 $summaryLength 个汉字。要求：只陈述这项作业要做什么、要交什么；'
     '不要复述截止时间、分值、评分标准；不要加「这份作业」「本题」之类的开头；'
     '不要任何前后缀、引号或解释；直接输出简介正文。';
@@ -222,7 +250,8 @@ typedef LlmTransport = Future<LlmHttpResponse> Function(
 );
 
 /// 用 dart:io 真正发请求。失败时抛异常，由 [summarizeAssignment] 兜住。
-Future<LlmHttpResponse> ioLlmTransport(String url, String apiKey, String jsonBody) async {
+Future<LlmHttpResponse> ioLlmTransport(
+    String url, String apiKey, String jsonBody) async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
   try {
     final req = await client.postUrl(Uri.parse(url));
@@ -238,7 +267,8 @@ Future<LlmHttpResponse> ioLlmTransport(String url, String apiKey, String jsonBod
 }
 
 class SummarizeResult {
-  const SummarizeResult({required this.summary, required this.source, this.error});
+  const SummarizeResult(
+      {required this.summary, required this.source, this.error});
 
   final String summary;
 
@@ -268,7 +298,8 @@ Future<SummarizeResult> summarizeAssignment(
   if (plain.isEmpty || !needsSummary(description)) {
     return const SummarizeResult(summary: '', source: 'none');
   }
-  if (!llmReady(cfg)) return SummarizeResult(summary: fallback, source: 'fallback');
+  if (!llmReady(cfg))
+    return SummarizeResult(summary: fallback, source: 'fallback');
 
   final base = cfg!.baseUrl.replaceAll(RegExp(r'/+$'), '');
   final url = '$base/chat/completions';
@@ -281,7 +312,8 @@ Future<SummarizeResult> summarizeAssignment(
       {'role': 'system', 'content': _systemPrompt},
       {
         'role': 'user',
-        'content': '作业标题：$title\n\n作业说明：\n${plain.length > 4000 ? plain.substring(0, 4000) : plain}',
+        'content':
+            '作业标题：$title\n\n作业说明：\n${plain.length > 4000 ? plain.substring(0, 4000) : plain}',
       },
     ],
   });
@@ -315,19 +347,26 @@ Future<SummarizeResult> summarizeAssignment(
     }
 
     var cleaned = raw.trim();
-    cleaned = cleaned.replaceAll(RegExp(r'^["「『]|["」』]$'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    cleaned = cleaned
+        .replaceAll(RegExp(r'^["「『]|["」』]$'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
 
     if (cleaned.isEmpty) {
-      return SummarizeResult(summary: fallback, source: 'fallback', error: '大模型返回了空内容');
+      return SummarizeResult(
+          summary: fallback, source: 'fallback', error: '大模型返回了空内容');
     }
 
-    return SummarizeResult(summary: truncate(cleaned, summaryLength), source: 'llm');
+    return SummarizeResult(
+        summary: truncate(cleaned, summaryLength), source: 'llm');
   } catch (e) {
     final msg = e.toString().replaceFirst('Exception: ', '');
     return SummarizeResult(
       summary: fallback,
       source: 'fallback',
-      error: msg.contains('Timeout') || msg.contains('timed out') ? '大模型接口超时' : '调用大模型失败：$msg',
+      error: msg.contains('Timeout') || msg.contains('timed out')
+          ? '大模型接口超时'
+          : '调用大模型失败：$msg',
     );
   }
 }

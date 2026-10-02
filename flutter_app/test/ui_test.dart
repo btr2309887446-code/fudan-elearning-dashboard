@@ -14,7 +14,9 @@ import 'package:fudan_elearning/core/session.dart';
 import 'package:fudan_elearning/core/types.dart';
 import 'package:fudan_elearning/state/app_state.dart';
 import 'package:fudan_elearning/theme.dart';
+import 'package:fudan_elearning/ui/assignment_detail_screen.dart';
 import 'package:fudan_elearning/ui/charts.dart';
+import 'package:fudan_elearning/ui/course_detail_screen.dart';
 import 'package:fudan_elearning/ui/format.dart';
 import 'package:fudan_elearning/ui/home_shell.dart';
 import 'package:fudan_elearning/ui/overview_tab.dart';
@@ -31,6 +33,7 @@ AssignmentRow row({
   bool excused = false,
   String? dueAt,
   double? points = 100,
+  String? htmlUrl,
 }) =>
     AssignmentRow(
       id: 1,
@@ -47,6 +50,7 @@ AssignmentRow row({
       excused: excused,
       dueAt: dueAt,
       pointsPossible: points,
+      htmlUrl: htmlUrl,
     );
 
 Future<AppState> bootedDemoState() async {
@@ -63,8 +67,13 @@ Widget wrap(AppState state) => MaterialApp(
 void main() {
   group('已交作业的逾期判定（回归）', () {
     test('已交但未批改、且已过截止时间的作业不算逾期', () {
-      final past = DateTime.now().subtract(const Duration(days: 3)).toIso8601String();
-      final r = row(score: null, submittedAt: past, workflowState: 'submitted', dueAt: past);
+      final past =
+          DateTime.now().subtract(const Duration(days: 3)).toIso8601String();
+      final r = row(
+          score: null,
+          submittedAt: past,
+          workflowState: 'submitted',
+          dueAt: past);
 
       expect(isCompleted(r), isTrue, reason: '有提交时间即视为已交');
       expect(dueRelative(r.dueAt, isCompleted(r)).tone, DueTone.later,
@@ -82,7 +91,8 @@ void main() {
     });
 
     test('真正未交且过期才算逾期', () {
-      final past = DateTime.now().subtract(const Duration(days: 3)).toIso8601String();
+      final past =
+          DateTime.now().subtract(const Duration(days: 3)).toIso8601String();
       final r = row(dueAt: past);
       expect(isCompleted(r), isFalse);
       expect(dueRelative(r.dueAt, isCompleted(r)).tone, DueTone.overdue);
@@ -116,10 +126,21 @@ void main() {
     test('平均分只算有成绩的课程', () {
       final courses = [
         const CourseSummary(
-            id: 1, name: 'a', displayName: 'a', courseCode: 'a', termName: 't', currentScore: 90),
+            id: 1,
+            name: 'a',
+            displayName: 'a',
+            courseCode: 'a',
+            termName: 't',
+            currentScore: 90),
         const CourseSummary(
-            id: 2, name: 'b', displayName: 'b', courseCode: 'b', termName: 't', currentScore: 80),
-        const CourseSummary(id: 3, name: 'c', displayName: 'c', courseCode: 'c', termName: 't'),
+            id: 2,
+            name: 'b',
+            displayName: 'b',
+            courseCode: 'b',
+            termName: 't',
+            currentScore: 80),
+        const CourseSummary(
+            id: 3, name: 'c', displayName: 'c', courseCode: 'c', termName: 't'),
       ];
       expect(averageScore(courses), closeTo(85, 0.001));
     });
@@ -169,7 +190,10 @@ void main() {
       final s = buildDemoSnapshot();
       final pending = s.assignments.where((a) {
         final due = a.dueAt == null ? null : DateTime.parse(a.dueAt!);
-        return a.score == null && isCompleted(a) && due != null && due.isBefore(DateTime.now());
+        return a.score == null &&
+            isCompleted(a) &&
+            due != null &&
+            due.isBefore(DateTime.now());
       });
       expect(pending, isNotEmpty, reason: '演示数据必须覆盖这个曾经出错的场景');
     });
@@ -195,6 +219,69 @@ void main() {
       expect(find.text('课程'), findsWidgets);
       // 学期选择器应当出现「全部学期」。
       expect(find.text('全部学期'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('课程详情作业行可以打开作业详情', (tester) async {
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final state = await bootedDemoState();
+      final snapshot = state.snapshot!;
+      final course = snapshot.courses.firstWhere((c) => c.assignmentCount > 0);
+      final assignment =
+          snapshot.assignments.firstWhere((a) => a.courseId == course.id);
+      AssignmentRow? opened;
+
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: CourseDetailScreen(
+          state: state,
+          snapshot: snapshot,
+          courseId: course.id,
+          hideUnsubmitted: false,
+          onOpenAssignment: (value) => opened = value,
+        ),
+      ));
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView);
+      for (var i = 0;
+          i < 8 && find.text(assignment.name).evaluate().isEmpty;
+          i++) {
+        await tester.drag(list, const Offset(0, -420));
+        await tester.pumpAndSettle();
+      }
+      final title = find.text(assignment.name).last;
+      expect(title, findsOneWidget);
+      await tester.ensureVisible(title);
+      await tester.pumpAndSettle();
+      await tester.tap(title);
+      expect(opened?.id, assignment.id);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('作业详情展示提交时间线和课程入口', (tester) async {
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final state = await bootedDemoState();
+      final assignment = row(
+        submittedAt: '2026-09-30T10:00:00Z',
+        workflowState: 'submitted',
+        dueAt: '2026-09-29T10:00:00Z',
+        htmlUrl: 'https://elearning.fudan.edu.cn/courses/1/assignments/1',
+      );
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: AssignmentDetailScreen(state: state, row: assignment),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('提交时间线'), findsOneWidget);
+      expect(find.text('已提交'), findsWidgets);
+      expect(find.text('在浏览器中打开（富文本、附件与提交入口）'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -409,7 +496,8 @@ void main() {
       final state = await bootedDemoState();
       final s = state.snapshot!;
       final current = s.terms.firstWhere((t) => t.isCurrent);
-      final currentCount = s.courses.where((c) => c.termId == current.id).length;
+      final currentCount =
+          s.courses.where((c) => c.termId == current.id).length;
       final allCount = s.courses.length;
       expect(currentCount, lessThan(allCount), reason: '演示数据要有多个学期');
 
@@ -426,7 +514,8 @@ void main() {
       final s = AppState(store: MemoryStore(), demo: true);
       // 新装的用户顺序表是空的，应当拿到完整默认顺序。
       expect(s.effectiveSectionOrder(), AppState.defaultSectionOrder);
-      expect(s.effectiveSectionOrder().toSet().length, AppState.defaultSectionOrder.length);
+      expect(s.effectiveSectionOrder().toSet().length,
+          AppState.defaultSectionOrder.length);
     });
 
     testWidgets('按 sectionOrder 决定渲染先后', (tester) async {
@@ -465,7 +554,8 @@ void main() {
       expect(statY1 < courseY1, isTrue, reason: '默认顺序里统计卡应当在课程卡上面');
 
       // 把课程卡片排到最前，位置应当真的换过来。
-      await pumpWith(const ['courses', 'stats', 'unsubmitted', 'soon', 'charts']);
+      await pumpWith(
+          const ['courses', 'stats', 'unsubmitted', 'soon', 'charts']);
       final statY2 = tester.getTopLeft(find.byType(StatCard).first).dy;
       final courseY2 = tester.getTopLeft(find.byType(CourseCard).first).dy;
       expect(courseY2 < statY2, isTrue, reason: '调换顺序后课程卡应当跑到统计卡上面');
@@ -559,7 +649,8 @@ void main() {
       expect(s.effectiveSectionOrder().first, order.first);
 
       // 顺序表里没提到过的板块也要在，且不重复。
-      expect(s.effectiveSectionOrder().toSet().length, AppState.defaultSectionOrder.length);
+      expect(s.effectiveSectionOrder().toSet().length,
+          AppState.defaultSectionOrder.length);
 
       await s.resetDashboardOrder();
       expect(s.effectiveSectionOrder(), AppState.defaultSectionOrder);

@@ -180,7 +180,8 @@ class AppState extends ChangeNotifier {
     final cached = await _repo.readSnapshot();
     if (cached != null) {
       try {
-        final parsed = normaliseSnapshot(jsonDecode(cached) as Map<String, dynamic>);
+        final parsed =
+            normaliseSnapshot(jsonDecode(cached) as Map<String, dynamic>);
         if (parsed != null) snapshot = parsed;
       } catch (_) {
         await _repo.clearSnapshot();
@@ -238,9 +239,11 @@ class AppState extends ChangeNotifier {
   /// 先问再交，是为了避免明知会失败还消耗一次尝试——学校会锁账号。
   Future<LoginPrep> prepareLogin(String username) async {
     error = null;
-    _pendingLogin = await beginLogin(jar: CookieJar(), encryptor: rsaPkcs1Encrypt);
+    _pendingLogin =
+        await beginLogin(jar: CookieJar(), encryptor: rsaPkcs1Encrypt);
     final captcha = await checkCaptcha(_pendingLogin!, username);
-    return LoginPrep(captchaRequired: captcha.required, captchaImage: captcha.image);
+    return LoginPrep(
+        captchaRequired: captcha.required, captchaImage: captcha.image);
   }
 
   /// 第二步：真正消耗一次认证尝试。
@@ -255,13 +258,16 @@ class AppState extends ChangeNotifier {
       diag('login', '开始登录 user=${redact(username, keep: 4)}');
       final t0 = DateTime.now();
 
-      final ctx = _pendingLogin ?? await beginLogin(jar: CookieJar(), encryptor: rsaPkcs1Encrypt);
+      final ctx = _pendingLogin ??
+          await beginLogin(jar: CookieJar(), encryptor: rsaPkcs1Encrypt);
       _pendingLogin = null;
-      diag('login', 'beginLogin 完成（${DateTime.now().difference(t0).inMilliseconds} ms）');
+      diag('login',
+          'beginLogin 完成（${DateTime.now().difference(t0).inMilliseconds} ms）');
 
       final result = await completeLogin(
         ctx,
-        Credentials(username: username, password: password, captchaCode: captchaCode),
+        Credentials(
+            username: username, password: password, captchaCode: captchaCode),
       );
       diag('login', 'completeLogin 完成，落点 ${result.finalUrl}');
 
@@ -280,7 +286,8 @@ class AppState extends ChangeNotifier {
       _jar = result.jar;
       await _repo.writeSession(result.jar.toJsonString());
 
-      prefs = prefs.copyWith(rememberedUsername: username, rememberPassword: remember);
+      prefs = prefs.copyWith(
+          rememberedUsername: username, rememberPassword: remember);
       await _savePrefs();
 
       final secrets = secure;
@@ -383,7 +390,8 @@ class AppState extends ChangeNotifier {
   final Map<int, FileNode> _fileTrees = {};
 
   Future<FileNode> loadCourseFiles(int courseId, {bool force = false}) async {
-    if (!force && _fileTrees.containsKey(courseId)) return _fileTrees[courseId]!;
+    if (!force && _fileTrees.containsKey(courseId))
+      return _fileTrees[courseId]!;
     if (demo) {
       final tree = buildDemoFileTree(courseId);
       _fileTrees[courseId] = tree;
@@ -419,13 +427,16 @@ class AppState extends ChangeNotifier {
   /// 下载选中的文件；[fileIds] 为空表示整门课。
   ///
   /// 磁盘路径由这里统一算：学期 / 课程 / Canvas 子文件夹 / 文件名。
-  Future<DownloadProgress?> downloadCourseFiles(int courseId, {List<int>? fileIds}) async {
+  Future<DownloadProgress?> downloadCourseFiles(int courseId,
+      {List<int>? fileIds}) async {
     if (_activeDownload != null) return null;
 
     final tree = await loadCourseFiles(courseId);
     final all = flattenFiles(tree);
     final wanted = (fileIds != null && fileIds.isNotEmpty)
-        ? all.where((n) => n.file != null && fileIds.contains(n.file!.id)).toList()
+        ? all
+            .where((n) => n.file != null && fileIds.contains(n.file!.id))
+            .toList()
         : all;
 
     if (wanted.isEmpty) return null;
@@ -440,8 +451,11 @@ class AppState extends ChangeNotifier {
         termName: '未分学期',
       ),
     );
-    final termName = (course?.termName.isNotEmpty ?? false) ? course!.termName : '未分学期';
-    final courseName = (course?.displayName.isNotEmpty ?? false) ? course!.displayName : '课程 $courseId';
+    final termName =
+        (course?.termName.isNotEmpty ?? false) ? course!.termName : '未分学期';
+    final courseName = (course?.displayName.isNotEmpty ?? false)
+        ? course!.displayName
+        : '课程 $courseId';
 
     final plan = planDownloadPaths(
       termName,
@@ -495,7 +509,8 @@ class AppState extends ChangeNotifier {
   }
 
   /// 演示模式：不联网、不落盘，只把进度走一遍。
-  Future<DownloadProgress> _simulateDemoDownload(List<DownloadItem> items) async {
+  Future<DownloadProgress> _simulateDemoDownload(
+      List<DownloadItem> items) async {
     final progress = DownloadProgress(
       total: items.length,
       bytesTotal: items.fold(0, (s, i) => s + i.size),
@@ -632,13 +647,21 @@ class AppState extends ChangeNotifier {
   ///
   /// 完整说明按需拉取（快照里只有 600 字摘录）；[excerptHint] 是本地已有的摘录，
   /// 网络失败时用它兜底，不至于白屏。
-  Future<({String description, String summary, String source, String? error})> loadAssignmentDetail({
+  Future<
+      ({
+        String description,
+        String summary,
+        String source,
+        String? error,
+        String? descriptionError,
+      })> loadAssignmentDetail({
     required int courseId,
     required int assignmentId,
     required String name,
     String? excerptHint,
   }) async {
     String description = '';
+    String? descriptionError;
 
     if (demo) {
       description = excerptHint ?? '';
@@ -650,6 +673,7 @@ class AppState extends ChangeNotifier {
           summary: fallbackSummary(excerptHint),
           source: 'fallback',
           error: '尚未登录',
+          descriptionError: '尚未登录',
         );
       }
       try {
@@ -657,11 +681,13 @@ class AppState extends ChangeNotifier {
         final a = await client.getAssignment(courseId, assignmentId);
         description = a.description ?? '';
       } catch (e) {
+        descriptionError = e.toString().replaceFirst('Exception: ', '');
         return (
           description: excerptHint ?? '',
           summary: fallbackSummary(excerptHint),
           source: 'fallback',
-          error: e.toString().replaceFirst('Exception: ', ''),
+          error: null,
+          descriptionError: descriptionError,
         );
       }
     }
@@ -669,14 +695,22 @@ class AppState extends ChangeNotifier {
     final key = summaryCacheKey(assignmentId, description);
     final cached = _summaryCache[key];
     if (cached != null) {
-      return (description: description, summary: cached, source: 'fallback', error: null);
+      return (
+        description: description,
+        summary: cached,
+        source: 'fallback',
+        error: null,
+        descriptionError: descriptionError,
+      );
     }
 
     final result = await summarizeAssignment(name, description, prefs.llm);
     if (result.summary.isNotEmpty) {
       _summaryCache[key] = result.summary;
       if (_summaryCache.length > _summaryCacheLimit) {
-        for (final k in _summaryCache.keys.take(_summaryCache.length - _summaryCacheLimit).toList()) {
+        for (final k in _summaryCache.keys
+            .take(_summaryCache.length - _summaryCacheLimit)
+            .toList()) {
           _summaryCache.remove(k);
         }
       }
@@ -686,6 +720,7 @@ class AppState extends ChangeNotifier {
       summary: result.summary,
       source: result.source,
       error: result.error,
+      descriptionError: descriptionError,
     );
   }
 }

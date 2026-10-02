@@ -12,7 +12,12 @@ import 'format.dart';
 
 /// 环形得分指示器（纯 CustomPainter，不依赖图表库）。
 class ScoreRing extends StatelessWidget {
-  const ScoreRing({super.key, required this.score, this.size = 64, this.stroke = 6, this.showLabel = true});
+  const ScoreRing(
+      {super.key,
+      required this.score,
+      this.size = 64,
+      this.stroke = 6,
+      this.showLabel = true});
 
   final double? score;
   final double size;
@@ -32,7 +37,8 @@ class ScoreRing extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: has ? (score! / 100).clamp(0.0, 1.0) : 0.0),
+            tween: Tween(
+                begin: 0, end: has ? (score! / 100).clamp(0.0, 1.0) : 0.0),
             duration: const Duration(milliseconds: 700),
             curve: Curves.easeOutCubic,
             builder: (context, value, _) => CustomPaint(
@@ -56,7 +62,8 @@ class ScoreRing extends StatelessWidget {
               if (showLabel && size >= 56)
                 Text(
                   AppPalette.labelForScore(score),
-                  style: TextStyle(color: p.muted, fontSize: size * 0.15, height: 1.2),
+                  style: TextStyle(
+                      color: p.muted, fontSize: size * 0.15, height: 1.2),
                 ),
             ],
           ),
@@ -76,7 +83,8 @@ class _RingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
+    final rect = Rect.fromLTWH(
+        stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
     final trackPaint = Paint()
       ..color = track
       ..style = PaintingStyle.stroke
@@ -89,7 +97,8 @@ class _RingPainter extends CustomPainter {
 
     canvas.drawArc(rect, 0, math.pi * 2, false, trackPaint);
     if (progress > 0) {
-      canvas.drawArc(rect, -math.pi / 2, math.pi * 2 * progress, false, valuePaint);
+      canvas.drawArc(
+          rect, -math.pi / 2, math.pi * 2 * progress, false, valuePaint);
     }
   }
 
@@ -176,7 +185,10 @@ class StatCard extends StatelessWidget {
                 if (unit != null)
                   TextSpan(
                     text: ' $unit',
-                    style: TextStyle(color: p.muted, fontSize: 12.5, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                        color: p.muted,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500),
                   ),
               ],
             ),
@@ -222,7 +234,8 @@ class StatusTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(color: fg, fontSize: 11.5, fontWeight: FontWeight.w500),
+        style:
+            TextStyle(color: fg, fontSize: 11.5, fontWeight: FontWeight.w500),
       ),
     );
   }
@@ -244,7 +257,8 @@ class InfoChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: c == null ? p.surfaceAlt : c.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: c == null ? p.border : c.withValues(alpha: 0.3)),
+        border:
+            Border.all(color: c == null ? p.border : c.withValues(alpha: 0.3)),
       ),
       child: Text(
         text,
@@ -256,7 +270,8 @@ class InfoChip extends StatelessWidget {
 
 /// 小节标题。
 class SectionHeader extends StatelessWidget {
-  const SectionHeader(this.title, {super.key, this.trailing, this.icon, this.iconColor});
+  const SectionHeader(this.title,
+      {super.key, this.trailing, this.icon, this.iconColor});
 
   final String title;
   final Widget? trailing;
@@ -274,12 +289,22 @@ class SectionHeader extends StatelessWidget {
             Icon(icon, size: 17, color: iconColor ?? p.accent),
             const SizedBox(width: 7),
           ],
-          Text(
-            title,
-            style: TextStyle(color: p.text, fontSize: 15.5, fontWeight: FontWeight.w700, letterSpacing: -0.2),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: p.text,
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2),
+            ),
           ),
-          const Spacer(),
-          if (trailing != null) trailing!,
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            trailing!,
+          ],
         ],
       ),
     );
@@ -325,7 +350,8 @@ class AppCard extends StatelessWidget {
 
 /// 细进度条。
 class ThinBar extends StatelessWidget {
-  const ThinBar({super.key, required this.percent, this.color, this.height = 6});
+  const ThinBar(
+      {super.key, required this.percent, this.color, this.height = 6});
 
   final double? percent;
   final Color? color;
@@ -411,7 +437,8 @@ class CourseCard extends StatelessWidget {
               Text('得分构成', style: TextStyle(color: p.muted, fontSize: 11.5)),
               const Spacer(),
               Text(
-                course.earnedPoints != null && course.possiblePointsGraded != null
+                course.earnedPoints != null &&
+                        course.possiblePointsGraded != null
                     ? '${course.earnedPoints!.toStringAsFixed(1)} / ${course.possiblePointsGraded!.toStringAsFixed(0)} 分'
                     : '尚无评分',
                 style: TextStyle(color: p.muted, fontSize: 11.5),
@@ -419,7 +446,9 @@ class CourseCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 5),
-          ThinBar(percent: course.currentScore, color: p.forScore(course.currentScore)),
+          ThinBar(
+              percent: course.currentScore,
+              color: p.forScore(course.currentScore)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 6,

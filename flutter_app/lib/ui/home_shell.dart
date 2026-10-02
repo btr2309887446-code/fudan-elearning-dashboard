@@ -101,6 +101,7 @@ class _HomeShellState extends State<HomeShell> {
           snapshot: snapshot,
           courseId: id,
           hideUnsubmitted: state.prefs.hideUnsubmitted,
+          onOpenAssignment: _openAssignment,
         ),
       ),
     );

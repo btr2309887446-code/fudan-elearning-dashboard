@@ -21,7 +21,8 @@ class FakeTransport {
   String? lastKey;
   String? lastBody;
 
-  Future<LlmHttpResponse> call(String url, String apiKey, String jsonBody) async {
+  Future<LlmHttpResponse> call(
+      String url, String apiKey, String jsonBody) async {
     calls += 1;
     lastUrl = url;
     lastKey = apiKey;
@@ -33,36 +34,82 @@ class FakeTransport {
 void main() {
   group('decodeEntities 与桌面端一致', () {
     test('命名实体', () {
-      expect(decodeEntities('a &amp; b &lt;c&gt; &quot;d&quot;'), 'a & b <c> "d"');
+      expect(
+          decodeEntities('a &amp; b &lt;c&gt; &quot;d&quot;'), 'a & b <c> "d"');
     });
     test('中文引号', () => expect(decodeEntities('&ldquo;报告&rdquo;'), '“报告”'));
     test('nbsp 变空格', () => expect(decodeEntities('a&nbsp;b'), 'a b'));
     test('十进制数字实体', () => expect(decodeEntities('&#65;&#66;'), 'AB'));
     test('十六进制实体', () => expect(decodeEntities('&#x4e2d;&#x6587;'), '中文'));
-    test('未知实体原样保留', () => expect(decodeEntities('&foo; &bar;'), '&foo; &bar;'));
+    test(
+        '未知实体原样保留', () => expect(decodeEntities('&foo; &bar;'), '&foo; &bar;'));
   });
 
   group('htmlToPlainText 与桌面端逐字节一致', () {
-    test('段落换行', () => expect(htmlToPlainText('<p>第一段</p><p>第二段</p>'), '第一段\n第二段'));
+    test('段落换行',
+        () => expect(htmlToPlainText('<p>第一段</p><p>第二段</p>'), '第一段\n第二段'));
     test('br 换行', () => expect(htmlToPlainText('第一行<br>第二行'), '第一行\n第二行'));
     test('br 自闭合', () => expect(htmlToPlainText('a<br/>b'), 'a\nb'));
-    test('行内标签不换行', () => expect(htmlToPlainText('<p>这是<strong>重点</strong>内容</p>'), '这是重点内容'));
+    test(
+        '行内标签不换行',
+        () => expect(
+            htmlToPlainText('<p>这是<strong>重点</strong>内容</p>'), '这是重点内容'));
     test('链接只留文字', () => expect(htmlToPlainText('<a href="x">点这里</a>'), '点这里'));
 
     // 这三条是写死的 TS 实测输出
-    test('列表记号与桌面端一致', () => expect(htmlToPlainText('<ul><li>甲</li><li>乙</li></ul>'), '· 甲\n· 乙'));
-    test('表格与桌面端一致', () => expect(htmlToPlainText('<table><tr><td>姓名</td><td>分数</td></tr></table>'), '姓名 | 分数'));
+    test(
+        '列表记号与桌面端一致',
+        () => expect(
+            htmlToPlainText('<ul><li>甲</li><li>乙</li></ul>'), '· 甲\n· 乙'));
+    test(
+        '表格与桌面端一致',
+        () => expect(
+            htmlToPlainText('<table><tr><td>姓名</td><td>分数</td></tr></table>'),
+            '姓名 | 分数'));
     test('实体与空白与桌面端一致', () => expect(htmlToPlainText('a&nbsp;&nbsp;b'), 'a b'));
-    test('混合实体与桌面端一致', () => expect(htmlToPlainText('&ldquo;报告&rdquo; &#x4e2d;'), '“报告” 中'));
+    test('混合实体与桌面端一致',
+        () => expect(htmlToPlainText('&ldquo;报告&rdquo; &#x4e2d;'), '“报告” 中'));
 
-    test('script 整块丢掉', () => expect(htmlToPlainText('<p>正文</p><script>alert(1)</script>'), '正文'));
-    test('style 整块丢掉', () => expect(htmlToPlainText('<style>p{color:red}</style><p>正文</p>'), '正文'));
-    test('连续空行压成一个', () => expect(htmlToPlainText('<p>a</p><p></p><p></p><p>b</p>'), 'a\nb'));
+    test(
+        'script 整块丢掉',
+        () => expect(
+            htmlToPlainText('<p>正文</p><script>alert(1)</script>'), '正文'));
+    test(
+        'style 整块丢掉',
+        () => expect(
+            htmlToPlainText('<style>p{color:red}</style><p>正文</p>'), '正文'));
+    test(
+        '连续空行压成一个',
+        () =>
+            expect(htmlToPlainText('<p>a</p><p></p><p></p><p>b</p>'), 'a\nb'));
     test('零宽字符清掉', () => expect(htmlToPlainText('a\u200bb\ufeffc'), 'abc'));
     test('空输入', () => expect(htmlToPlainText(''), ''));
     test('null 输入', () => expect(htmlToPlainText(null), ''));
     test('只有标签', () => expect(htmlToPlainText('<p></p><div></div>'), ''));
-    test('已转义的标签不会被删掉', () => expect(htmlToPlainText('&lt;script&gt; 是要转义的'), '<script> 是要转义的'));
+    test(
+        '已转义的标签不会被删掉',
+        () =>
+            expect(htmlToPlainText('&lt;script&gt; 是要转义的'), '<script> 是要转义的'));
+  });
+
+  group('作业说明链接', () {
+    test('提取链接文字与地址并去重', () {
+      expect(
+        extractHtmlLinks(
+          '<p><a href="https://example.com/a?x=1&amp;y=2">课程资料</a></p>'
+          '<a href="https://example.com/a?x=1&amp;y=2">重复</a>'
+          '<a href="/files/3">附件</a>',
+        ),
+        [
+          (label: '课程资料', url: 'https://example.com/a?x=1&y=2'),
+          (label: '附件', url: '/files/3'),
+        ],
+      );
+    });
+
+    test('没有链接时返回空列表', () {
+      expect(extractHtmlLinks('<p>普通说明</p>'), isEmpty);
+    });
   });
 
   group('truncate 与桌面端逐字节一致', () {
@@ -154,7 +201,8 @@ void main() {
       );
 
       var called = false;
-      Future<LlmHttpResponse> spy(String url, String apiKey, String body) async {
+      Future<LlmHttpResponse> spy(
+          String url, String apiKey, String body) async {
         called = true;
         return const LlmHttpResponse(
           status: 200,
@@ -162,13 +210,15 @@ void main() {
         );
       }
 
-      final short = await summarizeAssignment('短作业', '<p>交一份报告。</p>', cfg, transport: spy);
+      final short = await summarizeAssignment('短作业', '<p>交一份报告。</p>', cfg,
+          transport: spy);
       expect(called, isFalse, reason: '短正文不该发请求');
       expect(short.source, 'none');
       expect(short.summary, isEmpty);
 
       called = false;
-      await summarizeAssignment('长作业', '字' * (summaryLength + 1), cfg, transport: spy);
+      await summarizeAssignment('长作业', '字' * (summaryLength + 1), cfg,
+          transport: spy);
       expect(called, isTrue, reason: '长正文应当发请求');
     });
   });
@@ -198,14 +248,16 @@ void main() {
     });
 
     test('llmReady 判定', () {
-      expect(llmReady(const LlmConfig(apiKey: 'sk-x', enabled: false)), isFalse);
+      expect(
+          llmReady(const LlmConfig(apiKey: 'sk-x', enabled: false)), isFalse);
       expect(llmReady(const LlmConfig(apiKey: 'sk-x', enabled: true)), isTrue);
       expect(llmReady(const LlmConfig(apiKey: '   ', enabled: true)), isFalse);
       expect(llmReady(null), isFalse);
     });
 
     test('成功时解析内容并去掉包裹引号', () async {
-      final t = FakeTransport(200, '{"choices":[{"message":{"content":"「实现二叉搜索树并分析三种操作的复杂度。」"}}]}');
+      final t = FakeTransport(
+          200, '{"choices":[{"message":{"content":"「实现二叉搜索树并分析三种操作的复杂度。」"}}]}');
       final r = await summarizeAssignment('实验五', html, cfg, transport: t.call);
       expect(r.source, 'llm');
       expect(r.summary, '实现二叉搜索树并分析三种操作的复杂度。');
@@ -217,7 +269,8 @@ void main() {
     });
 
     test('baseUrl 结尾多余斜杠被规整', () async {
-      final t = FakeTransport(200, '{"choices":[{"message":{"content":"简短。"}}]}');
+      final t =
+          FakeTransport(200, '{"choices":[{"message":{"content":"简短。"}}]}');
       await summarizeAssignment(
         't',
         html,
@@ -236,7 +289,8 @@ void main() {
     });
 
     test('返回空内容时降级', () async {
-      final t = FakeTransport(200, '{"choices":[{"message":{"content":"   "}}]}');
+      final t =
+          FakeTransport(200, '{"choices":[{"message":{"content":"   "}}]}');
       final r = await summarizeAssignment('实验五', html, cfg, transport: t.call);
       expect(r.source, 'fallback');
     });
@@ -256,7 +310,8 @@ void main() {
     });
 
     test('超长返回值被截到 100 字内', () async {
-      final t = FakeTransport(200, '{"choices":[{"message":{"content":"${'己' * 400}"}}]}');
+      final t = FakeTransport(
+          200, '{"choices":[{"message":{"content":"${'己' * 400}"}}]}');
       final r = await summarizeAssignment('实验五', html, cfg, transport: t.call);
       expect(r.summary.length, lessThanOrEqualTo(summaryLength));
     });
@@ -276,7 +331,8 @@ void main() {
       expect(summaryCacheKey(1, ''), '1:0:0');
     });
 
-    test('普通 HTML', () => expect(summaryCacheKey(1, '<p>abc</p>'), '1:10:1yy8pll'));
+    test('普通 HTML',
+        () => expect(summaryCacheKey(1, '<p>abc</p>'), '1:10:1yy8pll'));
 
     test('等长不同内容能区分', () {
       expect(summaryCacheKey(5, 'abcdefghij'), '5:10:1ojgfc5');
@@ -298,7 +354,8 @@ void main() {
 
   group('LlmConfig 序列化', () {
     test('往返', () {
-      const c = LlmConfig(baseUrl: 'https://x/v1', apiKey: 'sk-1', model: 'm', enabled: true);
+      const c = LlmConfig(
+          baseUrl: 'https://x/v1', apiKey: 'sk-1', model: 'm', enabled: true);
       final back = LlmConfig.fromJson(c.toJson());
       expect(back.baseUrl, c.baseUrl);
       expect(back.apiKey, c.apiKey);
