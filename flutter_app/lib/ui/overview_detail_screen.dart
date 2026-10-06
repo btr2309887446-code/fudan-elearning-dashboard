@@ -118,7 +118,22 @@ class OverviewDetailScreen extends StatelessWidget {
     );
   }
 
+  /// 把待办条目对回作业行。
+  ///
+  /// **优先按 id 匹配。** 待办列表（`/users/self/todo`）和作业列表
+  /// （`/courses/:id/assignments`）是两套数据，之前只能按标题找，
+  /// 而同一门课里出现同名作业（「实验报告」「期末考试」）就会匹配到错的那条——
+  /// 点进去看到的是另一次作业的详情。
+  ///
+  /// 标题匹配只作为退路：老快照里没有 `assignmentId` 字段。
   AssignmentRow? _assignmentFor(TodoEntry entry) {
+    if (entry.assignmentId != null) {
+      for (final row in assignments) {
+        if (row.id == entry.assignmentId) return row;
+      }
+      // id 对不上就不要退化成按标题猜——那正是要避免的事。
+      return null;
+    }
     for (final row in assignments) {
       if (row.name == entry.title &&
           (entry.courseId == null || row.courseId == entry.courseId)) {
@@ -128,10 +143,19 @@ class OverviewDetailScreen extends StatelessWidget {
     return null;
   }
 
+  /// 按截止时间排序。
+  ///
+  /// 用 [DateTime.tryParse] 而不是 `parse`：Canvas 偶尔会给出无法解析的
+  /// 时间串，`parse` 会直接抛，把整个「缺交作业」页面弄崩。
   int _byDue(AssignmentRow a, AssignmentRow b) {
-    if (a.dueAt == null) return 1;
-    if (b.dueAt == null) return -1;
-    return DateTime.parse(a.dueAt!).compareTo(DateTime.parse(b.dueAt!));
+    final ta = a.dueAt == null ? null : DateTime.tryParse(a.dueAt!);
+    final tb = b.dueAt == null ? null : DateTime.tryParse(b.dueAt!);
+    // 两个都没有截止时间时返回 0——返回 1 会让排序结果不稳定，
+    // 同一个列表每次重建顺序都可能不一样。
+    if (ta == null && tb == null) return 0;
+    if (ta == null) return 1;
+    if (tb == null) return -1;
+    return ta.compareTo(tb);
   }
 }
 

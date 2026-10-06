@@ -54,6 +54,42 @@ Future<bool> loadCjkFont() async {
   return false;
 }
 
+/// 注册 Material 图标字体。
+///
+/// **不注册的话，截图里每个图标都会是一个方框。** 之前就是这样：
+/// golden 只加载了中文字体，于是所有 `Icons.xxx` 渲染成 tofu——
+/// 既看不出图标选得对不对，方框的字形尺寸也和真实图标不同，
+/// 连布局都是失真的（统计卡右侧那个"多余的小方块"其实就是 chevron）。
+///
+/// 字体在 Flutter SDK 里；用 `FLUTTER_ROOT` 定位而不是写死盘符，
+/// 换机器或换 SDK 路径都不会失效。
+Future<bool> loadIconFont() async {
+  final roots = <String>[
+    if (Platform.environment['FLUTTER_ROOT'] != null)
+      Platform.environment['FLUTTER_ROOT']!,
+    // 退路：从 dart 可执行文件往上找 SDK 根
+    File(Platform.resolvedExecutable).parent.parent.parent.parent.path,
+  ];
+
+  for (final root in roots) {
+    final file = File(
+      '$root/bin/cache/artifacts/material_fonts/materialicons-regular.otf',
+    );
+    if (!file.existsSync()) continue;
+    try {
+      final bytes = file.readAsBytesSync();
+      // 字族名必须是 'MaterialIcons'——Icons.xxx 用的就是这个。
+      final loader = FontLoader('MaterialIcons')
+        ..addFont(Future.value(ByteData.view(bytes.buffer)));
+      await loader.load();
+      return true;
+    } catch (_) {
+      // 换下一个候选。
+    }
+  }
+  return false;
+}
+
 Widget wrapGolden(Widget child, ThemeData theme) => MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: theme,
@@ -84,6 +120,12 @@ void main() {
     if (!ok) {
       // ignore: avoid_print
       print('警告：没有找到可用中文字体，截图中的文字会是占位方框。');
+    }
+    final icons = await loadIconFont();
+    if (!icons) {
+      // ignore: avoid_print
+      print('警告：没有找到 MaterialIcons 字体，截图中的图标会是占位方框，'
+          '布局尺寸也会与真机有偏差。');
     }
   });
 

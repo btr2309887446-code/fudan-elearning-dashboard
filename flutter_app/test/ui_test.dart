@@ -16,6 +16,7 @@ import 'package:fudan_elearning/state/app_state.dart';
 import 'package:fudan_elearning/theme.dart';
 import 'package:fudan_elearning/ui/assignment_detail_screen.dart';
 import 'package:fudan_elearning/ui/charts.dart';
+import 'package:fudan_elearning/ui/overview_detail_screen.dart';
 import 'package:fudan_elearning/ui/course_detail_screen.dart';
 import 'package:fudan_elearning/ui/format.dart';
 import 'package:fudan_elearning/ui/home_shell.dart';
@@ -687,6 +688,167 @@ void main() {
       final b = AppState(store: store, demo: true);
       await b.boot();
       expect(b.effectiveSectionOrder(), expected);
+    });
+  });
+
+  group('待办条目对回作业行', () {
+    // 回归：OverviewDetailScreen 原先按**标题**把待办条目对回作业行，
+    // 而同一门课里出现同名作业（「实验报告」「期末考试」）时会匹配到
+    // 错的那一条——点进去看到的是另一次作业的详情。
+    //
+    // 修法是让 TodoEntry 带上 assignmentId，优先按 id 匹配。
+
+    AssignmentRow rowWith({
+      required int id,
+      required String name,
+      required int courseId,
+      String? dueAt,
+    }) =>
+        AssignmentRow(
+          id: id,
+          courseId: courseId,
+          courseName: '测试课程',
+          name: name,
+          groupId: 1,
+          groupName: '作业',
+          score: null,
+          workflowState: 'unsubmitted',
+          missing: true,
+          late: false,
+          excused: false,
+          dueAt: dueAt,
+          pointsPossible: 100,
+        );
+
+    testWidgets('同名作业按 id 区分，不会匹配到错的那一条', (tester) async {
+      final first = rowWith(id: 101, name: '实验报告', courseId: 7, dueAt: '2026-03-01T23:59:00Z');
+      final second = rowWith(id: 202, name: '实验报告', courseId: 7, dueAt: '2026-04-01T23:59:00Z');
+
+      AssignmentRow? opened;
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: OverviewDetailScreen(
+          kind: OverviewDetailKind.upcoming,
+          courses: const [],
+          assignments: [first, second],
+          todo: const [
+            TodoEntry(
+              title: '实验报告',
+              courseName: '测试课程',
+              kind: 'assignment',
+              courseId: 7,
+              // 指向第二条
+              assignmentId: 202,
+            ),
+          ],
+          ignoredSet: const {},
+          onOpenCourse: (_) {},
+          onOpenAssignment: (r) => opened = r,
+          onOpenUrl: (_) {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('实验报告'));
+      await tester.pumpAndSettle();
+
+      expect(opened, isNotNull, reason: '应当找到对应的作业行');
+      expect(opened!.id, 202, reason: '按标题匹配的话这里会是 101');
+    });
+
+    testWidgets('id 匹配不上时不退化成按标题猜', (tester) async {
+      // 宁可什么都不打开（回退到课程页），也不要打开一条不相干的作业。
+      final other = rowWith(id: 101, name: '实验报告', courseId: 7);
+      var openedAssignment = false;
+      var openedCourse = false;
+
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: OverviewDetailScreen(
+          kind: OverviewDetailKind.upcoming,
+          courses: const [],
+          assignments: [other],
+          todo: const [
+            TodoEntry(
+              title: '实验报告',
+              courseName: '测试课程',
+              kind: 'assignment',
+              courseId: 7,
+              assignmentId: 999, // 列表里没有这一条
+            ),
+          ],
+          ignoredSet: const {},
+          onOpenCourse: (_) => openedCourse = true,
+          onOpenAssignment: (_) => openedAssignment = true,
+          onOpenUrl: (_) {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('实验报告'));
+      await tester.pumpAndSettle();
+
+      expect(openedAssignment, isFalse, reason: '不该打开一条标题相同但 id 不同的作业');
+      expect(openedCourse, isTrue, reason: '应当退回到课程页');
+    });
+
+    testWidgets('老快照（没有 assignmentId）仍按标题匹配', (tester) async {
+      final row = rowWith(id: 101, name: '期中测验', courseId: 7);
+      AssignmentRow? opened;
+
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: OverviewDetailScreen(
+          kind: OverviewDetailKind.upcoming,
+          courses: const [],
+          assignments: [row],
+          todo: const [
+            TodoEntry(
+              title: '期中测验',
+              courseName: '测试课程',
+              kind: 'assignment',
+              courseId: 7,
+              // 老快照里没有这个字段
+            ),
+          ],
+          ignoredSet: const {},
+          onOpenCourse: (_) {},
+          onOpenAssignment: (r) => opened = r,
+          onOpenUrl: (_) {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('期中测验'));
+      await tester.pumpAndSettle();
+
+      expect(opened?.id, 101, reason: '没有 id 时应保留按标题的退路');
+    });
+
+    testWidgets('缺交列表里截止时间无法解析时不会崩', (tester) async {
+      // _byDue 原先用 DateTime.parse，遇到坏数据会直接抛，
+      // 把整个「缺交作业」页面弄崩。
+      final bad = rowWith(id: 1, name: '坏数据', courseId: 7, dueAt: '不是日期');
+      final good = rowWith(id: 2, name: '正常', courseId: 7, dueAt: '2026-04-01T23:59:00Z');
+
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: OverviewDetailScreen(
+          kind: OverviewDetailKind.missing,
+          courses: const [],
+          assignments: [bad, good],
+          todo: const [],
+          ignoredSet: const {},
+          onOpenCourse: (_) {},
+          onOpenAssignment: (_) {},
+          onOpenUrl: (_) {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('坏数据'), findsOneWidget);
+      expect(find.text('正常'), findsOneWidget);
     });
   });
 }

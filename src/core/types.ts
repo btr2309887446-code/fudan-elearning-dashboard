@@ -237,6 +237,16 @@ export interface Snapshot {
     title: string;
     courseId: number | null;
     courseName: string;
+    /**
+     * 对应作业的 id（只有 kind === 'assignment' 时有值）。
+     *
+     * 存在的意义是**能可靠地找到对应的作业行**：待办列表
+     * （`/users/self/todo`）和作业列表（`/courses/:id/assignments`）是两套
+     * 数据，之前只能按标题匹配，而同一门课里出现同名作业（「实验报告」
+     * 「期末考试」）会匹配到错的那一条。测验没有这个 id（Canvas 的 todo
+     * 里 quiz 是裸 JSON），所以是可空。
+     */
+    assignmentId?: number | null;
     dueAt: string | null;
     pointsPossible: number | null;
     htmlUrl?: string;

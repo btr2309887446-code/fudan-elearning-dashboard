@@ -76,15 +76,28 @@ export default function Timeline({
 
     // Canvas' own todo list wins for anything it knows about, since it reflects
     // the server's view of what is still outstanding.
+    //
+    // 用 assignmentId 匹配，**不要按标题找**：同一门课里出现同名作业
+    // （「实验报告」「期末考试」）时会匹配到错的那一条，详情页打开的是
+    // 另一次作业。老快照里没有这个字段，所以保留标题作为退路。
+    //
+    // 另外这个键必须是唯一的。原先是
+    //   -Math.abs(t.title.length + (t.courseId ?? 0))
+    // 同课程下标题等长的两个待办会算出同一个键，后者静默覆盖前者。
+    // 改成从 -1 递减的计数器，撞键不可能发生。
+    let syntheticKey = -1;
     for (const t of scopedTodo) {
-      const existing = [...byAssignment.values()].find(
-        (i) => i.title === t.title && (t.courseId === null || i.courseId === t.courseId)
-      );
+      const existing =
+        t.assignmentId != null
+          ? byAssignment.get(t.assignmentId)
+          : [...byAssignment.values()].find(
+              (i) => i.title === t.title && (t.courseId === null || i.courseId === t.courseId)
+            );
       if (existing) {
         existing.dueAt = t.dueAt ?? existing.dueAt;
         continue;
       }
-      byAssignment.set(-Math.abs(t.title.length + (t.courseId ?? 0)), {
+      byAssignment.set(syntheticKey--, {
         key: `t-${t.courseId}-${t.title}`,
         title: t.title,
         courseId: t.courseId,

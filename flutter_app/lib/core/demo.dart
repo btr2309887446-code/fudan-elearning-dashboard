@@ -333,6 +333,9 @@ Snapshot buildDemoSnapshot() {
             title: r.name,
             courseId: r.courseId,
             courseName: r.courseName,
+            // 演示数据也带上：否则「待办 → 作业详情」这条路径在测试里
+            // 走的是退化的标题匹配，和真实数据的行为不一致。
+            assignmentId: r.id,
             dueAt: r.dueAt,
             pointsPossible: r.pointsPossible,
             htmlUrl: r.htmlUrl,

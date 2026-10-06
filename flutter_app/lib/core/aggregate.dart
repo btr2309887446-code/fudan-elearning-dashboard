@@ -208,6 +208,8 @@ Future<Snapshot> buildSnapshot(CanvasClient client, [BuildSnapshotOptions option
           title: a.name,
           courseId: item.courseId ?? a.courseId,
           courseName: nameFor(item.courseId ?? a.courseId),
+          // 存下来，界面上才能可靠地定位到对应的作业行。
+          assignmentId: a.id,
           dueAt: a.dueAt,
           pointsPossible: a.pointsPossible,
           htmlUrl: a.htmlUrl ?? item.htmlUrl,

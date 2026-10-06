@@ -222,6 +222,8 @@ export async function buildSnapshot(
           title: a.name,
           courseId: item.course_id ?? a.course_id ?? null,
           courseName: nameFor(item.course_id ?? a.course_id),
+          // 存下来，界面上才能可靠地定位到对应的作业行。
+          assignmentId: a.id,
           dueAt: a.due_at,
           pointsPossible: a.points_possible,
           htmlUrl: a.html_url ?? item.html_url,

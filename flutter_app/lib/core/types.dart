@@ -601,6 +601,7 @@ class TodoEntry {
     required this.courseName,
     required this.kind,
     this.courseId,
+    this.assignmentId,
     this.dueAt,
     this.pointsPossible,
     this.htmlUrl,
@@ -610,6 +611,15 @@ class TodoEntry {
   final String courseName;
   final String kind;
   final int? courseId;
+
+  /// 对应作业的 id（只有 kind == 'assignment' 时有值）。
+  ///
+  /// 存在的意义是**能可靠地找到对应的作业行**：待办列表和作业列表是两套
+  /// 数据，之前只能按标题匹配，而同一门课里出现同名作业（「实验报告」
+  /// 「期末考试」）会匹配到错的那一条。测验没有这个 id（Canvas 的 todo
+  /// 里 quiz 是裸 JSON），所以是可空。
+  final int? assignmentId;
+
   final String? dueAt;
   final double? pointsPossible;
   final String? htmlUrl;
@@ -619,6 +629,7 @@ class TodoEntry {
         'courseName': courseName,
         'kind': kind,
         'courseId': courseId,
+        'assignmentId': assignmentId,
         'dueAt': dueAt,
         'pointsPossible': pointsPossible,
         'htmlUrl': htmlUrl,
@@ -629,6 +640,7 @@ class TodoEntry {
         courseName: (json['courseName'] as String?) ?? '',
         kind: (json['kind'] as String?) ?? 'assignment',
         courseId: (json['courseId'] as num?)?.toInt(),
+        assignmentId: (json['assignmentId'] as num?)?.toInt(),
         dueAt: json['dueAt'] as String?,
         pointsPossible: (json['pointsPossible'] as num?)?.toDouble(),
         htmlUrl: json['htmlUrl'] as String?,
