@@ -17,6 +17,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fudan_elearning/core/clock.dart';
@@ -32,6 +33,10 @@ const _fontFamily = 'Deng';
 
 /// 依次尝试几个系统中文字体，取第一个能读到的。
 const _fontCandidates = [
+  '/System/Library/Fonts/STHeiti Medium.ttc',
+  '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+  '/System/Library/Fonts/STHeiti Medium.ttc',
+  '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
   r'C:\Windows\Fonts\Deng.ttf',
   r'C:\Windows\Fonts\simhei.ttf',
   r'C:\Windows\Fonts\simsunb.ttf',
@@ -90,20 +95,19 @@ Future<bool> loadIconFont() async {
   return false;
 }
 
-Widget wrapGolden(Widget child, ThemeData theme) => MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: theme,
-      home: child,
-    );
+Widget wrapGolden(Widget child, ThemeData theme) =>
+    MaterialApp(debugShowCheckedModeBanner: false, theme: theme, home: child);
 
 /// 统一用 iPhone 尺寸，截图才有代表性。
 void usePhoneViewport(WidgetTester tester) {
+  addTearDown(() async => tester.pumpWidget(const SizedBox.shrink()));
   tester.view.physicalSize = const Size(1170, 2532);
   tester.view.devicePixelRatio = 3.0;
 }
 
 /// iPad 横屏。
 void useTabletViewport(WidgetTester tester) {
+  addTearDown(() async => tester.pumpWidget(const SizedBox.shrink()));
   tester.view.physicalSize = const Size(2388, 1668);
   tester.view.devicePixelRatio = 2.0;
 }
@@ -116,6 +120,11 @@ void useDesktopViewport(WidgetTester tester) {
 
 void main() {
   setUpAll(() async {
+    final cupertino = FontLoader('packages/cupertino_icons/CupertinoIcons')
+      ..addFont(
+        rootBundle.load('packages/cupertino_icons/assets/CupertinoIcons.ttf'),
+      );
+    await cupertino.load();
     final ok = await loadCjkFont();
     if (!ok) {
       // ignore: avoid_print
@@ -124,8 +133,10 @@ void main() {
     final icons = await loadIconFont();
     if (!icons) {
       // ignore: avoid_print
-      print('警告：没有找到 MaterialIcons 字体，截图中的图标会是占位方框，'
-          '布局尺寸也会与真机有偏差。');
+      print(
+        '警告：没有找到 MaterialIcons 字体，截图中的图标会是占位方框，'
+        '布局尺寸也会与真机有偏差。',
+      );
     }
   });
 
@@ -201,7 +212,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 底部导航切到第二个标签。
-    await tester.tap(find.text('作业与截止').last);
+    await tester.tap(find.text('作业').last);
     await tester.pumpAndSettle();
 
     await expectLater(
@@ -240,7 +251,7 @@ void main() {
     );
   });
 
-  testWidgets('iPad 横屏（保留 iOS 悬浮导航栏）', (tester) async {
+  testWidgets('iPad 横屏（iOS 原生底部导航）', (tester) async {
     useTabletViewport(tester);
     addTearDown(tester.view.reset);
 
@@ -256,7 +267,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NavigationRail), findsNothing);
-    expect(find.text('总览'), findsOneWidget);
+    expect(find.text('今日'), findsWidgets);
+    expect(find.byType(CupertinoTabBar), findsOneWidget);
 
     await expectLater(
       find.byType(HomeShell),

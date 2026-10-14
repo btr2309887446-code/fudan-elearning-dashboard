@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/types.dart';
+import '../core/tasks.dart' show beijingTime;
 import '../theme.dart';
 import 'format.dart';
 
@@ -30,7 +31,12 @@ class ScoreBars extends StatelessWidget {
     if (scored.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(child: Text('暂无已评分课程', style: TextStyle(color: p.muted, fontSize: 13.5))),
+        child: Center(
+          child: Text(
+            '暂无已评分课程',
+            style: TextStyle(color: p.muted, fontSize: 13.5),
+          ),
+        ),
       );
     }
 
@@ -67,7 +73,10 @@ class ScoreBars extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 5),
-                  ThinBarProxy(percent: c.currentScore, color: p.forScore(c.currentScore)),
+                  ThinBarProxy(
+                    percent: c.currentScore,
+                    color: p.forScore(c.currentScore),
+                  ),
                 ],
               ),
             ),
@@ -80,7 +89,12 @@ class ScoreBars extends StatelessWidget {
 
 /// 单独抽出来，避免 charts.dart 反向依赖 widgets.dart。
 class ThinBarProxy extends StatelessWidget {
-  const ThinBarProxy({super.key, required this.percent, required this.color, this.height = 6});
+  const ThinBarProxy({
+    super.key,
+    required this.percent,
+    required this.color,
+    this.height = 6,
+  });
 
   final double? percent;
   final Color color;
@@ -118,7 +132,12 @@ class GroupBars extends StatelessWidget {
     if (usable.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(child: Text('暂无已评分的作业分组', style: TextStyle(color: p.muted, fontSize: 13.5))),
+        child: Center(
+          child: Text(
+            '暂无已评分的作业分组',
+            style: TextStyle(color: p.muted, fontSize: 13.5),
+          ),
+        ),
       );
     }
 
@@ -149,10 +168,15 @@ class GroupBars extends StatelessWidget {
                           alignment: Alignment.bottomCenter,
                           child: Container(
                             width: double.infinity,
-                            height: math.max(3, box.maxHeight * (g.percent! / 100).clamp(0, 1)),
+                            height: math.max(
+                              3,
+                              box.maxHeight * (g.percent! / 100).clamp(0, 1),
+                            ),
                             decoration: BoxDecoration(
                               color: p.forScore(g.percent),
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(6),
+                              ),
                             ),
                           ),
                         ),
@@ -164,7 +188,11 @@ class GroupBars extends StatelessWidget {
                       maxLines: 2,
                       textAlign: TextAlign.center,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: p.muted, fontSize: 10.5, height: 1.2),
+                      style: TextStyle(
+                        color: p.muted,
+                        fontSize: 10.5,
+                        height: 1.2,
+                      ),
                     ),
                   ],
                 ),
@@ -183,15 +211,28 @@ class TrendChart extends StatelessWidget {
   final List<AssignmentRow> rows;
 
   /// 只统计已评分且满分为正的作业，按截止时间排序后累计。
-  static List<({DateTime at, double percent})> points(List<AssignmentRow> rows) {
-    final graded = rows
-        .where((r) => r.score != null && r.pointsPossible != null && r.pointsPossible! > 0 && !r.excused)
-        .toList()
-      ..sort((a, b) {
-        final ta = DateTime.tryParse(a.dueAt ?? a.gradedAt ?? '') ?? DateTime(2000);
-        final tb = DateTime.tryParse(b.dueAt ?? b.gradedAt ?? '') ?? DateTime(2000);
-        return ta.compareTo(tb);
-      });
+  static List<({DateTime at, double percent})> points(
+    List<AssignmentRow> rows,
+  ) {
+    final graded =
+        rows
+            .where(
+              (r) =>
+                  r.score != null &&
+                  r.pointsPossible != null &&
+                  r.pointsPossible! > 0 &&
+                  !r.excused,
+            )
+            .toList()
+          ..sort((a, b) {
+            final ta =
+                DateTime.tryParse(a.dueAt ?? a.gradedAt ?? '') ??
+                DateTime(2000);
+            final tb =
+                DateTime.tryParse(b.dueAt ?? b.gradedAt ?? '') ??
+                DateTime(2000);
+            return ta.compareTo(tb);
+          });
 
     var earned = 0.0;
     var possible = 0.0;
@@ -199,7 +240,8 @@ class TrendChart extends StatelessWidget {
     for (final r in graded) {
       earned += r.score!;
       possible += r.pointsPossible!;
-      final at = DateTime.tryParse(r.dueAt ?? r.gradedAt ?? '') ?? DateTime(2000);
+      final at =
+          DateTime.tryParse(r.dueAt ?? r.gradedAt ?? '') ?? DateTime(2000);
       out.add((at: at, percent: (earned / possible) * 100));
     }
     return out;
@@ -208,13 +250,25 @@ class TrendChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final pts = points(rows);
+    final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    final rawPoints = points(rows);
+    final pts = ios
+        ? rawPoints
+              .map(
+                (point) => (at: beijingTime(point.at), percent: point.percent),
+              )
+              .toList()
+        : rawPoints;
+    final scale = ios ? MediaQuery.textScalerOf(context).scale(13) / 13 : 1.0;
 
     if (pts.length < 2) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
         child: Center(
-          child: Text('已评分的作业不足，暂无法绘制趋势', style: TextStyle(color: p.muted, fontSize: 13.5)),
+          child: Text(
+            '已评分的作业不足，暂无法绘制趋势',
+            style: TextStyle(color: p.muted, fontSize: 13.5),
+          ),
         ),
       );
     }
@@ -222,7 +276,7 @@ class TrendChart extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 150,
+          height: 150 * scale,
           child: CustomPaint(
             // CustomPainter 里的 TextPainter **不会**继承主题字体，
             // 必须把当前字族显式传进去，否则刻度会退回默认字体。
@@ -233,6 +287,7 @@ class TrendChart extends StatelessWidget {
               p.muted,
               p.surface,
               DefaultTextStyle.of(context).style.fontFamily,
+              ios ? 13 * scale : 9.5,
             ),
             size: Size.infinite,
           ),
@@ -243,11 +298,11 @@ class TrendChart extends StatelessWidget {
           children: [
             Text(
               '${pts.first.at.month}/${pts.first.at.day}',
-              style: TextStyle(color: p.muted, fontSize: 10.5),
+              style: TextStyle(color: p.muted, fontSize: ios ? 13 : 10.5),
             ),
             Text(
               '${pts.last.at.month}/${pts.last.at.day}',
-              style: TextStyle(color: p.muted, fontSize: 10.5),
+              style: TextStyle(color: p.muted, fontSize: ios ? 13 : 10.5),
             ),
           ],
         ),
@@ -257,7 +312,15 @@ class TrendChart extends StatelessWidget {
 }
 
 class _TrendPainter extends CustomPainter {
-  _TrendPainter(this.points, this.accent, this.grid, this.label, this.surface, this.fontFamily);
+  _TrendPainter(
+    this.points,
+    this.accent,
+    this.grid,
+    this.label,
+    this.surface,
+    this.fontFamily,
+    this.labelFontSize,
+  );
 
   final List<({DateTime at, double percent})> points;
   final Color accent;
@@ -265,13 +328,14 @@ class _TrendPainter extends CustomPainter {
   final Color label;
   final Color surface;
   final String? fontFamily;
+  final double labelFontSize;
 
   @override
   void paint(Canvas canvas, Size size) {
-    const leftPad = 30.0;
+    final leftPad = labelFontSize > 9.5 ? labelFontSize * 3.7 : 30.0;
     const rightPad = 6.0;
-    const topPad = 8.0;
-    const bottomPad = 4.0;
+    final topPad = labelFontSize > 9.5 ? labelFontSize : 8.0;
+    final bottomPad = labelFontSize > 9.5 ? labelFontSize : 4.0;
 
     final plotW = size.width - leftPad - rightPad;
     final plotH = size.height - topPad - bottomPad;
@@ -287,18 +351,28 @@ class _TrendPainter extends CustomPainter {
     }
     final span = math.max(1.0, maxV - minV);
 
-    double xAt(int i) => leftPad + (points.length == 1 ? plotW / 2 : plotW * i / (points.length - 1));
+    double xAt(int i) =>
+        leftPad +
+        (points.length == 1 ? plotW / 2 : plotW * i / (points.length - 1));
     double yAt(double v) => topPad + plotH * (1 - (v - minV) / span);
 
     // 网格线与刻度
     final gridPaint = Paint()
       ..color = grid
       ..strokeWidth = 1;
-    final textStyle = TextStyle(color: label, fontSize: 9.5, fontFamily: fontFamily);
+    final textStyle = TextStyle(
+      color: label,
+      fontSize: labelFontSize,
+      fontFamily: fontFamily,
+    );
     for (var i = 0; i <= 3; i++) {
       final v = minV + span * i / 3;
       final y = yAt(v);
-      canvas.drawLine(Offset(leftPad, y), Offset(size.width - rightPad, y), gridPaint);
+      canvas.drawLine(
+        Offset(leftPad, y),
+        Offset(size.width - rightPad, y),
+        gridPaint,
+      );
       final tp = TextPainter(
         text: TextSpan(text: '${v.round()}%', style: textStyle),
         textDirection: TextDirection.ltr,
@@ -328,7 +402,10 @@ class _TrendPainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [accent.withValues(alpha: 0.26), accent.withValues(alpha: 0.01)],
+          colors: [
+            accent.withValues(alpha: 0.26),
+            accent.withValues(alpha: 0.01),
+          ],
         ).createShader(Rect.fromLTWH(0, topPad, size.width, plotH)),
     );
 
@@ -352,5 +429,8 @@ class _TrendPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_TrendPainter old) =>
-      old.points != points || old.accent != accent || old.fontFamily != fontFamily;
+      old.points != points ||
+      old.accent != accent ||
+      old.fontFamily != fontFamily ||
+      old.labelFontSize != labelFontSize;
 }

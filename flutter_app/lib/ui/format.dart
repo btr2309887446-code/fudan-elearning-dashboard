@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 
 import '../core/clock.dart';
 import '../core/types.dart';
+import '../core/tasks.dart';
+export '../core/tasks.dart' show isCompleted;
 
 String formatScore(double? score, {int digits = 2}) =>
     score == null || score.isNaN ? '—' : score.toStringAsFixed(digits);
@@ -15,7 +17,9 @@ String formatScore(double? score, {int digits = 2}) =>
 /// 整分不显示小数位，读起来更干净。
 String formatScoreCompact(double? score) {
   if (score == null || score.isNaN) return '—';
-  return score == score.roundToDouble() ? score.toStringAsFixed(0) : score.toStringAsFixed(1);
+  return score == score.roundToDouble()
+      ? score.toStringAsFixed(0)
+      : score.toStringAsFixed(1);
 }
 
 String formatDate(String? iso, {bool withTime = true}) {
@@ -61,16 +65,6 @@ DueInfo relativeDue(String? iso) {
 /// 那只剩老师批改这一步了，显示逾期只是噪音。
 DueInfo dueRelative(String? iso, bool done) =>
     done ? const DueInfo('', DueTone.later) : relativeDue(iso);
-
-const _doneStates = {'submitted', 'graded', 'pending_review', 'complete', 'graded_pending'};
-
-/// 学生是否已交（与是否已批改无关）。
-bool isCompleted(AssignmentRow row) {
-  if (row.excused) return true;
-  if (row.score != null) return true;
-  if (row.submittedAt != null) return true;
-  return _doneStates.contains(row.workflowState.toLowerCase());
-}
 
 class SubmissionState {
   const SubmissionState(this.label, this.tone);

@@ -88,7 +88,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
     text: Color(0xFFF2F2F7),
     textDim: Color(0xFFA8ADBB),
     muted: Color(0xFF74747E),
-    accent: Color(0xFF007AFF),
+    accent: Color(0xFF0A84FF),
     // 深色下提饱和度，才有「荧光功能色」的味道
     cyan: Color(0xFF3DD9E8),
     purple: Color(0xFFBF7AF5),
@@ -136,25 +136,24 @@ class AppPalette extends ThemeExtension<AppPalette> {
     Color? warn,
     Color? bad,
     Color? ringTrack,
-  }) =>
-      AppPalette(
-        background: background ?? this.background,
-        surface: surface ?? this.surface,
-        surfaceAlt: surfaceAlt ?? this.surfaceAlt,
-        cardBorder: cardBorder ?? this.cardBorder,
-        border: border ?? this.border,
-        text: text ?? this.text,
-        textDim: textDim ?? this.textDim,
-        muted: muted ?? this.muted,
-        accent: accent ?? this.accent,
-        cyan: cyan ?? this.cyan,
-        purple: purple ?? this.purple,
-        pink: pink ?? this.pink,
-        good: good ?? this.good,
-        warn: warn ?? this.warn,
-        bad: bad ?? this.bad,
-        ringTrack: ringTrack ?? this.ringTrack,
-      );
+  }) => AppPalette(
+    background: background ?? this.background,
+    surface: surface ?? this.surface,
+    surfaceAlt: surfaceAlt ?? this.surfaceAlt,
+    cardBorder: cardBorder ?? this.cardBorder,
+    border: border ?? this.border,
+    text: text ?? this.text,
+    textDim: textDim ?? this.textDim,
+    muted: muted ?? this.muted,
+    accent: accent ?? this.accent,
+    cyan: cyan ?? this.cyan,
+    purple: purple ?? this.purple,
+    pink: pink ?? this.pink,
+    good: good ?? this.good,
+    warn: warn ?? this.warn,
+    bad: bad ?? this.bad,
+    ringTrack: ringTrack ?? this.ringTrack,
+  );
 
   @override
   AppPalette lerp(ThemeExtension<AppPalette>? other, double t) {
@@ -186,15 +185,9 @@ extension PaletteContext on BuildContext {
 }
 
 class AppTheme {
-  static ThemeData light({
-    String? fontFamily,
-    TargetPlatform? platform,
-  }) =>
+  static ThemeData light({String? fontFamily, TargetPlatform? platform}) =>
       _build(AppPalette.light, Brightness.light, fontFamily, platform);
-  static ThemeData dark({
-    String? fontFamily,
-    TargetPlatform? platform,
-  }) =>
+  static ThemeData dark({String? fontFamily, TargetPlatform? platform}) =>
       _build(AppPalette.dark, Brightness.dark, fontFamily, platform);
 
   static ThemeData _build(
@@ -214,28 +207,23 @@ class AppTheme {
       required Color color,
       double? letterSpacing,
       double? height,
-    }) =>
-        TextStyle(
-          fontSize: size,
-          fontWeight: weight,
-          color: color,
-          fontFamily: fontFamily,
-          letterSpacing: letterSpacing,
-          height: height,
-        );
+    }) => TextStyle(
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      fontFamily: fontFamily,
+      letterSpacing: letterSpacing,
+      height: height,
+    );
 
     final scheme = ColorScheme.fromSeed(
       seedColor: p.accent,
       brightness: brightness,
-    ).copyWith(
-      surface: p.surface,
-      primary: p.accent,
-      error: p.bad,
-    );
+    ).copyWith(surface: p.surface, primary: p.accent, error: p.bad);
     final textTheme = isIos
         ? (brightness == Brightness.dark
-            ? Typography.whiteCupertino
-            : Typography.blackCupertino)
+              ? Typography.whiteCupertino
+              : Typography.blackCupertino)
         : null;
 
     final themed = ThemeData(
@@ -257,8 +245,11 @@ class AppTheme {
         centerTitle: false,
         // DanXi uses the compact Cupertino navigation-bar scale rather than
         // an oversized Material headline.
-        titleTextStyle:
-            styled(size: 18, weight: FontWeight.w600, color: p.text),
+        titleTextStyle: styled(
+          size: 18,
+          weight: FontWeight.w600,
+          color: p.text,
+        ),
       ),
       cardTheme: CardThemeData(
         color: p.surface,
@@ -297,8 +288,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: p.surfaceAlt,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: p.border),
@@ -311,39 +304,72 @@ class AppTheme {
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: p.accent, width: 1.6),
         ),
-        hintStyle:
-            TextStyle(color: p.muted, fontSize: 15, fontFamily: fontFamily),
-        labelStyle:
-            TextStyle(color: p.textDim, fontSize: 14, fontFamily: fontFamily),
+        hintStyle: TextStyle(
+          color: p.muted,
+          fontSize: 15,
+          fontFamily: fontFamily,
+        ),
+        labelStyle: TextStyle(
+          color: p.textDim,
+          fontSize: 14,
+          fontFamily: fontFamily,
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: p.accent,
           foregroundColor: Colors.white,
           minimumSize: const Size.fromHeight(48),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           textStyle: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              fontFamily: fontFamily),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            fontFamily: fontFamily,
+          ),
         ),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: p.surface,
         side: BorderSide(color: p.border),
-        labelStyle:
-            TextStyle(color: p.textDim, fontSize: 13, fontFamily: fontFamily),
+        labelStyle: TextStyle(
+          color: p.textDim,
+          fontSize: 13,
+          fontFamily: fontFamily,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
-      listTileTheme: ListTileThemeData(
-        iconColor: p.textDim,
-        textColor: p.text,
-      ),
+      listTileTheme: ListTileThemeData(iconColor: p.textDim, textColor: p.text),
     );
 
     // 正文字体必须落在 textTheme 上才会被所有 Text 继承；
     // 上面逐个写 fontFamily 只覆盖了主题自己定义的那几个控件样式。
+    if (isIos) {
+      final iosTheme = themed.copyWith(
+        textTheme: themed.textTheme
+            .apply(fontFamily: fontFamily)
+            .copyWith(
+              bodyLarge: styled(
+                size: 17,
+                weight: FontWeight.w400,
+                color: p.text,
+              ),
+              bodyMedium: styled(
+                size: 15,
+                weight: FontWeight.w400,
+                color: p.textDim,
+              ),
+              bodySmall: styled(
+                size: 13,
+                weight: FontWeight.w400,
+                color: p.textDim,
+              ),
+            ),
+        splashFactory: NoSplash.splashFactory,
+      );
+      return iosTheme;
+    }
     if (fontFamily == null) return themed;
     return themed.copyWith(
       textTheme: themed.textTheme.apply(fontFamily: fontFamily),

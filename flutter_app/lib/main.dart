@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'platform/ios_reminders.dart';
+import 'platform/reminder_service.dart';
 
 import 'core/session.dart';
 import 'platform/storage.dart';
@@ -12,12 +16,32 @@ Future<void> main() async {
 
   // 演示模式不碰任何平台存储，也不需要账号。
   final store = kDemoMode ? MemoryStore() : await PrefsStore.open();
+  IosReminderService? nativeReminders;
+  ReminderService reminderService = const NoopReminderService();
+  String? startupNotice;
+  if (!kDemoMode && !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+    nativeReminders = IosReminderService();
+    try {
+      await nativeReminders.initialize();
+      reminderService = nativeReminders;
+    } catch (_) {
+      nativeReminders = null;
+      reminderService = const UnavailableReminderService();
+      startupNotice = '提醒服务暂时不可用，其他功能仍可正常使用。';
+    }
+  }
   final state = AppState(
     store: store,
     secure: kDemoMode ? null : SecretStore(),
     demo: kDemoMode,
+    reminders: reminderService,
   );
 
+  state.reminderNotice = startupNotice;
+  if (nativeReminders != null) {
+    state.pendingReminderDay = nativeReminders.initialDay;
+    nativeReminders.onOpen = state.openReminderDay;
+  }
   runApp(ElearningApp(state: state));
 }
 
@@ -34,8 +58,23 @@ class ElearningApp extends StatelessWidget {
         return MaterialApp(
           title: 'eLearning 看板',
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.light(),
-          darkTheme: AppTheme.dark(),
+          locale: const Locale('zh', 'CN'),
+          supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          theme: AppTheme.light(
+            platform: const bool.fromEnvironment('IOS_PREVIEW')
+                ? TargetPlatform.iOS
+                : null,
+          ),
+          darkTheme: AppTheme.dark(
+            platform: const bool.fromEnvironment('IOS_PREVIEW')
+                ? TargetPlatform.iOS
+                : null,
+          ),
           themeMode: state.prefs.themeMode,
           home: _Root(state: state),
         );
@@ -75,14 +114,20 @@ class _RootState extends State<_Root> {
                 child: CircularProgressIndicator(strokeWidth: 2.4),
               ),
               Gap.md,
-              Text('正在启动…', style: TextStyle(color: context.palette.muted, fontSize: 13.5)),
+              Text(
+                '正在启动…',
+                style: TextStyle(color: context.palette.muted, fontSize: 13.5),
+              ),
             ],
           ),
         ),
       );
     }
 
-    if (!state.loggedIn) return LoginScreen(state: state);
+    final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    if (!state.loggedIn && (!ios || state.snapshot == null)) {
+      return LoginScreen(state: state);
+    }
     return HomeShell(state: state);
   }
 }

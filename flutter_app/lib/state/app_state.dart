@@ -24,6 +24,10 @@ import '../core/scoring.dart';
 import '../core/session.dart';
 import '../core/summary.dart';
 import '../core/types.dart';
+import '../core/clock.dart';
+import '../core/tasks.dart';
+import '../core/reminders.dart';
+import '../platform/reminder_service.dart';
 import '../core/uis.dart';
 import '../platform/downloads.dart';
 import '../platform/file_io.dart';
@@ -43,7 +47,16 @@ class AppPrefs {
     this.ignoredAssignments = const [],
     this.refreshScope = 'current',
     this.llm = defaultLlm,
+    this.remindersEnabled = false,
+    this.mutedTasks = const [],
+    this.calendarExports = const {},
+    this.taskFilter = 'pending',
   });
+
+  final bool remindersEnabled;
+  final List<String> mutedTasks;
+  final Map<String, String> calendarExports;
+  final String taskFilter;
 
   final ThemeMode themeMode;
 
@@ -81,55 +94,80 @@ class AppPrefs {
     List<String>? ignoredAssignments,
     String? refreshScope,
     LlmConfig? llm,
-  }) =>
-      AppPrefs(
-        themeMode: themeMode ?? this.themeMode,
-        hideUnsubmitted: hideUnsubmitted ?? this.hideUnsubmitted,
-        enrollmentState: enrollmentState ?? this.enrollmentState,
-        rememberedUsername: rememberedUsername ?? this.rememberedUsername,
-        rememberPassword: rememberPassword ?? this.rememberPassword,
-        dashboardSections: dashboardSections ?? this.dashboardSections,
-        dashboardOrder: dashboardOrder ?? this.dashboardOrder,
-        ignoredAssignments: ignoredAssignments ?? this.ignoredAssignments,
-        refreshScope: refreshScope ?? this.refreshScope,
-        llm: llm ?? this.llm,
-      );
+    bool? remindersEnabled,
+    List<String>? mutedTasks,
+    Map<String, String>? calendarExports,
+    String? taskFilter,
+  }) => AppPrefs(
+    themeMode: themeMode ?? this.themeMode,
+    hideUnsubmitted: hideUnsubmitted ?? this.hideUnsubmitted,
+    enrollmentState: enrollmentState ?? this.enrollmentState,
+    rememberedUsername: rememberedUsername ?? this.rememberedUsername,
+    rememberPassword: rememberPassword ?? this.rememberPassword,
+    dashboardSections: dashboardSections ?? this.dashboardSections,
+    dashboardOrder: dashboardOrder ?? this.dashboardOrder,
+    ignoredAssignments: ignoredAssignments ?? this.ignoredAssignments,
+    refreshScope: refreshScope ?? this.refreshScope,
+    llm: llm ?? this.llm,
+    remindersEnabled: remindersEnabled ?? this.remindersEnabled,
+    mutedTasks: mutedTasks ?? this.mutedTasks,
+    calendarExports: calendarExports ?? this.calendarExports,
+    taskFilter: taskFilter ?? this.taskFilter,
+  );
 
   Map<String, dynamic> toJson() => {
-        'themeMode': themeMode.name,
-        'hideUnsubmitted': hideUnsubmitted,
-        'enrollmentState': enrollmentState,
-        'rememberedUsername': rememberedUsername,
-        'rememberPassword': rememberPassword,
-        'dashboardSections': dashboardSections,
-        'dashboardOrder': dashboardOrder,
-        'ignoredAssignments': ignoredAssignments,
-        'refreshScope': refreshScope,
-        'llm': llm.toJson(),
-      };
+    'themeMode': themeMode.name,
+    'remindersEnabled': remindersEnabled,
+    'mutedTasks': mutedTasks,
+    'calendarExports': calendarExports,
+    'taskFilter': taskFilter,
+    'hideUnsubmitted': hideUnsubmitted,
+    'enrollmentState': enrollmentState,
+    'rememberedUsername': rememberedUsername,
+    'rememberPassword': rememberPassword,
+    'dashboardSections': dashboardSections,
+    'dashboardOrder': dashboardOrder,
+    'ignoredAssignments': ignoredAssignments,
+    'refreshScope': refreshScope,
+    'llm': llm.toJson(),
+  };
 
   factory AppPrefs.fromJson(Map<String, dynamic> json) => AppPrefs(
-        themeMode: ThemeMode.values.firstWhere(
-          (m) => m.name == json['themeMode'],
-          orElse: () => ThemeMode.system,
-        ),
-        hideUnsubmitted: json['hideUnsubmitted'] == true,
-        enrollmentState: (json['enrollmentState'] as String?) ?? 'all',
-        rememberedUsername: (json['rememberedUsername'] as String?) ?? '',
-        rememberPassword: json['rememberPassword'] == true,
-        dashboardSections: ((json['dashboardSections'] as Map?) ?? const {})
-            .map((k, v) => MapEntry(k.toString(), v == true)),
-        dashboardOrder: ((json['dashboardOrder'] as List?) ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        ignoredAssignments: ((json['ignoredAssignments'] as List?) ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        refreshScope: json['refreshScope'] == 'all' ? 'all' : 'current',
-        llm: json['llm'] is Map<String, dynamic>
-            ? LlmConfig.fromJson(json['llm'] as Map<String, dynamic>)
-            : defaultLlm,
-      );
+    remindersEnabled: json['remindersEnabled'] == true,
+    mutedTasks: ((json['mutedTasks'] as List?) ?? const [])
+        .whereType<String>()
+        .toList(),
+    calendarExports: ((json['calendarExports'] as Map?) ?? const {}).map(
+      (key, value) => MapEntry(key.toString(), value.toString()),
+    ),
+    taskFilter:
+        const ['pending', 'submitted', 'ignored'].contains(json['taskFilter'])
+        ? json['taskFilter'] as String
+        : json['hideUnsubmitted'] == true
+        ? 'submitted'
+        : 'pending',
+    themeMode: ThemeMode.values.firstWhere(
+      (m) => m.name == json['themeMode'],
+      orElse: () => ThemeMode.system,
+    ),
+    hideUnsubmitted: json['hideUnsubmitted'] == true,
+    enrollmentState: (json['enrollmentState'] as String?) ?? 'all',
+    rememberedUsername: (json['rememberedUsername'] as String?) ?? '',
+    rememberPassword: json['rememberPassword'] == true,
+    dashboardSections: ((json['dashboardSections'] as Map?) ?? const {}).map(
+      (k, v) => MapEntry(k.toString(), v == true),
+    ),
+    dashboardOrder: ((json['dashboardOrder'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .toList(),
+    ignoredAssignments: ((json['ignoredAssignments'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .toList(),
+    refreshScope: json['refreshScope'] == 'all' ? 'all' : 'current',
+    llm: json['llm'] is Map<String, dynamic>
+        ? LlmConfig.fromJson(json['llm'] as Map<String, dynamic>)
+        : defaultLlm,
+  );
 }
 
 /// 登录准备阶段的结果：告诉界面要不要显示验证码。
@@ -140,7 +178,125 @@ class LoginPrep {
 }
 
 class AppState extends ChangeNotifier {
-  AppState({required this.store, this.secure, this.demo = kDemoMode});
+  AppState({
+    required this.store,
+    this.secure,
+    this.demo = kDemoMode,
+    this.reminders = const NoopReminderService(),
+  });
+
+  final ReminderService reminders;
+  Future<void> _reminderWork = Future.value();
+  String? reminderNotice;
+  bool reminderPermissionDenied = false;
+  String? pendingReminderDay;
+
+  List<LearningTask> get tasks =>
+      snapshot == null ? [] : buildTasks(snapshot!, ignored: ignoredSet);
+
+  void openReminderDay(String day) {
+    if (parseDayKey(day) == null) return;
+    pendingReminderDay = day;
+    notifyListeners();
+  }
+
+  Future<void> setTaskFilter(String value) async {
+    if (!const ['pending', 'submitted', 'ignored'].contains(value)) return;
+    prefs = prefs.copyWith(taskFilter: value);
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  Future<void> setRemindersEnabled(bool enabled) async {
+    reminderNotice = null;
+    if (enabled) {
+      try {
+        if (!await reminders.requestPermission()) {
+          reminderPermissionDenied = true;
+          reminderNotice = '通知权限未开启。请在 iPhone 设置中允许通知。';
+          notifyListeners();
+          return;
+        }
+      } catch (_) {
+        reminderNotice = '暂时无法开启提醒，请稍后重试。';
+        notifyListeners();
+        return;
+      }
+    }
+    reminderPermissionDenied = false;
+    prefs = prefs.copyWith(remindersEnabled: enabled);
+    notifyListeners();
+    await _savePrefs();
+    await reconcileReminders();
+  }
+
+  Future<void> toggleTaskReminder(String key) async {
+    final muted = [...prefs.mutedTasks];
+    muted.contains(key) ? muted.remove(key) : muted.add(key);
+    prefs = prefs.copyWith(mutedTasks: muted);
+    notifyListeners();
+    await _savePrefs();
+    await reconcileReminders();
+  }
+
+  Future<void> recordCalendarExport(LearningTask task) async {
+    if (task.dueAt == null) return;
+    prefs = prefs.copyWith(
+      calendarExports: {
+        ...prefs.calendarExports,
+        task.key: task.dueAt!.toIso8601String(),
+      },
+    );
+    notifyListeners();
+    await _savePrefs();
+  }
+
+  Future<void> reconcileReminders() {
+    // Serialize replacement and cancellation; a late refresh cannot restore
+    // notifications after logout or overwrite a newer preference change.
+    _reminderWork = _reminderWork
+        .then((_) async {
+          final data = snapshot;
+          if (!prefs.remindersEnabled || data == null) {
+            await reminders.cancelAll();
+            return;
+          }
+          final term = defaultTermId(data);
+          final ids = data.courses
+              .where((course) => course.termId == term)
+              .map((course) => course.id)
+              .toSet();
+          final scheduled = planReminders(
+            buildTasks(
+              data,
+              ignored: ignoredSet,
+              courseIds: ids,
+            ).where((task) => ids.contains(task.courseId)),
+            now: appNow(),
+            account: '${data.profile.id}',
+            muted: prefs.mutedTasks.toSet(),
+          );
+          await reminders.replace(scheduled);
+        })
+        .catchError((Object error) {
+          reminderNotice = '提醒安排失败，请在「我的」中重试开启。';
+          notifyListeners();
+        });
+    return _reminderWork;
+  }
+
+  Future<void> refreshIfStale() async {
+    if (busy || !loggedIn) return;
+    final fetched = snapshot == null
+        ? null
+        : DateTime.tryParse(snapshot!.fetchedAt);
+    if (fetched == null ||
+        appNow().difference(fetched) >= const Duration(minutes: 15)) {
+      await refresh();
+    } else {
+      await reconcileReminders();
+    }
+  }
 
   final KeyValueStore store;
   final SecretStoreLike? secure;
@@ -171,6 +327,7 @@ class AppState extends ChangeNotifier {
 
     if (demo) {
       snapshot = buildDemoSnapshot();
+      await reconcileReminders();
       booting = false;
       notifyListeners();
       return;
@@ -180,8 +337,9 @@ class AppState extends ChangeNotifier {
     final cached = await _repo.readSnapshot();
     if (cached != null) {
       try {
-        final parsed =
-            normaliseSnapshot(jsonDecode(cached) as Map<String, dynamic>);
+        final parsed = normaliseSnapshot(
+          jsonDecode(cached) as Map<String, dynamic>,
+        );
         if (parsed != null) snapshot = parsed;
       } catch (_) {
         await _repo.clearSnapshot();
@@ -204,6 +362,7 @@ class AppState extends ChangeNotifier {
     booting = false;
     notifyListeners();
 
+    await reconcileReminders();
     if (_jar != null) await refresh();
   }
 
@@ -239,11 +398,15 @@ class AppState extends ChangeNotifier {
   /// 先问再交，是为了避免明知会失败还消耗一次尝试——学校会锁账号。
   Future<LoginPrep> prepareLogin(String username) async {
     error = null;
-    _pendingLogin =
-        await beginLogin(jar: CookieJar(), encryptor: rsaPkcs1Encrypt);
+    _pendingLogin = await beginLogin(
+      jar: CookieJar(),
+      encryptor: rsaPkcs1Encrypt,
+    );
     final captcha = await checkCaptcha(_pendingLogin!, username);
     return LoginPrep(
-        captchaRequired: captcha.required, captchaImage: captcha.image);
+      captchaRequired: captcha.required,
+      captchaImage: captcha.image,
+    );
   }
 
   /// 第二步：真正消耗一次认证尝试。
@@ -258,16 +421,22 @@ class AppState extends ChangeNotifier {
       diag('login', '开始登录 user=${redact(username, keep: 4)}');
       final t0 = DateTime.now();
 
-      final ctx = _pendingLogin ??
+      final ctx =
+          _pendingLogin ??
           await beginLogin(jar: CookieJar(), encryptor: rsaPkcs1Encrypt);
       _pendingLogin = null;
-      diag('login',
-          'beginLogin 完成（${DateTime.now().difference(t0).inMilliseconds} ms）');
+      diag(
+        'login',
+        'beginLogin 完成（${DateTime.now().difference(t0).inMilliseconds} ms）',
+      );
 
       final result = await completeLogin(
         ctx,
         Credentials(
-            username: username, password: password, captchaCode: captchaCode),
+          username: username,
+          password: password,
+          captchaCode: captchaCode,
+        ),
       );
       diag('login', 'completeLogin 完成，落点 ${result.finalUrl}');
 
@@ -286,8 +455,20 @@ class AppState extends ChangeNotifier {
       _jar = result.jar;
       await _repo.writeSession(result.jar.toJsonString());
 
+      if (prefs.rememberedUsername.isNotEmpty &&
+          prefs.rememberedUsername != username) {
+        prefs = prefs.copyWith(
+          remindersEnabled: false,
+          mutedTasks: [],
+          calendarExports: {},
+          ignoredAssignments: [],
+        );
+        await reconcileReminders();
+      }
       prefs = prefs.copyWith(
-          rememberedUsername: username, rememberPassword: remember);
+        rememberedUsername: username,
+        rememberPassword: remember,
+      );
       await _savePrefs();
 
       final secrets = secure;
@@ -315,8 +496,15 @@ class AppState extends ChangeNotifier {
   Future<String?> rememberedPassword() async => secure?.readPassword();
 
   Future<void> logout() async {
+    prefs = prefs.copyWith(
+      remindersEnabled: false,
+      mutedTasks: [],
+      calendarExports: {},
+    );
+    pendingReminderDay = null;
     _jar = null;
     snapshot = null;
+    await reconcileReminders();
     await _repo.clearAll();
     final secrets = secure;
     if (secrets != null) await secrets.deletePassword();
@@ -328,8 +516,10 @@ class AppState extends ChangeNotifier {
   // --- 数据 ------------------------------------------------------------------
 
   Future<void> refresh({bool force = false}) async {
+    if (busy) return;
     if (demo) {
       snapshot = buildDemoSnapshot();
+      await reconcileReminders();
       notifyListeners();
       return;
     }
@@ -375,9 +565,12 @@ class AppState extends ChangeNotifier {
       progress = null;
       notifyListeners();
     }
+    await reconcileReminders();
   }
 
   Future<void> clearCache() async {
+    prefs = prefs.copyWith(remindersEnabled: false);
+    await reminders.cancelAll();
     await _repo.clearAll();
     _jar = null;
     snapshot = null;
@@ -428,16 +621,18 @@ class AppState extends ChangeNotifier {
   /// 下载选中的文件；[fileIds] 为空表示整门课。
   ///
   /// 磁盘路径由这里统一算：学期 / 课程 / Canvas 子文件夹 / 文件名。
-  Future<DownloadProgress?> downloadCourseFiles(int courseId,
-      {List<int>? fileIds}) async {
+  Future<DownloadProgress?> downloadCourseFiles(
+    int courseId, {
+    List<int>? fileIds,
+  }) async {
     if (_activeDownload != null) return null;
 
     final tree = await loadCourseFiles(courseId);
     final all = flattenFiles(tree);
     final wanted = (fileIds != null && fileIds.isNotEmpty)
         ? all
-            .where((n) => n.file != null && fileIds.contains(n.file!.id))
-            .toList()
+              .where((n) => n.file != null && fileIds.contains(n.file!.id))
+              .toList()
         : all;
 
     if (wanted.isEmpty) return null;
@@ -452,8 +647,9 @@ class AppState extends ChangeNotifier {
         termName: '未分学期',
       ),
     );
-    final termName =
-        (course?.termName.isNotEmpty ?? false) ? course!.termName : '未分学期';
+    final termName = (course?.termName.isNotEmpty ?? false)
+        ? course!.termName
+        : '未分学期';
     final courseName = (course?.displayName.isNotEmpty ?? false)
         ? course!.displayName
         : '课程 $courseId';
@@ -511,7 +707,8 @@ class AppState extends ChangeNotifier {
 
   /// 演示模式：不联网、不落盘，只把进度走一遍。
   Future<DownloadProgress> _simulateDemoDownload(
-      List<DownloadItem> items) async {
+    List<DownloadItem> items,
+  ) async {
     final progress = DownloadProgress(
       total: items.length,
       bytesTotal: items.fold(0, (s, i) => s + i.size),
@@ -620,6 +817,7 @@ class AppState extends ChangeNotifier {
     prefs = prefs.copyWith(ignoredAssignments: next);
     notifyListeners();
     await _savePrefs();
+    await reconcileReminders();
   }
 
   /// 改刷新范围。立即生效并落盘，下次刷新就用新范围。
@@ -649,13 +847,15 @@ class AppState extends ChangeNotifier {
   /// 完整说明按需拉取（快照里只有 600 字摘录）；[excerptHint] 是本地已有的摘录，
   /// 网络失败时用它兜底，不至于白屏。
   Future<
-      ({
-        String description,
-        String summary,
-        String source,
-        String? error,
-        String? descriptionError,
-      })> loadAssignmentDetail({
+    ({
+      String description,
+      String summary,
+      String source,
+      String? error,
+      String? descriptionError,
+    })
+  >
+  loadAssignmentDetail({
     required int courseId,
     required int assignmentId,
     required String name,
@@ -709,9 +909,10 @@ class AppState extends ChangeNotifier {
     if (result.summary.isNotEmpty) {
       _summaryCache[key] = result.summary;
       if (_summaryCache.length > _summaryCacheLimit) {
-        for (final k in _summaryCache.keys
-            .take(_summaryCache.length - _summaryCacheLimit)
-            .toList()) {
+        for (final k
+            in _summaryCache.keys
+                .take(_summaryCache.length - _summaryCacheLimit)
+                .toList()) {
           _summaryCache.remove(k);
         }
       }

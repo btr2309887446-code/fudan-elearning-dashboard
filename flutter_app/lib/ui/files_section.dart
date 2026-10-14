@@ -8,6 +8,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'ios/components.dart';
 
 import '../core/files.dart';
 import '../platform/downloads.dart';
@@ -16,10 +18,16 @@ import '../theme.dart';
 import 'widgets.dart';
 
 class FilesSection extends StatefulWidget {
-  const FilesSection({super.key, required this.state, required this.courseId});
+  const FilesSection({
+    super.key,
+    required this.state,
+    required this.courseId,
+    this.ios = false,
+  });
 
   final AppState state;
   final int courseId;
+  final bool ios;
 
   @override
   State<FilesSection> createState() => _FilesSectionState();
@@ -31,6 +39,7 @@ class _FilesSectionState extends State<FilesSection> {
   String? _error;
   final Set<String> _expanded = {''};
   final Set<int> _selected = {};
+  bool _selecting = false;
 
   @override
   void initState() {
@@ -44,7 +53,10 @@ class _FilesSectionState extends State<FilesSection> {
       _error = null;
     });
     try {
-      final tree = await widget.state.loadCourseFiles(widget.courseId, force: force);
+      final tree = await widget.state.loadCourseFiles(
+        widget.courseId,
+        force: force,
+      );
       if (!mounted) return;
       setState(() {
         _tree = tree;
@@ -67,9 +79,14 @@ class _FilesSectionState extends State<FilesSection> {
   Future<void> _download({List<int>? ids}) async {
     setState(() => _error = null);
     try {
-      final result = await widget.state.downloadCourseFiles(widget.courseId, fileIds: ids);
+      final result = await widget.state.downloadCourseFiles(
+        widget.courseId,
+        fileIds: ids,
+      );
       if (!mounted) return;
-      if (result != null && result.failed == 0) setState(() => _selected.clear());
+      if (result != null && result.failed == 0) {
+        setState(() => _selected.clear());
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
@@ -103,6 +120,9 @@ class _FilesSectionState extends State<FilesSection> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.ios) {
+      return Material(color: Colors.transparent, child: _iosBody(context));
+    }
     final p = context.palette;
     final state = widget.state;
     final tree = _tree;
@@ -144,7 +164,8 @@ class _FilesSectionState extends State<FilesSection> {
                 ),
             ],
           ),
-          if (progress != null && state.downloading) _progressBar(context, progress, p),
+          if (progress != null && state.downloading)
+            _progressBar(context, progress, p),
 
           if (_selected.isNotEmpty && !state.downloading)
             Container(
@@ -160,7 +181,11 @@ class _FilesSectionState extends State<FilesSection> {
                   Expanded(
                     child: Text(
                       '已选 ${_selected.length} 个文件',
-                      style: TextStyle(color: p.accent, fontSize: 13, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: p.accent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   TextButton(
@@ -179,21 +204,28 @@ class _FilesSectionState extends State<FilesSection> {
               ),
             ),
 
-          if (_loading) const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Text('正在读取文件列表…', style: TextStyle(fontSize: 13)),
-          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Text('正在读取文件列表…', style: TextStyle(fontSize: 13)),
+            ),
 
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 10),
-              child: Text(_error!, style: TextStyle(color: p.bad, fontSize: 13)),
+              child: Text(
+                _error!,
+                style: TextStyle(color: p.bad, fontSize: 13),
+              ),
             ),
 
           if (!_loading && tree != null && tree.children.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text('这门课还没有上传任何文件。', style: TextStyle(color: p.muted, fontSize: 13)),
+              child: Text(
+                '这门课还没有上传任何文件。',
+                style: TextStyle(color: p.muted, fontSize: 13),
+              ),
             ),
 
           if (!_loading && tree != null && tree.children.isNotEmpty)
@@ -211,7 +243,107 @@ class _FilesSectionState extends State<FilesSection> {
     );
   }
 
-  Widget _progressBar(BuildContext context, DownloadProgress progress, AppPalette p) {
+  Widget _iosBody(BuildContext context) {
+    final p = context.palette;
+    final state = widget.state;
+    final tree = _tree;
+    final stats = tree == null ? null : treeStats(tree);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          stats == null
+              ? '课程文件'
+              : '${stats.count} 个文件 · ${formatBytes(stats.bytes)}',
+          style: TextStyle(fontSize: 15, color: p.textDim),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              onPressed: _loading || state.downloading
+                  ? null
+                  : () => setState(() {
+                      _selecting = !_selecting;
+                      if (!_selecting) _selected.clear();
+                    }),
+              child: Text(
+                _selecting ? '完成选择' : '选择文件',
+                style: const TextStyle(fontSize: 15),
+              ),
+            ),
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              onPressed:
+                  _loading ||
+                      state.downloading ||
+                      stats == null ||
+                      stats.count == 0
+                  ? null
+                  : () => _download(),
+              child: const Text('下载本课全部', style: TextStyle(fontSize: 15)),
+            ),
+            if (state.downloading)
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                onPressed: state.cancelDownload,
+                child: const Text('取消下载', style: TextStyle(fontSize: 15)),
+              ),
+          ],
+        ),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: CupertinoActivityIndicator(),
+          ),
+        if (_error != null) ...[
+          Text(_error!, style: TextStyle(fontSize: 15, color: p.textDim)),
+          CupertinoButton(
+            onPressed: _loading ? null : () => _load(force: true),
+            child: const Text('重试读取文件'),
+          ),
+        ],
+        if (state.downloadProgress != null && state.downloading)
+          _progressBar(context, state.downloadProgress!, p),
+        if (state.downloadProgress != null && !state.downloading)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              '下载结果：完成 ${state.downloadProgress!.completed} 个，跳过 ${state.downloadProgress!.skipped} 个，失败 ${state.downloadProgress!.failed} 个。\n可在「文件」App 的 Fudan eLearning 文件夹中查看。',
+              style: TextStyle(fontSize: 13, color: p.textDim, height: 1.5),
+            ),
+          ),
+        if (tree != null && tree.children.isEmpty)
+          const IosEmpty('这门课还没有上传文件。', icon: CupertinoIcons.folder),
+        if (tree != null && tree.children.isNotEmpty)
+          IosGroup(
+            children: [for (final child in tree.children) _node(child, 0, p)],
+          ),
+        if (_selecting) ...[
+          const SizedBox(height: 16),
+          Text(
+            '已选 ${_selected.length} 个文件',
+            style: TextStyle(fontSize: 15, color: p.textDim),
+          ),
+          const SizedBox(height: 8),
+          CupertinoButton.filled(
+            onPressed: _selected.isEmpty || state.downloading
+                ? null
+                : () => _download(ids: _selected.toList()),
+            child: const Text('下载选中', style: TextStyle(fontSize: 17)),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _progressBar(
+    BuildContext context,
+    DownloadProgress progress,
+    AppPalette p,
+  ) {
     final percent = progress.bytesTotal > 0
         ? (progress.bytesReceived / progress.bytesTotal).clamp(0.0, 1.0)
         : 0.0;
@@ -224,10 +356,16 @@ class _FilesSectionState extends State<FilesSection> {
             children: [
               Expanded(
                 child: Text(
-                  progress.currentName.isEmpty ? '准备中…' : '正在下载：${progress.currentName}',
+                  progress.currentName.isEmpty
+                      ? '准备中…'
+                      : '正在下载：${progress.currentName}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12.5, color: p.textDim, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: p.textDim,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               Text(
@@ -249,7 +387,10 @@ class _FilesSectionState extends State<FilesSection> {
           const SizedBox(height: 5),
           Text(
             '${formatBytes(progress.bytesReceived)} / ${formatBytes(progress.bytesTotal)}',
-            style: TextStyle(fontSize: 11.5, color: p.muted),
+            style: TextStyle(
+              fontSize: widget.ios ? 13 : 11.5,
+              color: widget.ios ? p.textDim : p.muted,
+            ),
           ),
         ],
       ),
@@ -259,7 +400,9 @@ class _FilesSectionState extends State<FilesSection> {
   Widget _node(FileNode node, int depth, AppPalette p) {
     final state = widget.state;
     final ids = node.isFolder
-        ? flattenFiles(node).where((f) => f.file != null).map((f) => f.file!.id).toList()
+        ? flattenFiles(
+            node,
+          ).where((f) => f.file != null).map((f) => f.file!.id).toList()
         : [node.file!.id];
     final allSelected = ids.isNotEmpty && ids.every(_selected.contains);
     final someSelected = !allSelected && ids.any(_selected.contains);
@@ -271,25 +414,64 @@ class _FilesSectionState extends State<FilesSection> {
         InkWell(
           onTap: node.isFolder
               ? () => _toggleFolder(node.path)
-              : (state.downloading ? null : () => _download(ids: [node.file!.id])),
+              : (state.downloading
+                    ? null
+                    : widget.ios && _selecting
+                    ? () => _toggleNode(node, !allSelected)
+                    : () => _download(ids: [node.file!.id])),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(4 + depth * 16.0, 7, 4, 7),
+            padding: EdgeInsets.fromLTRB(
+              4 + (widget.ios ? depth.clamp(0, 2) : depth) * 16.0,
+              widget.ios ? 14 : 7,
+              4,
+              widget.ios ? 14 : 7,
+            ),
             child: Row(
               children: [
-                SizedBox(
-                  width: 26,
-                  child: Checkbox(
-                    value: allSelected,
-                    tristate: false,
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onChanged: state.downloading ? null : (_) => _toggleNode(node, !allSelected),
+                if (!widget.ios || _selecting)
+                  SizedBox(
+                    width: widget.ios ? 44 : 26,
+                    child: widget.ios
+                        ? Semantics(
+                            checked: allSelected,
+                            label: '选择${node.name}',
+                            child: CupertinoButton(
+                              padding: EdgeInsets.zero,
+                              onPressed: state.downloading
+                                  ? null
+                                  : () => _toggleNode(node, !allSelected),
+                              child: Icon(
+                                allSelected
+                                    ? CupertinoIcons.checkmark_circle_fill
+                                    : someSelected
+                                    ? CupertinoIcons.minus_circle_fill
+                                    : CupertinoIcons.circle,
+                                color: allSelected || someSelected
+                                    ? p.accent
+                                    : p.textDim,
+                                size: 22,
+                              ),
+                            ),
+                          )
+                        : Checkbox(
+                            value: allSelected,
+                            tristate: false,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: widget.ios
+                                ? MaterialTapTargetSize.padded
+                                : MaterialTapTargetSize.shrinkWrap,
+                            onChanged: state.downloading
+                                ? null
+                                : (_) => _toggleNode(node, !allSelected),
+                          ),
                   ),
-                ),
                 if (someSelected)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
-                    child: Text('·', style: TextStyle(color: p.accent, fontSize: 16)),
+                    child: Text(
+                      '·',
+                      style: TextStyle(color: p.accent, fontSize: 16),
+                    ),
                   ),
                 Icon(
                   node.isFolder
@@ -302,11 +484,13 @@ class _FilesSectionState extends State<FilesSection> {
                 Expanded(
                   child: Text(
                     node.name,
-                    maxLines: 1,
+                    maxLines: widget.ios ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: node.isFolder ? FontWeight.w600 : FontWeight.w400,
+                      fontSize: widget.ios ? 17 : 13.5,
+                      fontWeight: node.isFolder
+                          ? FontWeight.w600
+                          : FontWeight.w400,
                       color: p.text,
                     ),
                   ),
@@ -315,7 +499,10 @@ class _FilesSectionState extends State<FilesSection> {
                   node.isFolder
                       ? '${flattenFiles(node).length} 个'
                       : formatBytes(node.size ?? 0),
-                  style: TextStyle(fontSize: 11.5, color: p.muted),
+                  style: TextStyle(
+                    fontSize: widget.ios ? 13 : 11.5,
+                    color: widget.ios ? p.textDim : p.muted,
+                  ),
                 ),
               ],
             ),
@@ -333,10 +520,18 @@ class _FilesSectionState extends State<FilesSection> {
     if (t.startsWith('video/')) return Icons.movie_outlined;
     if (t.startsWith('audio/')) return Icons.audiotrack_outlined;
     if (t.contains('pdf')) return Icons.picture_as_pdf_outlined;
-    if (t.contains('zip') || t.contains('compressed')) return Icons.folder_zip_outlined;
-    if (t.contains('word') || t.contains('document')) return Icons.description_outlined;
-    if (t.contains('sheet') || t.contains('excel')) return Icons.table_chart_outlined;
-    if (t.contains('presentation') || t.contains('powerpoint')) return Icons.slideshow_outlined;
+    if (t.contains('zip') || t.contains('compressed')) {
+      return Icons.folder_zip_outlined;
+    }
+    if (t.contains('word') || t.contains('document')) {
+      return Icons.description_outlined;
+    }
+    if (t.contains('sheet') || t.contains('excel')) {
+      return Icons.table_chart_outlined;
+    }
+    if (t.contains('presentation') || t.contains('powerpoint')) {
+      return Icons.slideshow_outlined;
+    }
     return Icons.insert_drive_file_outlined;
   }
 }

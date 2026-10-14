@@ -7,10 +7,36 @@ Flutter 实现的移动端，逻辑与桌面端（Electron）完全同源：同�
 iOS 风格的浅灰底 + 纯白卡片，主色 `#007AFF`；深色为纯黑底 + `#1C1C1E` 抬升卡片。
 
 <p align="center">
-  <img src="test/goldens/overview_light.png" width="240" alt="总览">
-  <img src="test/goldens/overview_dark.png" width="240" alt="总览（深色）">
-  <img src="test/goldens/course_detail_light.png" width="240" alt="课程详情">
+  <img src="test/goldens/ios_today_light.png" width="240" alt="总览">
+  <img src="test/goldens/ios_today_dark.png" width="240" alt="总览（深色）">
+  <img src="test/goldens/ios_calendar_light.png" width="240" alt="课程详情">
 </p>
+
+---
+
+## iOS 新版界面
+
+- 底部四个入口：今日、作业、课程、我的；各自保留导航与浏览位置。
+- 今日优先展示逾期、当天截止与未来七天，作业可直接打开详情。
+- 作业支持搜索、课程与状态筛选、周一开始的月历；课程详情分为作业、成绩与文件。
+- 提醒默认关闭，在「我的」中主动开启。当前学期的未提交任务在北京时间当天 08:00 合并提醒；08:00 及以前截止的任务在前一天 20:00 提醒。
+- 提醒依据缓存安排未来 30 天，已错过的提醒不补发。同步、单项静音及「无需提交」变化后会重新安排，退出登录会清除。
+- 系统日历通过原生编辑界面单向添加，学生确认后才保存。截止变化不会自动更新或删除旧事件；重复添加会先确认。
+- 网页提交或老师修改截止后需要再次同步。进入前台且缓存超过 15 分钟时会尝试刷新；失败时仍可查看缓存。
+- 演示模式不会发送真实通知或写入系统日历。iOS 保持支持 15.0；Android 和 macOS 保留原导航。
+
+验证命令：
+
+```bash
+flutter analyze
+flutter test --exclude-tags golden
+flutter test test/golden_test.dart test/ios_golden_test.dart --update-goldens
+flutter build ios --no-codesign
+```
+
+截图测试依次寻找 macOS、Linux 和 Windows 中文字体，并注册 Cupertino 与 Material 图标字体。固定时间的 iOS 截图位于 `test/goldens/ios_*.png`。
+
+新增通知依赖要求 Dart 3.10+，仓库 CI 固定的 Flutter 3.47.5 满足要求。iOS 构建需 Xcode 与 CocoaPods（现有钥匙串插件尚未支持 Swift Package Manager）；使用 `ios/Runner.xcworkspace` 打开工程。
 
 ---
 
@@ -140,11 +166,11 @@ Flutter 一套代码，四个目标。**注意 iPad 不是一个独立目标**�
 Xcode 工程里已经是 `TARGETED_DEVICE_FAMILY = "1,2"`（1=iPhone，2=iPad），
 所以同一个二进制本来就能跑在 iPad 上。真正要做的是**让界面适配宽屏**，这个已经做了：
 
-- 宽度 ≥ 760 时，底部导航换成左侧 `NavigationRail`
+- iPad 继续使用原生底部导航，宽度 ≥ 768 时课程与作业采用列表、详情分栏；其他平台宽度 ≥ 760 时使用左侧 `NavigationRail`
 - 内容限宽 1080 并居中，避免窗口拉宽后一行只有几个字
 
 `test/golden_test.dart` 里有 iPad 横屏（1194×834）和 Mac 窗口（1440×900）的渲染测试，
-断言宽屏下确实用的是 `NavigationRail` 而不是 `NavigationBar`。
+同时检查 iPad 保留 iOS 导航、Mac 使用 `NavigationRail`。
 
 ### macOS 的额外注意
 

@@ -1,4 +1,6 @@
 import 'dart:ui' show ImageFilter;
+import '../platform/calendar_service.dart';
+import 'ios/home_shell.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -52,8 +54,10 @@ class _HomeShellState extends State<HomeShell> {
       return;
     }
 
-    final current =
-        terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first);
+    final current = terms.firstWhere(
+      (t) => t.isCurrent,
+      orElse: () => terms.first,
+    );
     if (_term != current.id) {
       // 在帧回调里改状态，避免在 build 期间触发重建。
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -114,8 +118,10 @@ class _HomeShellState extends State<HomeShell> {
     if (snapshot == null) return;
     final courseIds = _scopedCourses.map((course) => course.id).toSet();
     final todo = snapshot.todo
-        .where((entry) =>
-            entry.courseId == null || courseIds.contains(entry.courseId))
+        .where(
+          (entry) =>
+              entry.courseId == null || courseIds.contains(entry.courseId),
+        )
         .toList();
     Navigator.of(context).push(
       _detailRoute(
@@ -153,6 +159,15 @@ class _HomeShellState extends State<HomeShell> {
     // iPad 也沿用 iOS 的悬浮毛玻璃底栏；Windows / Android 的宽屏
     // 才切换为侧栏，避免 iPad 上底部导航突然消失。
     final isIos = Theme.of(context).platform == TargetPlatform.iOS;
+    if (isIos) {
+      return IosHomeShell(
+        key: ValueKey(state.snapshot?.profile.id),
+        state: state,
+        calendar: state.demo
+            ? const DemoCalendarService()
+            : IosCalendarService(),
+      );
+    }
     final wide = !isIos && MediaQuery.sizeOf(context).width >= 760;
     // NavigationRail 的标签样式是显式 TextStyle，不会继承 textTheme 的字体，
     // 所以要主动把主题里的字族取出来带上（否则中文会渲染成占位方框）。
@@ -167,9 +182,10 @@ class _HomeShellState extends State<HomeShell> {
               padding: EdgeInsets.symmetric(horizontal: 14),
               child: Center(
                 child: SizedBox(
-                    width: 17,
-                    height: 17,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
               ),
             ),
           IconButton(
@@ -186,7 +202,8 @@ class _HomeShellState extends State<HomeShell> {
                 case 'settings':
                   await Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => SettingsScreen(state: state)),
+                      builder: (_) => SettingsScreen(state: state),
+                    ),
                   );
                 case 'logout':
                   final ok = await showDialog<bool>(
@@ -196,11 +213,13 @@ class _HomeShellState extends State<HomeShell> {
                       content: const Text('将清除本机保存的登录状态与缓存数据。'),
                       actions: [
                         TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('取消')),
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('取消'),
+                        ),
                         TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('退出')),
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('退出'),
+                        ),
                       ],
                     ),
                   );
@@ -227,8 +246,10 @@ class _HomeShellState extends State<HomeShell> {
         children: [
           if (snapshot == null)
             Center(
-              child:
-                  Text('还没有数据', style: TextStyle(color: p.muted, fontSize: 14)),
+              child: Text(
+                '还没有数据',
+                style: TextStyle(color: p.muted, fontSize: 14),
+              ),
             )
           else
             Row(
@@ -280,10 +301,14 @@ class _HomeShellState extends State<HomeShell> {
                                 : NavigationRailLabelType.all,
                             backgroundColor: Colors.transparent,
                             indicatorColor: p.accent.withValues(alpha: 0.14),
-                            selectedIconTheme:
-                                IconThemeData(color: p.accent, size: 23),
-                            unselectedIconTheme:
-                                IconThemeData(color: p.muted, size: 22),
+                            selectedIconTheme: IconThemeData(
+                              color: p.accent,
+                              size: 23,
+                            ),
+                            unselectedIconTheme: IconThemeData(
+                              color: p.muted,
+                              size: 22,
+                            ),
                             selectedLabelTextStyle: TextStyle(
                               color: p.accent,
                               fontSize: 12,
@@ -291,9 +316,10 @@ class _HomeShellState extends State<HomeShell> {
                               fontFamily: fontFamily,
                             ),
                             unselectedLabelTextStyle: TextStyle(
-                                color: p.muted,
-                                fontSize: 12,
-                                fontFamily: fontFamily),
+                              color: p.muted,
+                              fontSize: 12,
+                              fontFamily: fontFamily,
+                            ),
                             destinations: const [
                               NavigationRailDestination(
                                 icon: Icon(Icons.dashboard_outlined),
@@ -390,12 +416,12 @@ class _HomeShellState extends State<HomeShell> {
                       (
                         icon: Icons.dashboard_outlined,
                         active: Icons.dashboard,
-                        label: '总览'
+                        label: '总览',
                       ),
                       (
                         icon: Icons.checklist_outlined,
                         active: Icons.checklist,
-                        label: '作业与截止'
+                        label: '作业与截止',
                       ),
                     ],
                   ),
@@ -444,9 +470,10 @@ class _RailProfile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: p.text,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600),
+                    color: p.text,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -614,8 +641,12 @@ class _TermSelector extends StatelessWidget {
     final p = context.palette;
     if (terms.isEmpty) return const SizedBox.shrink();
 
-    Widget chip(String label, TermFilter value,
-        {bool isCurrent = false, int? count}) {
+    Widget chip(
+      String label,
+      TermFilter value, {
+      bool isCurrent = false,
+      int? count,
+    }) {
       final active = selected == value;
       return Padding(
         padding: const EdgeInsets.only(right: 8),
@@ -640,8 +671,10 @@ class _TermSelector extends StatelessWidget {
                     Container(
                       width: 6,
                       height: 6,
-                      decoration:
-                          BoxDecoration(color: p.good, shape: BoxShape.circle),
+                      decoration: BoxDecoration(
+                        color: p.good,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                     const SizedBox(width: 6),
                   ],
@@ -655,8 +688,10 @@ class _TermSelector extends StatelessWidget {
                   ),
                   if (count != null) ...[
                     const SizedBox(width: 6),
-                    Text('$count',
-                        style: TextStyle(color: p.muted, fontSize: 11.5)),
+                    Text(
+                      '$count',
+                      style: TextStyle(color: p.muted, fontSize: 11.5),
+                    ),
                   ],
                 ],
               ),
