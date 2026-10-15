@@ -1,21 +1,14 @@
 import XCTest
+import UIKit
 
 final class NativeRunnerUITests: XCTestCase {
     private func capture(_ app: XCUIApplication, _ name: String) {
-        guard let directory = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"] else { return }
-        let device = ProcessInfo.processInfo.environment["SCREENSHOT_DEVICE"] ?? "simulator"
-        let fileName = "\(device)-\(name).png"
-        let url = URL(fileURLWithPath: directory, isDirectory: true).appendingPathComponent(fileName)
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = fileName
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "\(device)-\(name)"
         attachment.lifetime = .keepAlways
         add(attachment)
-        do {
-            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-            try attachment.pngRepresentation.write(to: url)
-        } catch {
-            XCTFail("Unable to save screenshot \(fileName): \(error)")
-        }
     }
 
     private func tab(_ app: XCUIApplication, _ title: String) -> XCUIElement {

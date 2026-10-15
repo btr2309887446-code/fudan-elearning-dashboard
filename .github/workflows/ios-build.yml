@@ -51,15 +51,12 @@ jobs:
             DEVICE_IDS+=("$DEVICE_ID")
           done < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[x for group in d["devices"].values() for x in group if x["isAvailable"]]; print(next(x["udid"] for x in devices if x["name"].startswith("iPhone"))); print(next(x["udid"] for x in devices if x["name"].startswith("iPad")))')
           DEVICE_INDEX=0
+          mkdir -p "$GITHUB_WORKSPACE/flutter_app/build/native-screenshots"
           for DEVICE_ID in "${DEVICE_IDS[@]}"; do
             DEVICE_INDEX=$((DEVICE_INDEX + 1))
             xcrun simctl shutdown all || true
             xcrun simctl boot "$DEVICE_ID" || true
             xcrun simctl bootstatus "$DEVICE_ID" -b
-            DEVICE_NAME="device-${DEVICE_INDEX}"
-            mkdir -p "$GITHUB_WORKSPACE/flutter_app/build/native-screenshots"
-            SCREENSHOT_DIR="$GITHUB_WORKSPACE/flutter_app/build/native-screenshots" \
-            SCREENSHOT_DEVICE="$DEVICE_NAME" \
             xcodebuild test \
               -project NativeRunner.xcodeproj \
               -scheme NativeRunner \
@@ -67,6 +64,10 @@ jobs:
               -derivedDataPath ../build/native-test \
               -parallel-testing-enabled NO \
               CODE_SIGNING_ALLOWED=NO
+            RESULT_BUNDLE=$(find ../build/native-test/Logs/Test -maxdepth 1 -name '*.xcresult' -print | sort | tail -n 1)
+            DEVICE_NAME="iPhone"
+            if [ "$DEVICE_INDEX" -eq 2 ]; then DEVICE_NAME="iPad"; fi
+            xcrun xcresulttool export attachments --path "$RESULT_BUNDLE" --output-path "$GITHUB_WORKSPACE/flutter_app/build/native-screenshots/$DEVICE_NAME"
           done
 
       - name: Upload native UI screenshots
