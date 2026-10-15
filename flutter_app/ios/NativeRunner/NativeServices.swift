@@ -383,7 +383,7 @@ struct CanvasAPI {
         guard let value else { return nil }
         for part in value.split(separator: ",") {
             let text = String(part)
-            guard text.range(of: #"rel\s*=\s*"?next"?"#, options: .caseInsensitive, range: nil) != nil,
+            guard text.range(of: #"rel\s*=\s*"?next"?"#, options: [.regularExpression, .caseInsensitive], range: nil) != nil,
                   let start = text.firstIndex(of: "<"), let end = text.firstIndex(of: ">"), start < end else { continue }
             return URL(string: String(text[text.index(after: start)..<end]))
         }
