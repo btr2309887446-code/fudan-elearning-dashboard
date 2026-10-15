@@ -535,7 +535,7 @@ struct CoursesView: View {
     }
 
     private var courseList: some View {
-        List(selection: $selectedID) {
+        List {
             Section {
                 NavigationLink(destination: ScoresView(store: store)) {
                     Label {
@@ -550,11 +550,20 @@ struct CoursesView: View {
                 if courses.isEmpty { EmptyState(title: "没有找到课程。试试切换学期或清除搜索。", systemImage: "book") }
                 else {
                     ForEach(courses) { course in
-                        NavigationLink(destination: CourseDetailView(store: store, course: course)) {
-                            courseRow(course)
+                        if horizontalSizeClass == .regular {
+                            Button {
+                                selectedID = course.id
+                            } label: {
+                                courseRow(course)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("course-row-\(course.id)")
+                        } else {
+                            NavigationLink(destination: CourseDetailView(store: store, course: course)) {
+                                courseRow(course)
+                            }
+                            .accessibilityIdentifier("course-row-\(course.id)")
                         }
-                        .accessibilityIdentifier("course-row-\(course.id)")
-                        .tag(course.id)
                     }
                 }
             }
