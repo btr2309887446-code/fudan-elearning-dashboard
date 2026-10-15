@@ -528,29 +528,11 @@ struct CoursesView: View {
                 if courses.isEmpty { EmptyState(title: "没有找到课程。试试切换学期或清除搜索。", systemImage: "book") }
                 else {
                     ForEach(courses) { course in
-                        if #available(iOS 16.0, *) {
-                            Button {
-                                selectedID = course.id
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "book.closed").foregroundStyle(.blue).frame(width: 24)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(course.displayName).foregroundStyle(.primary)
-                                        Text("\(course.courseCode) · \(course.termName)").font(.subheadline).foregroundStyle(.secondary)
-                                        Text("\(store.tasks.filter { $0.courseID == course.id && $0.status == .pending }.count) 项待交")
-                                            .font(.footnote).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityIdentifier("course-row-\(course.id)")
-                            .tag(course.id)
-                        } else {
-                            NavigationLink(destination: CourseDetailView(store: store, course: course)) {
-                                courseRow(course)
-                            }.tag(course.id)
+                        NavigationLink(destination: CourseDetailView(store: store, course: course)) {
+                            courseRow(course)
                         }
+                        .accessibilityIdentifier("course-row-\(course.id)")
+                        .tag(course.id)
                     }
                 }
             }
