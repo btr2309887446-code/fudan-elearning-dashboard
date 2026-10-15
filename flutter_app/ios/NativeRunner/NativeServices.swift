@@ -92,6 +92,8 @@ final class NativeHTTP: @unchecked Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -208,8 +210,11 @@ final class NativeUISAuthenticator {
     }
 
     func complete(username: String, password: String, captcha: String?) async throws -> ([NativeCookie], String) {
+        var stage = "读取 UIS 登录状态"
+        do {
         guard let context else { throw NativeError.protocolFailure("登录状态已过期，请重新准备后再试。") }
         self.context = nil
+        stage = "加密 UIS 密码"
         let encrypted = try RSAHelper.encrypt(password, publicKeyBase64: context.publicKey)
         let body: [String: Any] = [
             "authModuleCode": context.moduleCode,
@@ -219,6 +224,7 @@ final class NativeUISAuthenticator {
             "lck": context.lck,
             "authPara": ["loginName": username, "password": encrypted, "verifyCode": captcha ?? ""],
         ]
+        stage = "UIS 账号密码验证"
         let result = CanvasJSON.object(try await postJSON("/idp/authn/authExecute", object: body, http: context.http, referer: context.spaURL))
         if CanvasJSON.bool(result["second"]) {
             throw NativeError.protocolFailure("该账号需要二次验证，本应用暂不支持。")
@@ -226,6 +232,7 @@ final class NativeUISAuthenticator {
         guard "\(result["code"] ?? "")" == "200", let token = CanvasJSON.string(result["loginToken"]), !token.isEmpty else {
             throw Self.classify(result["message"] as? String, code: result["code"])
         }
+        stage = "UIS 换取 CAS 服务票据"
         var form = URLRequest(url: URL(string: "/idp/authCenter/authnEngine?locale=zh-CN", relativeTo: idBase)!)
         form.httpMethod = "POST"
         form.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -246,11 +253,15 @@ final class NativeUISAuthenticator {
         items.append(URLQueryItem(name: "ticket", value: ticket))
         target.queryItems = items
         guard let ticketURL = target.url else { throw NativeError.protocolFailure("服务票据链接无效。") }
+        stage = "Canvas CAS 服务票据校验"
         let (_, finalResponse) = try await context.http.request(ticketURL)
         guard finalResponse.url?.host == "elearning.fudan.edu.cn" else {
             throw NativeError.protocolFailure("票据校验后没有返回 eLearning。")
         }
         return (context.http.cookies(), finalResponse.url?.absoluteString ?? "")
+        } catch {
+            throw NativeError.protocolFailure("\(stage)失败：\(error.localizedDescription)")
+        }
     }
 
     private func postJSON(_ path: String, object: [String: Any], http: NativeHTTP, referer: String) async throws -> Any {

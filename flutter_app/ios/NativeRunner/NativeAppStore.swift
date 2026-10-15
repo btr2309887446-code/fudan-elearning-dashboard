@@ -124,7 +124,12 @@ final class NativeAppStore: ObservableObject {
 
     func prepareLogin(username: String) async throws -> NativeUISAuthenticator.Preparation {
         errorMessage = nil
-        return try await authenticator.prepare(username: username.trimmingCharacters(in: .whitespacesAndNewlines))
+        do {
+            return try await authenticator.prepare(username: username.trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch {
+            appendLog("UIS 登录预检失败：\(error.localizedDescription)")
+            throw error
+        }
     }
 
     func submitLogin(username: String, password: String, captcha: String?, remember: Bool) async -> Bool {
@@ -137,8 +142,14 @@ final class NativeAppStore: ObservableObject {
             appendLog("UIS 登录开始：\(redacted(username))")
             let (newCookies, _) = try await authenticator.complete(username: username.trimmingCharacters(in: .whitespacesAndNewlines),
                                                                     password: password, captcha: captcha)
+            let cookieSummary = newCookies.map { "\($0.domain):\($0.name)" }.sorted().joined(separator: ", ")
+            appendLog("UIS 认证返回 Canvas；会话 Cookie \(newCookies.count) 条：\(cookieSummary.isEmpty ? "（空）" : cookieSummary)")
             let api = CanvasAPI(http: NativeHTTP(cookies: newCookies))
-            _ = try await api.get("/api/v1/users/self/profile")
+            do {
+                _ = try await api.get("/api/v1/users/self/profile")
+            } catch {
+                throw NativeError.protocolFailure("Canvas 登录态校验失败（Cookie \(newCookies.count) 条）：\(error.localizedDescription)")
+            }
             cookies = newCookies
             defaults.set(try JSONEncoder().encode(newCookies), forKey: cookieKey)
             preferences.rememberedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
