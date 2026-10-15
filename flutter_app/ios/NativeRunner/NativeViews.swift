@@ -468,6 +468,7 @@ struct MonthGrid: View {
 
 struct CoursesView: View {
     @ObservedObject var store: NativeAppStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var search = ""
     @State private var selectedID: Int?
 
@@ -477,7 +478,7 @@ struct CoursesView: View {
 
     var body: some View {
         Group {
-            if #available(iOS 16.0, *) {
+            if #available(iOS 16.0, *), horizontalSizeClass == .regular {
                 NavigationSplitView {
                     courseList
                         .navigationTitle("课程")
@@ -495,17 +496,38 @@ struct CoursesView: View {
                 }
                 .navigationSplitViewStyle(.balanced)
             } else {
-                NavigationView {
-                    courseList
-                        .navigationTitle("课程")
-                        .toolbar { ToolbarItem(placement: .navigationBarTrailing) { TermChooser(store: store) } }
-                    if let course = courses.first(where: { $0.id == selectedID }) {
-                        CourseDetailView(store: store, course: course)
-                    } else {
-                        EmptyState(title: "选择一门课程查看作业、成绩与文件。", systemImage: "book.closed")
+                if horizontalSizeClass == .regular {
+                    NavigationView {
+                        courseList
+                            .navigationTitle("课程")
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarLeading) { TermChooser(store: store) }
+                                ToolbarItem(placement: .navigationBarTrailing) {
+                                    Button { Task { await store.refresh() } } label: { Image(systemName: "arrow.clockwise") }
+                                        .disabled(store.isBusy || !store.isLoggedIn).accessibilityLabel("同步")
+                                }
+                            }
+                        if let course = courses.first(where: { $0.id == selectedID }) {
+                            CourseDetailView(store: store, course: course)
+                        } else {
+                            EmptyState(title: "选择一门课程查看作业、成绩与文件。", systemImage: "book.closed")
+                        }
                     }
+                    .navigationViewStyle(.columns)
+                } else {
+                    NavigationView {
+                        courseList
+                            .navigationTitle("课程")
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarLeading) { TermChooser(store: store) }
+                                ToolbarItem(placement: .navigationBarTrailing) {
+                                    Button { Task { await store.refresh() } } label: { Image(systemName: "arrow.clockwise") }
+                                        .disabled(store.isBusy || !store.isLoggedIn).accessibilityLabel("同步")
+                                }
+                            }
+                    }
+                    .navigationViewStyle(.stack)
                 }
-                .navigationViewStyle(.columns)
             }
         }
         .searchable(text: $search, prompt: "搜索课程")
