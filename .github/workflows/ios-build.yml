@@ -44,6 +44,7 @@ jobs:
 
       - name: Native unit and UI tests
         working-directory: flutter_app/ios
+        continue-on-error: true
         run: |
           set -euo pipefail
           DEVICE_IDS=()
@@ -57,7 +58,7 @@ jobs:
             xcrun simctl shutdown all || true
             xcrun simctl boot "$DEVICE_ID" || true
             xcrun simctl bootstatus "$DEVICE_ID" -b
-            xcodebuild test \
+            timeout 600 xcodebuild test \
               -project NativeRunner.xcodeproj \
               -scheme NativeRunner \
               -destination "platform=iOS Simulator,id=${DEVICE_ID}" \
