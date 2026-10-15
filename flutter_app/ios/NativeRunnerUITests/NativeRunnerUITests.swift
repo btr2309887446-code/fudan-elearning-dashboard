@@ -2,7 +2,7 @@ import XCTest
 
 final class NativeRunnerUITests: XCTestCase {
     private func tab(_ app: XCUIApplication, _ title: String) -> XCUIElement {
-        app.tabBars.firstMatch.descendants(matching: .any)
+        app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@", title))
             .firstMatch
     }
@@ -35,7 +35,10 @@ final class NativeRunnerUITests: XCTestCase {
         app.launch()
 
         for title in ["今日", "作业", "课程", "我的"] {
-            XCTAssertTrue(tab(app, title).waitForExistence(timeout: 5))
+            XCTAssertTrue(
+                tab(app, title).waitForExistence(timeout: 5),
+                "Missing \(title) tab. Accessibility hierarchy: \(app.debugDescription)"
+            )
         }
         XCTAssertTrue(app.staticTexts["今天"].exists)
         XCTAssertTrue(app.staticTexts["未来七天"].exists)
