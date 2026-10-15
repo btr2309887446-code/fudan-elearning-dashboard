@@ -225,23 +225,25 @@ final class NativeDomainTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("重定向次数")) }
     }
 
-    func testLiveFudanPreflightCookieHandoffWhenEnabled() async throws {
-        let environment = ProcessInfo.processInfo.environment
-        guard environment["FUDAN_LIVE_COOKIE_SMOKE"] == "1" || environment["CI"] == "true" else {
-            throw XCTSkip("Set FUDAN_LIVE_COOKIE_SMOKE=1 to test public UIS preflight endpoints.")
+    func testLiveFudanPreflightCookieHandoff() async throws {
+        func describe(_ items: [NativeHTTPTrace]) -> String {
+            items.map {
+                "\($0.phase) \($0.method) \($0.url) -> \($0.status) location=\($0.location ?? "-") set=[\($0.setCookieNames.joined(separator: ","))] sent=[\($0.sentCookieNames.joined(separator: ","))]"
+            }.joined(separator: "\n")
         }
 
         let http = NativeHTTP()
         let canvasURL = try XCTUnwrap(URL(string: "https://elearning.fudan.edu.cn/login/cas"))
         let (_, entryResponse) = try await http.request(canvasURL)
-        XCTAssertEqual(entryResponse.statusCode, 200)
-        XCTAssertEqual(entryResponse.url?.host, "id.fudan.edu.cn")
+        let trace = describe(http.trace)
+        XCTAssertEqual(entryResponse.statusCode, 200, trace)
+        XCTAssertEqual(entryResponse.url?.host, "id.fudan.edu.cn", trace)
 
         let cookieNames = Set(http.cookies().map(\.name))
-        XCTAssertTrue(cookieNames.contains("_csrf_token"), "Canvas entry cookie was not captured.")
-        XCTAssertTrue(cookieNames.contains("REQID"), "UIS redirect cookie was not captured.")
-        XCTAssertTrue(http.trace.contains { $0.setCookieNames.contains("_csrf_token") })
-        XCTAssertTrue(http.trace.contains { $0.setCookieNames.contains("REQID") })
+        XCTAssertTrue(cookieNames.contains("_csrf_token"), "Canvas entry cookie was not captured.\n\(trace)")
+        XCTAssertTrue(cookieNames.contains("REQID"), "UIS redirect cookie was not captured.\n\(trace)")
+        XCTAssertTrue(http.trace.contains { $0.setCookieNames.contains("_csrf_token") }, trace)
+        XCTAssertTrue(http.trace.contains { $0.setCookieNames.contains("REQID") }, trace)
 
         let idpBase = try XCTUnwrap(URL(string: "https://id.fudan.edu.cn"))
         let keyURL = try XCTUnwrap(URL(string: "/idp/authn/getJsPublicKey", relativeTo: idpBase))
@@ -251,10 +253,11 @@ final class NativeDomainTests: XCTestCase {
             "Origin": idpBase.absoluteString,
             "Referer": entryResponse.url!.absoluteString,
         ])
-        XCTAssertEqual(keyResponse.statusCode, 200)
+        let finalTrace = describe(http.trace)
+        XCTAssertEqual(keyResponse.statusCode, 200, finalTrace)
         let sentCookieNames = Set(try XCTUnwrap(http.trace.last).sentCookieNames)
-        XCTAssertTrue(sentCookieNames.contains("REQID"), "UIS cookie was not sent to the next UIS request.")
-        XCTAssertFalse(sentCookieNames.contains("_csrf_token"), "Canvas host-only cookie crossed to the UIS host.")
+        XCTAssertTrue(sentCookieNames.contains("REQID"), "UIS cookie was not sent to the next UIS request.\n\(finalTrace)")
+        XCTAssertFalse(sentCookieNames.contains("_csrf_token"), "Canvas host-only cookie crossed to the UIS host.\n\(finalTrace)")
     }
 
     func testPaginationLinkSelectsOnlyNextRelation() throws {
