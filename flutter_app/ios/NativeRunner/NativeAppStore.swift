@@ -128,6 +128,7 @@ final class NativeAppStore: ObservableObject {
             return try await authenticator.prepare(username: username.trimmingCharacters(in: .whitespacesAndNewlines))
         } catch {
             appendLog("UIS 登录预检失败：\(error.localizedDescription)")
+            appendLoginTrace(authenticator.trace)
             throw error
         }
     }
@@ -137,6 +138,8 @@ final class NativeAppStore: ObservableObject {
         isBusy = true
         errorMessage = nil
         noticeMessage = nil
+        var authTraceLogged = false
+        var failedProfileTrace: [NativeHTTPTrace] = []
         defer { isBusy = false }
         do {
             appendLog("UIS 登录开始：\(redacted(username))")
@@ -144,12 +147,17 @@ final class NativeAppStore: ObservableObject {
                                                                     password: password, captcha: captcha)
             let cookieSummary = newCookies.map { "\($0.domain):\($0.name)" }.sorted().joined(separator: ", ")
             appendLog("UIS 认证返回 Canvas；会话 Cookie \(newCookies.count) 条：\(cookieSummary.isEmpty ? "（空）" : cookieSummary)")
-            let api = CanvasAPI(http: NativeHTTP(cookies: newCookies))
+            let profileHTTP = NativeHTTP(cookies: newCookies)
+            let api = CanvasAPI(http: profileHTTP)
             do {
                 _ = try await api.get("/api/v1/users/self/profile")
             } catch {
+                failedProfileTrace = profileHTTP.trace
                 throw NativeError.protocolFailure("Canvas 登录态校验失败（Cookie \(newCookies.count) 条）：\(error.localizedDescription)")
             }
+            appendLoginTrace(authenticator.trace)
+            authTraceLogged = true
+            appendLoginTrace(profileHTTP.trace)
             cookies = newCookies
             defaults.set(try JSONEncoder().encode(newCookies), forKey: cookieKey)
             preferences.rememberedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -163,6 +171,8 @@ final class NativeAppStore: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             appendLog("登录失败：\(error.localizedDescription)")
+            if !authTraceLogged { appendLoginTrace(authenticator.trace) }
+            appendLoginTrace(failedProfileTrace)
             return false
         }
     }
@@ -442,6 +452,29 @@ final class NativeAppStore: ObservableObject {
                                                 with: "$1=[已隐藏]", options: .regularExpression)
         logs.append("\(formatter.string(from: Date())) \(safe)")
         if logs.count > 200 { logs.removeFirst(logs.count - 200) }
+    }
+
+    private func appendLoginTrace(_ trace: [NativeHTTPTrace]) {
+        for item in trace.suffix(80) {
+            var fields = ["HTTP \(item.phase) \(item.method) \(item.url) -> \(item.status)"]
+            if !item.setCookieNames.isEmpty { fields.append("Set-Cookie[\(item.setCookieNames.sorted().joined(separator: ","))]") }
+            if !item.sentCookieNames.isEmpty { fields.append("Cookie[\(item.sentCookieNames.sorted().joined(separator: ","))]") }
+            if let location = item.location { fields.append("Location=\(location)") }
+            if let origin = item.origin { fields.append("Origin=\(origin)") }
+            if let referer = item.referer { fields.append("Referer=\(referer)") }
+            if !item.bodyShape.isEmpty {
+                let shape = item.bodyShape.keys.sorted().map { key in
+                    "\(key){\(item.bodyShape[key, default: []].sorted().joined(separator: ","))}"
+                }.joined(separator: ",")
+                fields.append("BodyFields[\(shape)]")
+            }
+            if let code = item.authCode { fields.append("authCode=\(code)") }
+            if let present = item.loginTokenPresent { fields.append("loginTokenPresent=\(present)") }
+            if let required = item.secondFactorRequired { fields.append("secondFactorRequired=\(required)") }
+            if let found = item.ticketFound { fields.append("ticketFound=\(found)") }
+            if let host = item.ticketHost { fields.append("ticketHost=\(host)") }
+            appendLog(fields.joined(separator: " | "))
+        }
     }
 
     private func persistPreferences() {
