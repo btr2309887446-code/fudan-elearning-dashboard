@@ -137,6 +137,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Fudan eLearning";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "将你选择的作业截止时间添加到系统日历。仅在你点击添加时申请权限。";
