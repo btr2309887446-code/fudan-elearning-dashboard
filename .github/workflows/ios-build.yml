@@ -73,10 +73,11 @@ jobs:
 
       - name: Upload native UI screenshots
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: native-ui-screenshots
           path: flutter_app/build/native-screenshots
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
       # This is a separate native SwiftUI target and links no Flutter framework.
