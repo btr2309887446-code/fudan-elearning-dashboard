@@ -62,6 +62,7 @@ enum NativeCookieHeader {
 }
 
 final class NativeHTTP: @unchecked Sendable {
+    private static let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     let cookieStorage: HTTPCookieStorage
     private let session: URLSession
 
@@ -75,6 +76,12 @@ final class NativeHTTP: @unchecked Sendable {
         config.httpCookieStorage = storage
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
+        // UIS serves a separate, unverified /ac-h5/ flow to mobile clients.
+        // Match the desktop UA used by the working Flutter login protocol.
+        config.httpAdditionalHeaders = [
+            "User-Agent": Self.userAgent,
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        ]
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
         session = URLSession(configuration: config)
