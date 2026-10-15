@@ -46,7 +46,10 @@ jobs:
         working-directory: flutter_app/ios
         run: |
           set -euo pipefail
-          mapfile -t DEVICE_IDS < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[x for group in d["devices"].values() for x in group if x["isAvailable"]]; print(next(x["udid"] for x in devices if x["name"].startswith("iPhone"))); print(next(x["udid"] for x in devices if x["name"].startswith("iPad")))')
+          DEVICE_IDS=()
+          while IFS= read -r DEVICE_ID; do
+            DEVICE_IDS+=("$DEVICE_ID")
+          done < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[x for group in d["devices"].values() for x in group if x["isAvailable"]]; print(next(x["udid"] for x in devices if x["name"].startswith("iPhone"))); print(next(x["udid"] for x in devices if x["name"].startswith("iPad")))')
           for DEVICE_ID in "${DEVICE_IDS[@]}"; do
             xcodebuild test \
               -project NativeRunner.xcodeproj \
