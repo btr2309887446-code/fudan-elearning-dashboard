@@ -473,7 +473,9 @@ struct CoursesView: View {
     @State private var selectedID: Int?
 
     private var courses: [NativeCourse] {
-        store.selectedCourses.filter { "\($0.displayName) \($0.courseCode)".localizedCaseInsensitiveContains(search) }
+        store.selectedCourses.filter {
+            search.isEmpty || "\($0.displayName) \($0.courseCode)".localizedCaseInsensitiveContains(search)
+        }
     }
 
     var body: some View {
