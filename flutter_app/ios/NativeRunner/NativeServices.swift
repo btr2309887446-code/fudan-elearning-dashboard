@@ -241,8 +241,8 @@ final class NativeHTTP: @unchecked Sendable {
                 location: location.flatMap { URL(string: $0, relativeTo: currentURL)?.absoluteURL }.map(Self.redactedURL),
                 setCookieNames: setCookieHeaders.compactMap(Self.cookieName),
                 sentCookieNames: cookieHeader.map(Self.cookieNames) ?? [],
-                origin: headers.first(where: { $0.key.caseInsensitiveCompare("Origin") == .orderedSame })?.value.flatMap(Self.redactedHeaderURL),
-                referer: headers.first(where: { $0.key.caseInsensitiveCompare("Referer") == .orderedSame })?.value.flatMap(Self.redactedHeaderURL),
+                origin: Self.redactedHeaderURL(headers.first(where: { $0.key.caseInsensitiveCompare("Origin") == .orderedSame })?.value),
+                referer: Self.redactedHeaderURL(headers.first(where: { $0.key.caseInsensitiveCompare("Referer") == .orderedSame })?.value),
                 bodyShape: Self.bodyShape(currentBody, contentType: headers.first(where: { $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame })?.value),
                 authCode: nil, loginTokenPresent: nil, secondFactorRequired: nil,
                 ticketFound: nil, ticketHost: nil, captchaCheckVerified: nil, captchaRequired: nil
@@ -310,7 +310,8 @@ final class NativeHTTP: @unchecked Sendable {
         return components?.string ?? "<invalid-url>"
     }
 
-    private static func redactedHeaderURL(_ value: String) -> String? {
+    private static func redactedHeaderURL(_ value: String?) -> String? {
+        guard let value else { return nil }
         guard let url = URL(string: value) else { return "<invalid-url>" }
         return redactedURL(url)
     }
