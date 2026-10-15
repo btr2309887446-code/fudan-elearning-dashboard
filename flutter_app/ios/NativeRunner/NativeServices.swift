@@ -61,6 +61,31 @@ enum NativeCookieHeader {
     }
 }
 
+enum NativeResponseCookies {
+    static func parse(_ response: HTTPURLResponse) -> [HTTPCookie] {
+        guard let url = response.url else { return [] }
+        var cookies: [HTTPCookie] = []
+        for item in response.allHeaderFields {
+            guard let key = item.key as? String,
+                  key.caseInsensitiveCompare("Set-Cookie") == .orderedSame else { continue }
+            let values: [String]
+            if let value = item.value as? String {
+                values = [value]
+            } else if let value = item.value as? [String] {
+                values = value
+            } else if let value = item.value as? [Any] {
+                values = value.compactMap { $0 as? String }
+            } else {
+                values = []
+            }
+            for value in values {
+                cookies.append(contentsOf: HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": value], for: url))
+            }
+        }
+        return cookies
+    }
+}
+
 private final class NativeCookieRedirectDelegate: NSObject, URLSessionTaskDelegate {
     let storage: HTTPCookieStorage
 
@@ -70,14 +95,8 @@ private final class NativeCookieRedirectDelegate: NSObject, URLSessionTaskDelega
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
-        if let url = response.url {
-            let fields = response.allHeaderFields.reduce(into: [String: String]()) { result, item in
-                guard let key = item.key as? String, let value = item.value as? String else { return }
-                result[key] = value
-            }
-            for cookie in HTTPCookie.cookies(withResponseHeaderFields: fields, for: url) {
-                storage.setCookie(cookie)
-            }
+        for cookie in NativeResponseCookies.parse(response) {
+            storage.setCookie(cookie)
         }
         var next = request
         next.setValue(NativeHTTP.userAgent, forHTTPHeaderField: "User-Agent")
@@ -125,6 +144,12 @@ final class NativeHTTP: @unchecked Sendable {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw NativeError.protocolFailure("服务器没有返回 HTTP 响应。")
+        }
+        // URLSession normally persists cookies automatically, but CAS providers
+        // sometimes return repeated Set-Cookie headers that are not imported by
+        // the platform cookie store. Capture the final response explicitly.
+        for cookie in NativeResponseCookies.parse(http) {
+            cookieStorage.setCookie(cookie)
         }
         return (data, http)
     }
