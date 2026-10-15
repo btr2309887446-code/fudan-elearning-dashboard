@@ -226,7 +226,8 @@ final class NativeDomainTests: XCTestCase {
     }
 
     func testLiveFudanPreflightCookieHandoffWhenEnabled() async throws {
-        guard ProcessInfo.processInfo.environment["FUDAN_LIVE_COOKIE_SMOKE"] == "1" else {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["FUDAN_LIVE_COOKIE_SMOKE"] == "1" || environment["CI"] == "true" else {
             throw XCTSkip("Set FUDAN_LIVE_COOKIE_SMOKE=1 to test public UIS preflight endpoints.")
         }
 
