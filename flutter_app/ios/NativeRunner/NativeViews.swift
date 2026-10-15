@@ -538,6 +538,8 @@ struct CoursesView: View {
                                         .font(.footnote).foregroundStyle(.secondary)
                                 }
                             }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("course-row-\(course.id)")
                             .tag(course.id)
                         } else {
                             NavigationLink(destination: CourseDetailView(store: store, course: course)) {

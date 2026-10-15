@@ -40,7 +40,7 @@ final class NativeRunnerUITests: XCTestCase {
 
         app.tabBars.buttons["课程"].tap()
         XCTAssertTrue(app.navigationBars["课程"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["演示课程"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["course-row-1001"].waitForExistence(timeout: 5))
 
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
