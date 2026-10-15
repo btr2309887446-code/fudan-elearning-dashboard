@@ -6,14 +6,15 @@
 登录流程参考了 [DanXi（旦夕）](https://github.com/DanXi-Dev/DanXi) 的做法——直接对接复旦大学统一身份认证，
 不依赖任何第三方服务器。
 
-> **两个端，同一套逻辑**
+> **三端客户端，共享同一套服务端协议**
 >
-> | 端 | 技术 | 位置 |
+> | 平台 | 技术 | 位置 |
 > | --- | --- | --- |
 > | Windows 桌面 | Electron + React | 本目录（见下文） |
-> | iOS / Android | Flutter + Dart | [`flutter_app/`](flutter_app/README.md) |
+> | iPhone / iPad | SwiftUI + Swift | [`flutter_app/ios/NativeRunner/`](flutter_app/ios/NativeRunner/) |
+> | Android / macOS | Flutter + Dart | [`flutter_app/`](flutter_app/README.md) |
 >
-> 统一身份认证协议、Canvas 接口口径、成绩算法与设计 token 两端完全一致，改动需同步。
+> 三端对接相同的 UIS 与 Canvas 服务；Windows 和 Android 共用 Dart 实现，iOS/iPadOS 使用独立 Swift 实现。
 
 ![总览](docs/dashboard.png)
 
@@ -79,26 +80,24 @@ cd flutter_app && dart run flutter_launcher_icons
 用的是**去掉文字的纯图形版** `assets/brand/mark.png`，
 否则那个尺寸下就是一团糊。
 
-## iOS 新版
+## iOS 原生版
 
-移动端已加入以待办为主的「今日、作业、课程、我的」导航、北京时间月历、每日汇总提醒与系统日历导出。作业直接进入详情，课程详情拆分为作业、成绩和文件。Android 与桌面端保留原导航，登录和成绩算法保持一致。
+iPhone/iPad 使用独立 SwiftUI 应用，提供「今日、作业、课程、我的」四个系统标签、北京时间月历、每日汇总提醒、作业与课程详情、成绩和文件下载。iOS 构建不包含 Flutter 运行时；Android 和 macOS 继续使用 Flutter，Windows 保留 Electron 应用。
 
 提醒默认关闭，开启后依据已同步的数据安排；网页提交或截止变化后需再次同步。系统日历采用用户确认的单向添加，不自动更新旧事件。详见 [移动端说明](flutter_app/README.md)。
 
-## 视觉设计
+## 桌面端视觉设计
 
-界面参考了复旦校园助手 [DanXi（旦夕）](https://github.com/DanXi-Dev/DanXi) 的设计语言：
-iOS 风格的**浅灰底 + 纯白卡片**，主色 `#007AFF`；深色模式则是纯黑底 + `#1C1C1E` 抬升卡片，主色 `#0A84FF`。
+桌面界面保留项目自己的侧栏和卡片设计。iOS 原生版采用系统列表、导航栏、标签栏、表单与语义颜色，跟随系统深浅色和 Dynamic Type；不再模拟 DanXi 的 Flutter 视觉实现。
 
 | | 页面底 | 侧边栏 | 卡片 | 正文 |
 | --- | --- | --- | --- | --- |
 | 浅色 | `#F2F2F7` | `#FFFFFF` | `#FFFFFF` | `#1C1C1E` |
 | 深色 | `#000000` | `#141416` | `#1C1C1E` | `#F2F2F7` |
 
-关键点在**页面底和卡片必须有明确色差**——两者若同色，卡片边界只能靠描边区分，看久了很累。
-右上角的 ☾/☀ 按钮切换明暗，选择会记住。
+桌面端支持应用内外观切换；iOS 原生版优先使用系统外观，也可在「我的」中固定浅色或深色。
 
-布局采用**左侧边栏**：导航、学期列表、个人信息各居其位，主区域专心放内容。
+桌面端布局采用**左侧边栏**：导航、学期列表、个人信息各居其位，主区域专心放内容。
 学期多时侧栏纵向滚动，不会把控件挤出屏幕。
 
 ---

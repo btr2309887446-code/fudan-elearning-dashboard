@@ -1,0 +1,194 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000021 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000061 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000041;
+			remoteInfo = NativeRunner;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Runner/Assets.xcassets; sourceTree = "<group>"; };
+		A10000000000000000000012 /* NativeRunner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NativeRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000013 /* NativeRunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NativeRunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000014 /* NativeRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NativeRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A10000000000000000000031 /* NativeRunner */ = {isa = PBXFileSystemSynchronizedRootGroup; path = NativeRunner; sourceTree = "<group>"; };
+		A10000000000000000000032 /* NativeRunnerTests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = NativeRunnerTests; sourceTree = "<group>"; };
+		A10000000000000000000033 /* NativeRunnerUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = NativeRunnerUITests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000051 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000052 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000053 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000060 = {isa = PBXGroup; children = (
+			A10000000000000000000031 /* NativeRunner */,
+			A10000000000000000000032 /* NativeRunnerTests */,
+			A10000000000000000000033 /* NativeRunnerUITests */,
+			A10000000000000000000011 /* Assets.xcassets */,
+			A10000000000000000000062 /* Products */,
+		); sourceTree = "<group>"; };
+		A10000000000000000000062 /* Products */ = {isa = PBXGroup; children = (
+			A10000000000000000000012 /* NativeRunner.app */,
+			A10000000000000000000013 /* NativeRunnerTests.xctest */,
+			A10000000000000000000014 /* NativeRunnerUITests.xctest */,
+		); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000041 /* NativeRunner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000071 /* Build configuration list for PBXNativeTarget "NativeRunner" */;
+			buildPhases = (A10000000000000000000054 /* Sources */, A10000000000000000000051 /* Frameworks */, A10000000000000000000055 /* Resources */);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (A10000000000000000000031 /* NativeRunner */,);
+			name = NativeRunner;
+			productName = NativeRunner;
+			productReference = A10000000000000000000012 /* NativeRunner.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000042 /* NativeRunnerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000072 /* Build configuration list for PBXNativeTarget "NativeRunnerTests" */;
+			buildPhases = (A10000000000000000000056 /* Sources */, A10000000000000000000052 /* Frameworks */, A10000000000000000000057 /* Resources */);
+			buildRules = ();
+			dependencies = (A10000000000000000000043 /* PBXTargetDependency */,);
+			fileSystemSynchronizedGroups = (A10000000000000000000032 /* NativeRunnerTests */,);
+			name = NativeRunnerTests;
+			productName = NativeRunnerTests;
+			productReference = A10000000000000000000013 /* NativeRunnerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A10000000000000000000044 /* NativeRunnerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000073 /* Build configuration list for PBXNativeTarget "NativeRunnerUITests" */;
+			buildPhases = (A10000000000000000000058 /* Sources */, A10000000000000000000053 /* Frameworks */, A10000000000000000000059 /* Resources */);
+			buildRules = ();
+			dependencies = (A10000000000000000000045 /* PBXTargetDependency */,);
+			fileSystemSynchronizedGroups = (A10000000000000000000033 /* NativeRunnerUITests */,);
+			name = NativeRunnerUITests;
+			productName = NativeRunnerUITests;
+			productReference = A10000000000000000000014 /* NativeRunnerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000061 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1600; TargetAttributes = {
+				A10000000000000000000041 = {CreatedOnToolsVersion = 16.0;};
+				A10000000000000000000042 = {CreatedOnToolsVersion = 16.0; TestTargetID = A10000000000000000000041;};
+				A10000000000000000000044 = {CreatedOnToolsVersion = 16.0; TestTargetID = A10000000000000000000041;};
+			};};
+			buildConfigurationList = A10000000000000000000070 /* Build configuration list for PBXProject "NativeRunner" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base, zh_CN,);
+			mainGroup = A10000000000000000000060;
+			productRefGroup = A10000000000000000000062 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A10000000000000000000041 /* NativeRunner */, A10000000000000000000042 /* NativeRunnerTests */, A10000000000000000000044 /* NativeRunnerUITests */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000055 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* Assets.xcassets in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000057 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000059 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000054 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000056 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000058 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000043 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A10000000000000000000041 /* NativeRunner */; targetProxy = A10000000000000000000021 /* PBXContainerItemProxy */; };
+		A10000000000000000000045 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A10000000000000000000041 /* NativeRunner */; targetProxy = A10000000000000000000021 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000081 /* Debug project */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0;}; name = Debug; };
+		A10000000000000000000082 /* Release project */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0;}; name = Release; };
+		A10000000000000000000083 /* Debug app */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Fudan eLearning";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "将你选择的作业截止时间添加到系统日历。仅在你点击添加时申请权限。";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "将你选择的作业截止时间添加到系统日历。";
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = cn.edu.fudan.fudanElearning;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_NAME = NativeRunner;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			}; name = Debug; };
+		A10000000000000000000084 /* Release app */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Fudan eLearning";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "将你选择的作业截止时间添加到系统日历。仅在你点击添加时申请权限。";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "将你选择的作业截止时间添加到系统日历。";
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = cn.edu.fudan.fudanElearning;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_NAME = NativeRunner;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			}; name = Release; };
+		A10000000000000000000085 /* Debug tests */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = cn.edu.fudan.fudanElearning.NativeRunnerTests; SWIFT_VERSION = 5.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NativeRunner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NativeRunner";}; name = Debug; };
+		A10000000000000000000086 /* Release tests */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = cn.edu.fudan.fudanElearning.NativeRunnerTests; SWIFT_VERSION = 5.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NativeRunner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NativeRunner";}; name = Release; };
+		A10000000000000000000087 /* Debug UI tests */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = cn.edu.fudan.fudanElearning.NativeRunnerUITests; SWIFT_VERSION = 5.0; TEST_TARGET_NAME = NativeRunner;}; name = Debug; };
+		A10000000000000000000088 /* Release UI tests */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = cn.edu.fudan.fudanElearning.NativeRunnerUITests; SWIFT_VERSION = 5.0; TEST_TARGET_NAME = NativeRunner;}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000070 /* Build configuration list for PBXProject "NativeRunner" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000081 /* Debug project */, A10000000000000000000082 /* Release project */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000071 /* Build configuration list for PBXNativeTarget "NativeRunner" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000083 /* Debug app */, A10000000000000000000084 /* Release app */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000072 /* Build configuration list for PBXNativeTarget "NativeRunnerTests" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000085 /* Debug tests */, A10000000000000000000086 /* Release tests */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000073 /* Build configuration list for PBXNativeTarget "NativeRunnerUITests" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000087 /* Debug UI tests */, A10000000000000000000088 /* Release UI tests */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A10000000000000000000061 /* Project object */;
+}

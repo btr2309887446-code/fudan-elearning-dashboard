@@ -1,29 +1,17 @@
-# 复旦大学 eLearning 学习看板 — iOS / Android 客户端
+# 复旦大学 eLearning 学习看板 — Android / macOS Flutter 客户端
 
-Flutter 实现的移动端，逻辑与桌面端（Electron）完全同源：同一套统一身份认证流程、
-同一套 Canvas 接口口径、同一套成绩算法与设计 token。
-
-界面参考复旦校园助手 [DanXi（旦夕）](https://github.com/DanXi-Dev/DanXi) 的设计语言：
-iOS 风格的浅灰底 + 纯白卡片，主色 `#007AFF`；深色为纯黑底 + `#1C1C1E` 抬升卡片。
-
-<p align="center">
-  <img src="test/goldens/ios_today_light.png" width="240" alt="总览">
-  <img src="test/goldens/ios_today_dark.png" width="240" alt="总览（深色）">
-  <img src="test/goldens/ios_calendar_light.png" width="240" alt="课程详情">
-</p>
+Android 与 macOS 使用 Flutter/Dart。iPhone/iPad 使用独立 SwiftUI/Swift target，
+位于 ios/NativeRunner/，iOS 不再通过 Flutter 构建。
 
 ---
 
-## iOS 新版界面
+## iOS 原生应用
 
-- 底部四个入口：今日、作业、课程、我的；各自保留导航与浏览位置。
-- 今日优先展示逾期、当天截止与未来七天，作业可直接打开详情。
-- 作业支持搜索、课程与状态筛选、周一开始的月历；课程详情分为作业、成绩与文件。
-- 提醒默认关闭，在「我的」中主动开启。当前学期的未提交任务在北京时间当天 08:00 合并提醒；08:00 及以前截止的任务在前一天 20:00 提醒。
-- 提醒依据缓存安排未来 30 天，已错过的提醒不补发。同步、单项静音及「无需提交」变化后会重新安排，退出登录会清除。
-- 系统日历通过原生编辑界面单向添加，学生确认后才保存。截止变化不会自动更新或删除旧事件；重复添加会先确认。
-- 网页提交或老师修改截止后需要再次同步。进入前台且缓存超过 15 分钟时会尝试刷新；失败时仍可查看缓存。
-- 演示模式不会发送真实通知或写入系统日历。iOS 保持支持 15.0；Android 和 macOS 保留原导航。
+- ios/NativeRunner.xcodeproj 是独立 SwiftUI target，最低支持 iOS 15，Bundle ID 与旧版保持一致。
+- 四个标签覆盖今日、作业筛选与月历、课程/成绩/文件、个人设置；iPad 使用系统自适应分栏。
+- UIS/CAS 登录、Canvas 分页与聚合、下载、提醒和 EventKit 日历功能由 Swift 服务实现。
+- GitHub Actions 在 macOS runner 上运行 XCTest/UI tests，并生成未签名 IPA artifact。推送 master 会触发构建；IPA 需用 Sideloadly、AltStore 等工具签名后安装。
+- iOS 不迁移 Flutter session、snapshot、密码或偏好；首次启动清理旧本地状态和待处理提醒，不会删除系统日历事件。
 
 验证命令：
 
@@ -31,18 +19,17 @@ iOS 风格的浅灰底 + 纯白卡片，主色 `#007AFF`；深色为纯黑底 + 
 flutter analyze
 flutter test --exclude-tags golden
 flutter test test/golden_test.dart test/ios_golden_test.dart --update-goldens
-flutter build ios --no-codesign
 ```
 
-截图测试依次寻找 macOS、Linux 和 Windows 中文字体，并注册 Cupertino 与 Material 图标字体。固定时间的 iOS 截图位于 `test/goldens/ios_*.png`。
+Flutter golden tests 依次寻找 macOS、Linux 和 Windows 中文字体，并注册 Cupertino 与 Material 图标字体；它们验证 Flutter 客户端，不代表原生 iOS 截图。
 
-新增通知依赖要求 Dart 3.10+，仓库 CI 固定的 Flutter 3.47.5 满足要求。iOS 构建需 Xcode 与 CocoaPods（现有钥匙串插件尚未支持 Swift Package Manager）；使用 `ios/Runner.xcworkspace` 打开工程。
+Flutter 的 Dart analyzer 与测试验证 Android/macOS 和共享 Dart 逻辑；iOS 编译及模拟器测试由 .github/workflows/ios-build.yml 在 macOS/Xcode 上完成。
 
 ---
 
 ## 为什么这个项目值得单独存在
 
-桌面端那些最难啃的部分——**从认证服务器自己的前端代码里逆向出登录协议**、
+Flutter 端实现中最难啃的部分——**从认证服务器自己的前端代码里逆向出登录协议**、
 **纯 Dart 实现 PKCS#1 v1.5 加密**、**已交作业不误标逾期的判定**——
 在这里被原样继承，并且都有测试锁住。
 
@@ -57,7 +44,7 @@ flutter run --dart-define=DEMO=true
 
 演示数据铺了两个学期、六门课，包含「已交未批改且已过截止」这种容易出错的记录。
 
-### 真实使用
+### Android / macOS 真实使用
 
 ```bash
 cd flutter_app
@@ -66,7 +53,7 @@ flutter run          # 需要连接校园网或 VPN
 
 ## 技术要点
 
-### 认证：与服务器完全一致
+### Flutter 端认证：与服务器协议一致
 
 整条链路是从 `id.fudan.edu.cn/ac/js/chunk-*.js` 读出来后逐项实测验证的：
 
@@ -85,18 +72,18 @@ GET  <logon>?ticket=...               → Canvas 会话
 **提交前先查验证码**是刻意的：学校会因多次失败锁定账号，
 所以明知会失败就不该消耗一次尝试。
 
-### 加密：只能用纯 Dart 实现
+### Dart 加密实现
 
 这里没有任何平台 API 可用：
 
 - **Web Crypto 只有 RSA-OAEP**，没有 PKCS#1 v1.5 加密（已实测，`NotSupportedError`）；
-- **iOS 的 Security.framework** 也不直接暴露 PKCS#1 v1.5 加密。
+- iOS 原生实现使用 Security.framework 的 RSA PKCS#1 v1.5 加密 API。
 
 所以用 `pointycastle` 在 Dart 层实现。正确性由交叉验证保证：
 `tool/rsa_probe.dart` 用 **Dart 加密**，交给 **Node 的 `node:crypto` 解密**——
 后者已实测与学校服务器一致，所以只要它能解开，Dart 版就是对的。
 
-### HTTP：不用 `package:http`
+### Dart HTTP：不用 `package:http`
 
 `package:http` 会把同名响应头合并成一个字符串，`Set-Cookie` 因此丢失边界，
 而整条登录链依赖逐跳精确收集 Cookie。这里直接用 `dart:io` 的 `HttpClient`，
@@ -152,25 +139,15 @@ node recon/test-dart-rsa-interop.mjs
 
 ## 各平台怎么出包
 
-Flutter 一套代码，四个目标。**注意 iPad 不是一个独立目标**——iOS 包本身就跑在 iPad 上。
+Flutter 代码用于 Android 与 macOS。iOS/iPadOS 由独立 Xcode target 构建。
 
 | 平台 | 怎么构建 | 需要 Mac？ | 安装方式 |
 | --- | --- | --- | --- |
-| **iPhone** | `flutter build ios --no-codesign`（或 CI） | 出包需要，可交给 CI | Sideloadly / AltStore 侧载 |
-| **iPad** | 同上，**同一个包** | 同上 | 同上 |
+| **iPhone / iPad** | GitHub Actions 的 `Build iOS (native, unsigned)` | CI 使用 macOS/Xcode | Sideloadly / AltStore 侧载 |
 | **macOS** | `flutter build macos --release`（或 CI） | 出包需要，可交给 CI | 解压 .app，右键→打开 |
 | **Android** | `flutter build apk --release` | **不需要**，Windows 上就能出 | 直接装 APK |
 
-### iPad 需要做的不是新建目标，而是自适应布局
-
-Xcode 工程里已经是 `TARGETED_DEVICE_FAMILY = "1,2"`（1=iPhone，2=iPad），
-所以同一个二进制本来就能跑在 iPad 上。真正要做的是**让界面适配宽屏**，这个已经做了：
-
-- iPad 继续使用原生底部导航，宽度 ≥ 768 时课程与作业采用列表、详情分栏；其他平台宽度 ≥ 760 时使用左侧 `NavigationRail`
-- 内容限宽 1080 并居中，避免窗口拉宽后一行只有几个字
-
-`test/golden_test.dart` 里有 iPad 横屏（1194×834）和 Mac 窗口（1440×900）的渲染测试，
-同时检查 iPad 保留 iOS 导航、Mac 使用 `NavigationRail`。
+原生 iOS target 同时支持 iPhone 与 iPad；iPad 的列表/详情分栏由 SwiftUI 按系统尺寸类别自适应。
 
 ### macOS 的额外注意
 
@@ -317,7 +294,7 @@ Android 侧载完全免费，Google Play 的 $25 一次性费用你不需要。
 
 例：`2026-2027 学年第一学期/CS100113.02 程序设计基础/课件/第1章/绪论.pdf`
 
-- **iOS**：应用文档目录。Info.plist 里开了文件共享，「文件」App 里能看到，
+- **iOS**：原生应用文档目录。NativeRunner 生成的 Info.plist 开启文件共享后，可在「文件」App 里看到，
   可以整个文件夹拷到 iCloud。
 - **Android**：应用专属外部目录（`Android/data/<包名>/files/eLearning`）。
   targetSdk 36 下受分区存储限制不能直接写公共 Download 目录，

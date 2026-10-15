@@ -1,9 +1,10 @@
-# 在 GitHub 的 macOS runner 上构建未签名 iOS 包。
+# 在 GitHub 的 macOS runner 上构建原生 SwiftUI 未签名 iOS 包。
 #
 # 这个工作流的意义在于：**开发者不需要拥有一台 Mac**。
 # GitHub Actions 对公开仓库免费提供 macOS 运行器，直接产出可侧载的 IPA。
 #
-# 用法：推送到 `master` 会自动构建；也可以在仓库页面手动运行。
+# iOS 不再使用 Flutter Runner；Android/Windows 仍由 Flutter 项目构建。
+# 推送到 `master` 会自动构建；也可以在仓库页面手动运行。
 # 产物在本次运行的 Artifacts 里，下载后用 Sideloadly / AltStore / TrollStore
 # 装到 iPhone 上（免费开发者账号签名的有效期是 7 天，到期重装即可）。
 #
@@ -17,7 +18,7 @@
 # 之所以去掉了这里的 `push: tags: v*`：release.yml 同样在 tag 上触发，
 # 两个都跑会让 IPA 白构建两遍（每次多占约 5 分钟 macOS runner）。
 
-name: Build iOS (unsigned)
+name: Build iOS (native, unsigned)
 
 on:
   push:
@@ -31,51 +32,53 @@ concurrency:
 
 jobs:
   build:
-    name: Build unsigned IPA
+    name: Test and build native IPA
     runs-on: macos-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.47.5'
-          channel: stable
-          cache: true
+      - name: Show Apple toolchain
+        run: xcodebuild -version
 
-      - name: Show toolchain
-        run: flutter --version
+      - name: Native unit and UI tests
+        working-directory: flutter_app/ios
+        run: |
+          set -euo pipefail
+          mapfile -t DEVICE_IDS < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[x for group in d["devices"].values() for x in group if x["isAvailable"]]; print(next(x["udid"] for x in devices if x["name"].startswith("iPhone"))); print(next(x["udid"] for x in devices if x["name"].startswith("iPad")))')
+          for DEVICE_ID in "${DEVICE_IDS[@]}"; do
+            xcodebuild test \
+              -project NativeRunner.xcodeproj \
+              -scheme NativeRunner \
+              -destination "platform=iOS Simulator,id=${DEVICE_ID}" \
+              -derivedDataPath ../build/native-test \
+              -parallel-testing-enabled NO \
+              CODE_SIGNING_ALLOWED=NO
+          done
 
-      - name: Install dependencies
-        working-directory: flutter_app
-        run: flutter pub get
-
-      - name: Static analysis
-        working-directory: flutter_app
-        run: flutter analyze
-
-      - name: Unit and widget tests
-        working-directory: flutter_app
-        # golden 图依赖具体平台的字体与光栅化，跨机器必然有像素差异，故跳过；
-        # 它们只在本地用 --update-goldens 生成，供人工核对视觉。
-        run: flutter test --exclude-tags golden
-
-      # --no-codesign 是关键：没有签名证书也能编译出可运行的 .app。
+      # This is a separate native SwiftUI target and links no Flutter framework.
       - name: Build iOS (no codesign)
-        working-directory: flutter_app
-        run: flutter build ios --release --no-codesign
+        working-directory: flutter_app/ios
+        run: |
+          xcodebuild build \
+            -project NativeRunner.xcodeproj \
+            -scheme NativeRunner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ../build/native-iphoneos \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package into an unsigned IPA
         working-directory: flutter_app
         run: |
           set -euo pipefail
-          APP_PATH="build/ios/iphoneos/Runner.app"
+          APP_PATH="build/native-iphoneos/Build/Products/Release-iphoneos/NativeRunner.app"
           test -d "$APP_PATH"
           rm -rf Payload app-unsigned.ipa
           mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
+          ditto "$APP_PATH" Payload/NativeRunner.app
           zip -qry app-unsigned.ipa Payload
           ls -lh app-unsigned.ipa
 
@@ -105,6 +108,12 @@ jobs:
       - name: Install dependencies
         working-directory: flutter_app
         run: flutter pub get
+
+      - name: Flutter analysis and regression tests
+        working-directory: flutter_app
+        run: |
+          flutter analyze
+          flutter test --exclude-tags golden
 
       # 没有开发者证书时用 ad-hoc 签名（CODE_SIGN_IDENTITY=-）。
       # 本机运行足够；首次打开需要右键 → 打开，或执行

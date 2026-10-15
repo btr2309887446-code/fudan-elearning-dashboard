@@ -40,39 +40,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.47.5'
-          channel: stable
-          cache: true
+      - name: Apple toolchain
+        run: xcodebuild -version
 
-      - name: 依赖
-        working-directory: flutter_app
-        run: flutter pub get
-
-      - name: 静态分析
-        working-directory: flutter_app
-        run: flutter analyze
-
-      - name: 单元与组件测试
-        working-directory: flutter_app
-        # golden 图依赖具体平台的字体与光栅化，跨机器必然有像素差异，故跳过。
-        run: flutter test --exclude-tags golden
-
-      # --no-codesign 是关键：没有签名证书也能编译出可运行的 .app。
+      # NativeRunner is independent from the Flutter Runner target.
       - name: 构建（不签名）
-        working-directory: flutter_app
-        run: flutter build ios --release --no-codesign
+        working-directory: flutter_app/ios
+        run: |
+          xcodebuild build \
+            -project NativeRunner.xcodeproj \
+            -scheme NativeRunner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ../build/native-iphoneos \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: 打成 IPA
         working-directory: flutter_app
         run: |
           set -euo pipefail
-          APP_PATH="build/ios/iphoneos/Runner.app"
+          APP_PATH="build/native-iphoneos/Build/Products/Release-iphoneos/NativeRunner.app"
           test -d "$APP_PATH"
           rm -rf Payload app-unsigned.ipa
           mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
+          ditto "$APP_PATH" Payload/NativeRunner.app
           zip -qry app-unsigned.ipa Payload
           ls -lh app-unsigned.ipa
 
