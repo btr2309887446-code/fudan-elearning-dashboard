@@ -41,7 +41,7 @@ final class NativeRunnerUITests: XCTestCase {
         app.tabBars.buttons["课程"].tap()
         XCTAssertTrue(app.navigationBars["课程"].waitForExistence(timeout: 5))
         let course = app.descendants(matching: .any)
-            .matching(identifier: "course-row-1001")
+            .matching(NSPredicate(format: "label CONTAINS '演示课程'"))
             .firstMatch
         XCTAssertTrue(course.waitForExistence(timeout: 5))
         course.tap()

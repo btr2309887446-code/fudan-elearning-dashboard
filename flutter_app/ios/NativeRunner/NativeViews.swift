@@ -555,14 +555,18 @@ struct CoursesView: View {
                                 selectedID = course.id
                             } label: {
                                 courseRow(course)
+                                    .accessibilityElement(children: .combine)
+                                    .accessibilityLabel(course.displayName)
+                                    .accessibilityIdentifier("course-row-\(course.id)")
                             }
                             .buttonStyle(.plain)
-                            .accessibilityIdentifier("course-row-\(course.id)")
                         } else {
                             NavigationLink(destination: CourseDetailView(store: store, course: course)) {
                                 courseRow(course)
+                                    .accessibilityElement(children: .combine)
+                                    .accessibilityLabel(course.displayName)
+                                    .accessibilityIdentifier("course-row-\(course.id)")
                             }
-                            .accessibilityIdentifier("course-row-\(course.id)")
                         }
                     }
                 }
