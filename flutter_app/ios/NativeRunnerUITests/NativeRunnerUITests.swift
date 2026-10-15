@@ -1,6 +1,12 @@
 import XCTest
 
 final class NativeRunnerUITests: XCTestCase {
+    private func tab(_ app: XCUIApplication, _ title: String) -> XCUIElement {
+        app.tabBars.firstMatch.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", title))
+            .firstMatch
+    }
+
     func testLoginUsesNativeFormControls() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--ui-testing-login"]
@@ -29,16 +35,16 @@ final class NativeRunnerUITests: XCTestCase {
         app.launch()
 
         for title in ["今日", "作业", "课程", "我的"] {
-            XCTAssertTrue(app.tabBars.buttons[title].waitForExistence(timeout: 5))
+            XCTAssertTrue(tab(app, title).waitForExistence(timeout: 5))
         }
         XCTAssertTrue(app.staticTexts["今天"].exists)
         XCTAssertTrue(app.staticTexts["未来七天"].exists)
 
-        app.tabBars.buttons["作业"].tap()
+        tab(app, "作业").tap()
         XCTAssertTrue(app.navigationBars["作业"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["演示作业：阅读报告"].waitForExistence(timeout: 5))
 
-        app.tabBars.buttons["课程"].tap()
+        tab(app, "课程").tap()
         XCTAssertTrue(app.navigationBars["课程"].waitForExistence(timeout: 5))
         let course = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS '演示课程'"))
@@ -47,7 +53,7 @@ final class NativeRunnerUITests: XCTestCase {
         course.tap()
         XCTAssertTrue(app.staticTexts["TEST1001 · 2026-2027 学年秋季学期"].waitForExistence(timeout: 5))
 
-        app.tabBars.buttons["我的"].tap()
+        tab(app, "我的").tap()
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["每日截止提醒"].exists)
     }
@@ -56,7 +62,7 @@ final class NativeRunnerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing"]
         app.launch()
-        app.tabBars.buttons["作业"].tap()
+        tab(app, "作业").tap()
 
         let calendarButton = app.buttons["日历"]
         XCTAssertTrue(calendarButton.waitForExistence(timeout: 5))
