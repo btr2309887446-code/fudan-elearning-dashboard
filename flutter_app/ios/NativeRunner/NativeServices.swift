@@ -61,10 +61,36 @@ enum NativeCookieHeader {
     }
 }
 
+private final class NativeCookieRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    let storage: HTTPCookieStorage
+
+    init(storage: HTTPCookieStorage) { self.storage = storage }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        if let url = response.url {
+            let fields = response.allHeaderFields.reduce(into: [String: String]()) { result, item in
+                guard let key = item.key as? String, let value = item.value as? String else { return }
+                result[key] = value
+            }
+            for cookie in HTTPCookie.cookies(withResponseHeaderFields: fields, for: url) {
+                storage.setCookie(cookie)
+            }
+        }
+        var next = request
+        next.setValue(NativeHTTP.userAgent, forHTTPHeaderField: "User-Agent")
+        next.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        completionHandler(next)
+    }
+}
+
 final class NativeHTTP: @unchecked Sendable {
-    private static let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    fileprivate static let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     let cookieStorage: HTTPCookieStorage
     private let session: URLSession
+    private let redirectDelegate: NativeCookieRedirectDelegate
 
     init(cookies: [NativeCookie] = []) {
         let storage = HTTPCookieStorage()
@@ -84,7 +110,8 @@ final class NativeHTTP: @unchecked Sendable {
         ]
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
-        session = URLSession(configuration: config)
+        redirectDelegate = NativeCookieRedirectDelegate(storage: storage)
+        session = URLSession(configuration: config, delegate: redirectDelegate, delegateQueue: nil)
     }
 
     func request(_ url: URL, method: String = "GET", body: Data? = nil,
