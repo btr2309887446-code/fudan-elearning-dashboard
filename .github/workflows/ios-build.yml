@@ -34,6 +34,7 @@ jobs:
   build:
     name: Test and build native IPA
     runs-on: macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -44,7 +45,6 @@ jobs:
 
       - name: Native unit and UI tests
         working-directory: flutter_app/ios
-        continue-on-error: true
         run: |
           set -euo pipefail
           DEVICE_IDS=()
@@ -58,7 +58,8 @@ jobs:
             xcrun simctl shutdown all || true
             xcrun simctl boot "$DEVICE_ID" || true
             xcrun simctl bootstatus "$DEVICE_ID" -b
-            timeout 600 xcodebuild test \
+            FUDAN_LIVE_COOKIE_SMOKE=1 python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=600).returncode)' \
+              xcodebuild test \
               -project NativeRunner.xcodeproj \
               -scheme NativeRunner \
               -destination "platform=iOS Simulator,id=${DEVICE_ID}" \

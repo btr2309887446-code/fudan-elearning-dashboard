@@ -227,6 +227,37 @@ final class NativeDomainTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("重定向次数")) }
     }
 
+    func testLiveFudanPreflightCookieHandoffWhenEnabled() async throws {
+        guard ProcessInfo.processInfo.environment["FUDAN_LIVE_COOKIE_SMOKE"] == "1" else {
+            throw XCTSkip("Set FUDAN_LIVE_COOKIE_SMOKE=1 to test public UIS preflight endpoints.")
+        }
+
+        let http = NativeHTTP()
+        let canvasURL = try XCTUnwrap(URL(string: "https://elearning.fudan.edu.cn/login/cas"))
+        let (_, entryResponse) = try await http.request(canvasURL)
+        XCTAssertEqual(entryResponse.statusCode, 200)
+        XCTAssertEqual(entryResponse.url?.host, "id.fudan.edu.cn")
+
+        let cookieNames = Set(http.cookies().map(\.name))
+        XCTAssertTrue(cookieNames.contains("_csrf_token"), "Canvas entry cookie was not captured.")
+        XCTAssertTrue(cookieNames.contains("REQID"), "UIS redirect cookie was not captured.")
+        XCTAssertTrue(http.trace.contains { $0.setCookieNames.contains("_csrf_token") })
+        XCTAssertTrue(http.trace.contains { $0.setCookieNames.contains("REQID") })
+
+        let idpBase = try XCTUnwrap(URL(string: "https://id.fudan.edu.cn"))
+        let keyURL = try XCTUnwrap(URL(string: "/idp/authn/getJsPublicKey", relativeTo: idpBase))
+        let (_, keyResponse) = try await http.request(keyURL, method: "POST", body: Data("{}".utf8), headers: [
+            "Content-Type": "application/json;charset=UTF-8",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": idpBase.absoluteString,
+            "Referer": entryResponse.url!.absoluteString,
+        ])
+        XCTAssertEqual(keyResponse.statusCode, 200)
+        let sentCookieNames = Set(try XCTUnwrap(http.trace.last).sentCookieNames)
+        XCTAssertTrue(sentCookieNames.contains("REQID"), "UIS cookie was not sent to the next UIS request.")
+        XCTAssertFalse(sentCookieNames.contains("_csrf_token"), "Canvas host-only cookie crossed to the UIS host.")
+    }
+
     func testPaginationLinkSelectsOnlyNextRelation() throws {
         let header = #"<https://elearning.fudan.edu.cn/api/v1/courses?page=2>; rel="next", <https://elearning.fudan.edu.cn/api/v1/courses?page=9>; rel="last""#
         XCTAssertEqual(CanvasAPI.nextLink(header)?.query, "page=2")
