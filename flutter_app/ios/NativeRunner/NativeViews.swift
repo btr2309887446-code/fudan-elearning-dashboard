@@ -1132,8 +1132,8 @@ struct AssignmentDetailView: View {
         loading = true
         defer { loading = false }
         do { detail = try await store.loadAssignmentDetail(task) }
-        catch {
-            error = error.localizedDescription
+        catch let loadError {
+            error = loadError.localizedDescription
             detail = NativeAssignmentDetail(description: task.assignment?.descriptionExcerpt ?? "", summary: "", summaryError: nil, links: [])
         }
     }
