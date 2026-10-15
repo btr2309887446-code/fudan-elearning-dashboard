@@ -157,10 +157,8 @@ final class NativeDomainTests: XCTestCase {
         }
         let http = NativeHTTP(transport: transport)
         let engineURL = try XCTUnwrap(URL(string: "https://id.example.edu/idp/authCenter/authnEngine?locale=zh-CN"))
-        let _ = try await http.request(engineURL, method: "POST", body: Data("loginToken=TOKEN_SECRET".utf8),
-                                       headers: ["Content-Type": "application/x-www-form-urlencoded"])
-        let ticketURL = try XCTUnwrap(URL(string: "https://canvas.example.edu/login/cas?ticket=CAS_TICKET_SECRET"))
-        let (_, response) = try await http.request(ticketURL)
+        let (_, response) = try await http.request(engineURL, method: "POST", body: Data("loginToken=TOKEN_SECRET".utf8),
+                                                    headers: ["Content-Type": "application/x-www-form-urlencoded"])
 
         XCTAssertEqual(response.statusCode, 200)
         XCTAssertEqual(http.trace.map(\.phase), ["authnEngine", "other", "ticket", "canvas-profile"])

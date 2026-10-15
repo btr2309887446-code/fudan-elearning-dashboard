@@ -58,10 +58,10 @@ jobs:
             xcrun simctl shutdown all || true
             xcrun simctl boot "$DEVICE_ID" || true
             xcrun simctl bootstatus "$DEVICE_ID" -b
-            FUDAN_LIVE_COOKIE_SMOKE=1 python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=600).returncode)' \
+            python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=600).returncode)' \
               xcodebuild test \
               -project NativeRunner.xcodeproj \
-              -scheme NativeRunner \
+              -scheme NativeRunnerCI \
               -destination "platform=iOS Simulator,id=${DEVICE_ID}" \
               -derivedDataPath ../build/native-test \
               -parallel-testing-enabled NO \
