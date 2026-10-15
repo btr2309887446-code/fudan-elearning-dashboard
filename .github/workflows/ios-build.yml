@@ -50,10 +50,16 @@ jobs:
           while IFS= read -r DEVICE_ID; do
             DEVICE_IDS+=("$DEVICE_ID")
           done < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[x for group in d["devices"].values() for x in group if x["isAvailable"]]; print(next(x["udid"] for x in devices if x["name"].startswith("iPhone"))); print(next(x["udid"] for x in devices if x["name"].startswith("iPad")))')
+          DEVICE_INDEX=0
           for DEVICE_ID in "${DEVICE_IDS[@]}"; do
+            DEVICE_INDEX=$((DEVICE_INDEX + 1))
             xcrun simctl shutdown all || true
             xcrun simctl boot "$DEVICE_ID" || true
             xcrun simctl bootstatus "$DEVICE_ID" -b
+            DEVICE_NAME="device-${DEVICE_INDEX}"
+            mkdir -p "$GITHUB_WORKSPACE/flutter_app/build/native-screenshots"
+            SCREENSHOT_DIR="$GITHUB_WORKSPACE/flutter_app/build/native-screenshots" \
+            SCREENSHOT_DEVICE="$DEVICE_NAME" \
             xcodebuild test \
               -project NativeRunner.xcodeproj \
               -scheme NativeRunner \
@@ -62,6 +68,14 @@ jobs:
               -parallel-testing-enabled NO \
               CODE_SIGNING_ALLOWED=NO
           done
+
+      - name: Upload native UI screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ui-screenshots
+          path: flutter_app/build/native-screenshots
+          if-no-files-found: error
+          retention-days: 30
 
       # This is a separate native SwiftUI target and links no Flutter framework.
       - name: Build iOS (no codesign)
