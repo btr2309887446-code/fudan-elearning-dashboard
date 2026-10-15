@@ -31,11 +31,23 @@ export interface RequestOptions {
 }
 
 export interface HttpTrace {
+  phase?: string;
   method: string;
   url: string;
   status: number;
   location?: string;
-  setCookie?: string[];
+  setCookieNames?: string[];
+  sentCookieNames?: string[];
+  origin?: string;
+  referer?: string;
+  bodyShape?: Record<string, string[]>;
+  authCode?: string;
+  loginTokenPresent?: boolean;
+  secondFactorRequired?: boolean;
+  ticketFound?: boolean;
+  ticketHost?: string;
+  captchaCheckVerified?: boolean;
+  captchaRequired?: boolean;
 }
 
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
@@ -89,7 +101,11 @@ export class HttpClient {
       url,
       status: res.status,
       location: res.headers.get('location') ?? undefined,
-      setCookie: setCookie.length ? setCookie.map((c) => c.split(';')[0]) : undefined,
+      setCookieNames: setCookie.length ? setCookie.map(cookieName).filter(Boolean) : undefined,
+      sentCookieNames: cookie ? namesOnly(cookie) : undefined,
+      origin: safeHeaderUrl(headers.Origin),
+      referer: safeHeaderUrl(headers.Referer),
+      bodyShape: bodyShape(opts.body),
     });
 
     return { status: res.status, url, headers: res.headers, body };
@@ -101,13 +117,16 @@ export class HttpClient {
     let currentUrl = url;
     let method = (opts.method ?? 'GET').toUpperCase();
     let body = opts.body;
+    const visited = new Set([new URL(url).toString()]);
     let res = await this.raw(currentUrl, { ...opts, method, body });
 
     let hops = 0;
-    while (REDIRECT_STATUS.has(res.status) && (opts.follow ?? true) && hops < maxRedirects) {
+    while (REDIRECT_STATUS.has(res.status) && (opts.follow ?? true)) {
       const location = res.headers.get('location');
       if (!location) break;
+      if (hops >= maxRedirects) throw new Error('超过最大重定向次数');
       const next = new URL(location, currentUrl).toString();
+      if (visited.has(next)) throw new Error('重定向循环');
 
       // Preserve the method only for 307/308; everything else degrades to GET
       // and drops the body, matching browser behaviour.
@@ -119,6 +138,7 @@ export class HttpClient {
       }
 
       currentUrl = next;
+      visited.add(next);
       hops += 1;
       res = await this.raw(currentUrl, { ...opts, method, body });
     }
@@ -162,5 +182,40 @@ export class HttpClient {
         ...(opts.headers ?? {}),
       },
     });
+  }
+}
+
+function namesOnly(cookieHeader: string): string[] {
+  return cookieHeader.split(';').map((part) => part.split('=')[0].trim()).filter(Boolean);
+}
+
+function cookieName(header: string): string {
+  return header.split(';', 1)[0]?.split('=', 1)[0]?.trim() ?? '';
+}
+
+function safeHeaderUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return '<invalid-url>';
+  }
+}
+
+function bodyShape(body: string | undefined): Record<string, string[]> | undefined {
+  if (!body) return undefined;
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    const result: Record<string, string[]> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      result[key] = value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.keys(value)
+        : [];
+    }
+    return result;
+  } catch {
+    return Object.fromEntries(Array.from(new URLSearchParams(body).keys(), (key) => [key, []]));
   }
 }

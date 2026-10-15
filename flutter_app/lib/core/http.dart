@@ -102,18 +102,40 @@ class HttpResponseData {
 }
 
 class HttpTrace {
-  HttpTrace(this.method, this.url, this.statusCode, this.location, this.setCookies);
+  HttpTrace({
+    required this.method,
+    required this.url,
+    required this.statusCode,
+    required this.location,
+    required this.setCookieNames,
+    required this.sentCookieNames,
+    required this.requestOrigin,
+    required this.requestReferer,
+    required this.bodyShape,
+  });
 
   final String method;
   final String url;
   final int statusCode;
   final String? location;
-  final List<String> setCookies;
+  final List<String> setCookieNames;
+  final List<String> sentCookieNames;
+  final String? requestOrigin;
+  final String? requestReferer;
+  final Map<String, List<String>> bodyShape;
+  String? phase;
+  bool? captchaCheckVerified;
+  bool? captchaRequired;
+  String? authCode;
+  bool? loginTokenPresent;
+  bool? secondFactorRequired;
+  bool? ticketFound;
+  String? ticketHost;
 
   @override
   String toString() {
-    final loc = location == null ? '' : ' -> $location';
-    return '$method $url [$statusCode]$loc';
+    final loc = location == null ? '' : ' -> ${_redactedURL(location!)}';
+    return '$method ${_redactedURL(url)} [$statusCode]$loc';
   }
 }
 
@@ -198,23 +220,27 @@ class HttpClientLite {
         .expand((e) => e.value)
         .firstOrNull;
     final cookieNames = response.setCookies
-        .map((c) => c.split('=').first.trim())
+        .map(_cookieName)
         .where((n) => n.isNotEmpty)
         .join(',');
     diag(
       'http',
-      '$method $url → ${response.statusCode}'
-      '${location != null ? ' → $location' : ''}'
+      '$method ${_redactedURL(url)} → ${response.statusCode}'
+      '${location != null ? ' → ${_redactedURL(Uri.parse(url).resolve(location).toString())}' : ''}'
       '${cookieNames.isNotEmpty ? '  [set-cookie: $cookieNames]' : ''}'
       '${cookie != null ? '  [sent: ${cookie.split(';').map((p) => p.split('=').first.trim()).join(',')}]' : ''}',
     );
 
     trace.add(HttpTrace(
-      method,
-      url,
-      response.statusCode,
-      location,
-      response.setCookies,
+      method: method,
+      url: url,
+      statusCode: response.statusCode,
+      location: location,
+      setCookieNames: response.setCookies.map(_cookieName).where((name) => name.isNotEmpty).toList(),
+      sentCookieNames: cookie == null ? const [] : _cookieNames(cookie),
+      requestOrigin: _headerURL(headers, 'Origin'),
+      requestReferer: _headerURL(headers, 'Referer'),
+      bodyShape: _bodyShape(options.body, headers['Content-Type']),
     ));
 
     return HttpResponseData(
@@ -230,15 +256,18 @@ class HttpClientLite {
     var currentUrl = url;
     var method = options.method.toUpperCase();
     String? body = options.body;
+    final visited = <String>{Uri.parse(url).toString()};
 
     var response = await raw(currentUrl, options.copyWith(method: method, body: body));
 
     var hops = 0;
-    while (_redirectCodes.contains(response.statusCode) && options.follow && hops < options.maxRedirects) {
+    while (_redirectCodes.contains(response.statusCode) && options.follow) {
       final location = response.header('location');
       if (location == null) break;
+      if (hops >= options.maxRedirects) throw HttpError('重定向次数超过上限。');
 
       final next = Uri.parse(currentUrl).resolve(location).toString();
+      if (!visited.add(next)) throw HttpError('检测到重定向循环。');
 
       // 只有 307/308 保留方法与请求体，其余按浏览器行为降级为 GET。
       if (response.statusCode != 307 && response.statusCode != 308) {
@@ -296,6 +325,55 @@ class HttpClientLite {
         timeout: options.timeout,
       ),
     );
+  }
+}
+
+String _cookieName(String header) {
+  final first = header.split(';').first;
+  final equals = first.indexOf('=');
+  return (equals < 0 ? first : first.substring(0, equals)).trim();
+}
+
+List<String> _cookieNames(String header) =>
+    header.split(';').map(_cookieName).where((name) => name.isNotEmpty).toList();
+
+String _redactedURL(String value) {
+  try {
+    final uri = Uri.parse(value);
+    return uri.replace(query: null, fragment: null).toString();
+  } catch (_) {
+    return '<invalid-url>';
+  }
+}
+
+String? _headerURL(Map<String, String> headers, String name) {
+  final value = headers.entries
+      .where((entry) => entry.key.toLowerCase() == name.toLowerCase())
+      .map((entry) => entry.value)
+      .firstOrNull;
+  return value == null ? null : _redactedURL(value);
+}
+
+Map<String, List<String>> _bodyShape(String? body, String? contentType) {
+  if (body == null || body.isEmpty) return const {};
+  if (contentType?.toLowerCase().contains('json') == true) {
+    try {
+      final parsed = jsonDecode(body);
+      if (parsed is Map<String, dynamic>) {
+        return parsed.map((key, value) => MapEntry(
+              key,
+              value is Map ? value.keys.map((key) => '$key').toList() : const <String>[],
+            ));
+      }
+    } catch (_) {
+      return const {};
+    }
+  }
+  try {
+    final names = Uri.splitQueryString(body).keys;
+    return {for (final name in names) name: const <String>[]};
+  } catch (_) {
+    return const {};
   }
 }
 

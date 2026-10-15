@@ -24,6 +24,31 @@ struct NativeCookie: Codable {
     var path: String
     var secure: Bool
     var expires: Date?
+    var hostOnly: Bool
+
+    init(name: String, value: String, domain: String, path: String, secure: Bool,
+         expires: Date?, hostOnly: Bool? = nil) {
+        self.name = name
+        self.value = value
+        self.domain = domain
+        self.path = path
+        self.secure = secure
+        self.expires = expires
+        self.hostOnly = hostOnly ?? !domain.hasPrefix(".")
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, value, domain, path, secure, expires, hostOnly }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        value = try values.decode(String.self, forKey: .value)
+        domain = try values.decode(String.self, forKey: .domain)
+        path = try values.decodeIfPresent(String.self, forKey: .path) ?? "/"
+        secure = try values.decodeIfPresent(Bool.self, forKey: .secure) ?? false
+        expires = try values.decodeIfPresent(Date.self, forKey: .expires)
+        hostOnly = try values.decodeIfPresent(Bool.self, forKey: .hostOnly) ?? !domain.hasPrefix(".")
+    }
 
     var properties: [HTTPCookiePropertyKey: Any] {
         var value: [HTTPCookiePropertyKey: Any] = [.name: name, .value: self.value, .domain: domain, .path: path]
@@ -39,19 +64,20 @@ enum NativeCookieHeader {
               ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return nil }
         let matching = cookies.filter { cookie in
             (permittedDomains == nil || permittedDomains!.contains(cookie.domain)) &&
-            domain(cookie.domain, matches: host) &&
+            domain(cookie, matches: host) &&
             (!cookie.secure || url.scheme?.lowercased() == "https") &&
             path(cookie.path, matches: url.path) &&
             (cookie.expires.map { $0 > Date() } ?? true)
         }
         guard !matching.isEmpty else { return nil }
-        return matching.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+        return matching.sorted { $0.path.count > $1.path.count }
+            .map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
     }
 
-    private static func domain(_ cookieDomain: String, matches host: String) -> Bool {
-        let lower = cookieDomain.lowercased()
-        let domain = lower.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        return host == domain || (lower.hasPrefix(".") && host.hasSuffix(".\(domain)"))
+    private static func domain(_ cookie: NativeCookie, matches host: String) -> Bool {
+        let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        if cookie.hostOnly { return host == domain }
+        return host == domain || host.hasSuffix(".\(domain)")
     }
 
     private static func path(_ cookiePath: String, matches requestPath: String) -> Bool {
@@ -62,103 +88,253 @@ enum NativeCookieHeader {
 }
 
 enum NativeResponseCookies {
-    static func parse(_ response: HTTPURLResponse) -> [HTTPCookie] {
-        guard let url = response.url else { return [] }
-        var cookies: [HTTPCookie] = []
+    static func headers(_ response: HTTPURLResponse) -> [String] {
+        var headers: [String] = []
         for item in response.allHeaderFields {
             guard let key = item.key as? String,
                   key.caseInsensitiveCompare("Set-Cookie") == .orderedSame else { continue }
-            let values: [String]
             if let value = item.value as? String {
-                values = [value]
+                headers.append(contentsOf: splitCombined(value))
             } else if let value = item.value as? [String] {
-                values = value
+                headers.append(contentsOf: value)
             } else if let value = item.value as? [Any] {
-                values = value.compactMap { $0 as? String }
-            } else {
-                values = []
-            }
-            for value in values {
-                cookies.append(contentsOf: HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": value], for: url))
+                headers.append(contentsOf: value.compactMap { $0 as? String })
             }
         }
-        return cookies
+        return headers
+    }
+
+    static func parse(_ response: HTTPURLResponse) -> [NativeCookie] {
+        guard let url = response.url else { return [] }
+        return headers(response).flatMap { header in
+            HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": header], for: url).map { cookie in
+                let hasDomain = header.split(separator: ";").contains { part in
+                    part.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("domain=")
+                }
+                return NativeCookie(name: cookie.name, value: cookie.value, domain: cookie.domain,
+                                    path: cookie.path, secure: cookie.isSecure, expires: cookie.expiresDate,
+                                    hostOnly: !hasDomain)
+            }
+        }
+    }
+
+    private static func splitCombined(_ value: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #",(?=\s*[^;,\s]+=)"#) else { return [value] }
+        let range = NSRange(value.startIndex..., in: value)
+        let pieces = regex.matches(in: value, range: range).compactMap { Range($0.range, in: value) }
+        guard !pieces.isEmpty else { return [value] }
+        var output: [String] = []
+        var start = value.startIndex
+        for piece in pieces {
+            output.append(String(value[start..<piece.lowerBound]).trimmingCharacters(in: .whitespaces))
+            start = piece.upperBound
+        }
+        output.append(String(value[start...]).trimmingCharacters(in: .whitespaces))
+        return output.filter { !$0.isEmpty }
     }
 }
 
-private final class NativeCookieRedirectDelegate: NSObject, URLSessionTaskDelegate {
-    let storage: HTTPCookieStorage
+struct NativeHTTPTrace: Codable, Equatable {
+    var phase: String
+    var method: String
+    var url: String
+    var status: Int
+    var location: String?
+    var setCookieNames: [String]
+    var sentCookieNames: [String]
+    var origin: String?
+    var referer: String?
+    var bodyShape: [String: [String]]
+    var authCode: String?
+    var loginTokenPresent: Bool?
+    var secondFactorRequired: Bool?
+    var ticketFound: Bool?
+    var ticketHost: String?
+    var captchaCheckVerified: Bool?
+    var captchaRequired: Bool?
+}
 
-    init(storage: HTTPCookieStorage) { self.storage = storage }
+struct NativeHTTPReply: @unchecked Sendable {
+    var data: Data
+    var response: HTTPURLResponse
+}
+
+protocol NativeHTTPTransport: Sendable {
+    func send(_ request: URLRequest) async throws -> NativeHTTPReply
+}
+
+private final class NativeURLSessionTransport: NSObject, NativeHTTPTransport, URLSessionTaskDelegate, @unchecked Sendable {
+    private var session: URLSession!
+
+    override init() {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        super.init()
+        session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }
+
+    func send(_ request: URLRequest) async throws -> NativeHTTPReply {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw NativeError.protocolFailure("服务器没有返回 HTTP 响应。")
+        }
+        return NativeHTTPReply(data: data, response: http)
+    }
 
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
-        for cookie in NativeResponseCookies.parse(response) {
-            storage.setCookie(cookie)
-        }
-        var next = request
-        next.setValue(NativeHTTP.userAgent, forHTTPHeaderField: "User-Agent")
-        next.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
-        completionHandler(next)
+        completionHandler(nil)
     }
 }
 
 final class NativeHTTP: @unchecked Sendable {
     fileprivate static let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    let cookieStorage: HTTPCookieStorage
-    private let session: URLSession
-    private let redirectDelegate: NativeCookieRedirectDelegate
+    private let lock = NSLock()
+    private let transport: NativeHTTPTransport
+    private var cookieRecords: [NativeCookie]
+    private var recordedTrace: [NativeHTTPTrace] = []
 
-    init(cookies: [NativeCookie] = []) {
-        let storage = HTTPCookieStorage()
-        cookieStorage = storage
-        for record in cookies {
-            if let cookie = HTTPCookie(properties: record.properties) { storage.setCookie(cookie) }
-        }
-        let config = URLSessionConfiguration.ephemeral
-        config.httpCookieStorage = storage
-        config.httpShouldSetCookies = true
-        config.httpCookieAcceptPolicy = .always
-        // UIS serves a separate, unverified /ac-h5/ flow to mobile clients.
-        // Match the desktop UA used by the working Flutter login protocol.
-        config.httpAdditionalHeaders = [
-            "User-Agent": Self.userAgent,
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        ]
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        redirectDelegate = NativeCookieRedirectDelegate(storage: storage)
-        session = URLSession(configuration: config, delegate: redirectDelegate, delegateQueue: nil)
+    init(cookies: [NativeCookie] = [], transport: NativeHTTPTransport? = nil) {
+        cookieRecords = cookies
+        self.transport = transport ?? NativeURLSessionTransport()
+    }
+
+    var trace: [NativeHTTPTrace] {
+        lock.lock(); defer { lock.unlock() }
+        return recordedTrace
     }
 
     func request(_ url: URL, method: String = "GET", body: Data? = nil,
-                 headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.httpBody = body
-        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
-        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw NativeError.protocolFailure("服务器没有返回 HTTP 响应。")
+                 headers: [String: String] = [:], maxRedirects: Int = 12) async throws -> (Data, HTTPURLResponse) {
+        var currentURL = url
+        var currentMethod = method.uppercased()
+        var currentBody = body
+        var visited = Set([url.absoluteString])
+        var redirects = 0
+
+        while true {
+            var request = URLRequest(url: currentURL)
+            request.httpMethod = currentMethod
+            request.httpBody = currentBody
+            request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+            headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+            let currentCookies = cookies()
+            let cookieHeader = NativeCookieHeader.value(currentCookies, for: currentURL)
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+
+            let reply = try await transport.send(request)
+            let setCookieHeaders = NativeResponseCookies.headers(reply.response)
+            let parsedCookies = NativeResponseCookies.parse(reply.response)
+            store(parsedCookies)
+            let location = reply.response.value(forHTTPHeaderField: "Location")
+            appendTrace(NativeHTTPTrace(
+                phase: Self.phase(for: currentURL, previous: trace),
+                method: currentMethod,
+                url: Self.redactedURL(currentURL),
+                status: reply.response.statusCode,
+                location: location.flatMap { URL(string: $0, relativeTo: currentURL)?.absoluteURL }.map(Self.redactedURL),
+                setCookieNames: setCookieHeaders.compactMap(Self.cookieName),
+                sentCookieNames: cookieHeader.map(Self.cookieNames) ?? [],
+                origin: headers.first(where: { $0.key.caseInsensitiveCompare("Origin") == .orderedSame })?.value.flatMap(Self.redactedHeaderURL),
+                referer: headers.first(where: { $0.key.caseInsensitiveCompare("Referer") == .orderedSame })?.value.flatMap(Self.redactedHeaderURL),
+                bodyShape: Self.bodyShape(currentBody, contentType: headers.first(where: { $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame })?.value),
+                authCode: nil, loginTokenPresent: nil, secondFactorRequired: nil,
+                ticketFound: nil, ticketHost: nil, captchaCheckVerified: nil, captchaRequired: nil
+            ))
+
+            guard [301, 302, 303, 307, 308].contains(reply.response.statusCode), let location else {
+                return (reply.data, reply.response)
+            }
+            guard redirects < maxRedirects else { throw NativeError.protocolFailure("重定向次数超过上限。") }
+            guard let nextURL = URL(string: location, relativeTo: currentURL)?.absoluteURL else {
+                throw NativeError.protocolFailure("服务器返回了无效的重定向地址。")
+            }
+            guard visited.insert(nextURL.absoluteString).inserted else {
+                throw NativeError.protocolFailure("检测到重定向循环。")
+            }
+            if reply.response.statusCode == 303 || ((reply.response.statusCode == 301 || reply.response.statusCode == 302) && currentMethod != "GET" && currentMethod != "HEAD") {
+                if currentMethod != "HEAD" { currentMethod = "GET" }
+                currentBody = nil
+            }
+            currentURL = nextURL
+            redirects += 1
         }
-        // URLSession normally persists cookies automatically, but CAS providers
-        // sometimes return repeated Set-Cookie headers that are not imported by
-        // the platform cookie store. Capture the final response explicitly.
-        for cookie in NativeResponseCookies.parse(http) {
-            cookieStorage.setCookie(cookie)
-        }
-        return (data, http)
     }
 
     func cookies() -> [NativeCookie] {
-        (cookieStorage.cookies ?? []).map { cookie in
-            NativeCookie(name: cookie.name, value: cookie.value, domain: cookie.domain,
-                         path: cookie.path, secure: cookie.isSecure, expires: cookie.expiresDate)
+        lock.lock(); defer { lock.unlock() }
+        return cookieRecords.filter { $0.expires.map { $0 > Date() } ?? true }
+    }
+
+    private func store(_ cookies: [NativeCookie]) {
+        guard !cookies.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        for cookie in cookies {
+            cookieRecords.removeAll { $0.name == cookie.name && $0.domain == cookie.domain && $0.path == cookie.path }
+            if cookie.expires.map({ $0 > Date() }) ?? true { cookieRecords.append(cookie) }
         }
+    }
+
+    private func appendTrace(_ item: NativeHTTPTrace) {
+        lock.lock(); defer { lock.unlock() }
+        recordedTrace.append(item)
+    }
+
+    func annotateLast(_ update: (inout NativeHTTPTrace) -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        guard !recordedTrace.isEmpty else { return }
+        update(&recordedTrace[recordedTrace.count - 1])
+    }
+
+    private static func phase(for url: URL, previous: [NativeHTTPTrace]) -> String {
+        let path = url.path
+        if path == "/login/cas" { return previous.contains(where: { $0.phase == "authnEngine" }) ? "ticket" : "canvas-entry" }
+        if path.contains("verifyCodeIsNeed") { return "captcha-precheck" }
+        if path.contains("authExecute") { return "authExecute" }
+        if path.contains("authnEngine") { return "authnEngine" }
+        if path.contains("getJsPublicKey") || path.contains("queryAuthMethods") { return "auth-setup" }
+        if path.contains("/users/self/profile") { return "canvas-profile" }
+        return "other"
+    }
+
+    private static func redactedURL(_ url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.query = nil
+        components?.fragment = nil
+        return components?.string ?? "<invalid-url>"
+    }
+
+    private static func redactedHeaderURL(_ value: String) -> String? {
+        guard let url = URL(string: value) else { return "<invalid-url>" }
+        return redactedURL(url)
+    }
+
+    private static func cookieName(_ header: String) -> String? {
+        let name = header.split(separator: "=", maxSplits: 1).first.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
+        return name.isEmpty ? nil : name
+    }
+
+    private static func cookieNames(_ header: String) -> [String] {
+        header.split(separator: ";").compactMap { cookieName(String($0)) }
+    }
+
+    private static func bodyShape(_ body: Data?, contentType: String?) -> [String: [String]] {
+        guard let body, !body.isEmpty else { return [:] }
+        if contentType?.lowercased().contains("json") == true,
+           let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+            return object.mapValues { value in
+                (value as? [String: Any]).map { Array($0.keys).sorted() } ?? []
+            }
+        }
+        guard let value = String(data: body, encoding: .utf8) else { return [:] }
+        let names = URLComponents(string: "?\(value)")?.queryItems?.map(\.name) ?? []
+        return Dictionary(names.map { ($0, [String]()) }, uniquingKeysWith: { first, _ in first })
     }
 }
 
@@ -195,6 +371,7 @@ final class NativeUISAuthenticator {
     struct Preparation {
         var captchaRequired: Bool
         var captchaImage: String?
+        var captchaCheckVerified: Bool
     }
 
     private struct LoginContext {
@@ -209,11 +386,15 @@ final class NativeUISAuthenticator {
     }
 
     private var context: LoginContext?
+    private var currentHTTP: NativeHTTP?
     private let canvasBase = URL(string: "https://elearning.fudan.edu.cn")!
     private let idBase = URL(string: "https://id.fudan.edu.cn")!
 
+    var trace: [NativeHTTPTrace] { currentHTTP?.trace ?? [] }
+
     func prepare(username: String) async throws -> Preparation {
         let http = NativeHTTP()
+        currentHTTP = http
         let (entryData, entryResponse) = try await http.request(canvasBase.appendingPathComponent("login/cas"))
         _ = entryData
         guard let spaURL = entryResponse.url, spaURL.host == "id.fudan.edu.cn",
@@ -254,10 +435,12 @@ final class NativeUISAuthenticator {
                 "chainCode": chainCode, "authModuleCode": moduleCode,
             ], http: http, referer: spaURL.absoluteString)
             let captcha = CanvasJSON.object(captchaData)
-            return Preparation(captchaRequired: CanvasJSON.bool(captcha["result"]), captchaImage: CanvasJSON.string(captcha["pic"]))
+            let required = CanvasJSON.bool(captcha["result"])
+            http.annotateLast { $0.captchaCheckVerified = true; $0.captchaRequired = required }
+            return Preparation(captchaRequired: required, captchaImage: CanvasJSON.string(captcha["pic"]), captchaCheckVerified: true)
         } catch {
             // 验证码预检失败不能阻断登录；真正提交前仍由 UIS 判断。
-            return Preparation(captchaRequired: false, captchaImage: nil)
+            return Preparation(captchaRequired: false, captchaImage: nil, captchaCheckVerified: false)
         }
     }
 
@@ -278,7 +461,15 @@ final class NativeUISAuthenticator {
         ]
         stage = "UIS 账号密码验证"
         let result = CanvasJSON.object(try await postJSON("/idp/authn/authExecute", object: body, http: context.http, referer: context.spaURL))
-        if CanvasJSON.bool(result["second"]) {
+        let authCode = result["code"].map { String(describing: $0) }
+        let tokenPresent = !(CanvasJSON.string(result["loginToken"]) ?? "").isEmpty
+        let secondFactor = CanvasJSON.bool(result["second"])
+        context.http.annotateLast {
+            $0.authCode = authCode
+            $0.loginTokenPresent = tokenPresent
+            $0.secondFactorRequired = secondFactor
+        }
+        if secondFactor {
             throw NativeError.protocolFailure("该账号需要二次验证，本应用暂不支持。")
         }
         guard "\(result["code"] ?? "")" == "200", let token = CanvasJSON.string(result["loginToken"]), !token.isEmpty else {
@@ -293,13 +484,15 @@ final class NativeUISAuthenticator {
         formComponents.queryItems = [URLQueryItem(name: "loginToken", value: token)]
         form.httpBody = formComponents.percentEncodedQuery?.data(using: .utf8)
         let (htmlData, _) = try await context.http.request(form.url!, method: form.httpMethod!, body: form.httpBody,
-                                                           headers: ["Content-Type": "application/x-www-form-urlencoded", "Referer": context.spaURL])
+                                                           headers: ["Content-Type": "application/x-www-form-urlencoded", "Origin": idBase.absoluteString, "Referer": context.spaURL])
         let html = String(decoding: htmlData, as: UTF8.self)
         guard let action = Self.attribute(in: Self.tag(id: "logon", html: html), name: "action"),
               let ticket = Self.attribute(in: Self.tag(id: "ticket", html: html), name: "value"),
               var target = URLComponents(string: action) else {
+            context.http.annotateLast { $0.ticketFound = false }
             throw NativeError.protocolFailure("登录成功，但没有从认证服务器返回页面中找到服务票据。")
         }
+        context.http.annotateLast { $0.ticketFound = true; $0.ticketHost = target.host }
         var items = target.queryItems ?? []
         items.removeAll { $0.name == "ticket" }
         items.append(URLQueryItem(name: "ticket", value: ticket))

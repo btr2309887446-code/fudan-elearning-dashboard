@@ -16,6 +16,7 @@
     "dist": "electron-vite build && node scripts/dist.mjs",
     "demo": "electron-vite build && electron . --demo",
     "doctor": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/doctor.ts",
+    "test:login-harness": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/login-harness.mjs",
     "test:cache": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-cache.ts",
     "test:files": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-files.ts",
     "test:summary": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-summary.ts",

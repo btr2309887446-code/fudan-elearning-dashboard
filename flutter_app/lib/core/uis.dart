@@ -78,9 +78,10 @@ class LoginContext {
 }
 
 class CaptchaState {
-  const CaptchaState({required this.required, this.image});
+  const CaptchaState({required this.required, this.image, this.verified = false});
 
   final bool required;
+  final bool verified;
 
   /// 待填验证码的 data: URL。
   final String? image;
@@ -354,9 +355,16 @@ Future<CaptchaState> checkCaptcha(LoginContext ctx, String username) async {
     );
     final parsed = jsonDecode(res.body);
     if (parsed is Map) {
+      final trace = ctx.http.trace.isEmpty ? null : ctx.http.trace.last;
+      if (trace != null) {
+        trace.captchaCheckVerified = true;
+        trace.captchaRequired = parsed['result'] == true;
+        trace.phase = 'captcha-precheck';
+      }
       return CaptchaState(
         required: parsed['result'] == true,
         image: parsed['pic'] as String?,
+        verified: true,
       );
     }
   } catch (_) {
@@ -407,11 +415,18 @@ Future<LoginResult> completeLogin(
   }
 
   final codeStr = '${body['code']}';
+  final loginToken = body['loginToken'] as String?;
+  if (ctx.http.trace.isNotEmpty) {
+    final trace = ctx.http.trace.last;
+    trace.phase = 'authExecute';
+    trace.authCode = body['code'] == null ? null : codeStr;
+    trace.loginTokenPresent = loginToken != null && loginToken.isNotEmpty;
+    trace.secondFactorRequired = body['second'] == true;
+  }
   if (body['second'] == true) {
     throw LoginException(LoginFailureKind.twoFactorRequired, '该账号需要二次验证，本应用暂不支持。');
   }
 
-  final loginToken = body['loginToken'] as String?;
   if (codeStr != '200' || loginToken == null || loginToken.isEmpty) {
     diag('uis', 'authExecute 失败 code=$codeStr message=${body['message']}');
     if (codeStr == '4340' && body['data'] is String) {
@@ -433,6 +448,12 @@ Future<LoginResult> completeLogin(
   );
 
   final target = extractTicketTarget(engineRes.body);
+  if (ctx.http.trace.isNotEmpty) {
+    final trace = ctx.http.trace.last;
+    trace.phase = 'authnEngine';
+    trace.ticketFound = target != null;
+    trace.ticketHost = target == null ? null : Uri.parse(target.action).host;
+  }
   if (target == null) {
     diag('uis', '✗ authnEngine 页面里找不到 #logon/#ticket（HTTP ${engineRes.statusCode}）');
     throw LoginException(
@@ -453,7 +474,11 @@ Future<LoginResult> completeLogin(
     },
   );
 
+  final ticketTraceStart = ctx.http.trace.length;
   final finalRes = await ctx.http.request(ticketUrl.toString(), HttpRequestOptions(timeout: timeout));
+  for (final trace in ctx.http.trace.skip(ticketTraceStart)) {
+    trace.phase = 'ticket';
+  }
 
   if (!finalRes.uri.host.contains(canvasHost)) {
     diag('uis', '✗ 票据校验后没回到 eLearning，落点是 ${finalRes.uri}');

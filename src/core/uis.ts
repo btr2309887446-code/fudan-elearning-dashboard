@@ -292,6 +292,11 @@ export async function checkCaptcha(ctx: LoginContext, username: string): Promise
       { timeoutMs: 15_000, headers: { Origin: ID_BASE, Referer: ctx.spaUrl } }
     );
     const parsed = JSON.parse(res.body) as { result?: boolean; pic?: string };
+    const checkTrace = ctx.http.trace.at(-1);
+    if (checkTrace?.url.includes('/verifyCodeIsNeed')) {
+      checkTrace.captchaCheckVerified = true;
+      checkTrace.captchaRequired = parsed.result === true;
+    }
     return { required: parsed.result === true, image: parsed.pic };
   } catch {
     return { required: false };
@@ -331,6 +336,13 @@ export async function completeLogin(
     throw new LoginError('protocol', '统一身份认证返回了无法解析的登录结果。', execRes.body.slice(0, 300));
   }
 
+  const executeTrace = ctx.http.trace.at(-1);
+  if (executeTrace?.url.includes('/idp/authn/authExecute')) {
+    executeTrace.authCode = body.code === undefined ? undefined : String(body.code);
+    executeTrace.loginTokenPresent = Boolean(body.loginToken);
+    executeTrace.secondFactorRequired = body.second === true;
+  }
+
   const codeStr = String(body.code);
   if (body.second === true) {
     throw new LoginError('two_factor_required', '该账号需要二次验证，本应用暂不支持。');
@@ -350,6 +362,11 @@ export async function completeLogin(
     { timeoutMs, headers: { Referer: ctx.spaUrl } }
   );
   const target = extractTicketTarget(engineRes.body);
+  const engineTrace = ctx.http.trace.at(-1);
+  if (engineTrace?.url.includes('/idp/authCenter/authnEngine')) {
+    engineTrace.ticketFound = Boolean(target);
+    engineTrace.ticketHost = target ? new URL(target.action, ID_BASE).host : undefined;
+  }
   if (!target) {
     throw new LoginError(
       'protocol',
@@ -360,7 +377,9 @@ export async function completeLogin(
 
   const ticketUrl = new URL(target.action);
   ticketUrl.searchParams.set('ticket', target.ticket);
+  const ticketTraceStart = ctx.http.trace.length;
   const final = await ctx.http.request(ticketUrl.toString(), { timeoutMs });
+  for (const item of ctx.http.trace.slice(ticketTraceStart)) item.phase = 'ticket';
 
   if (!final.url.includes(CANVAS_HOST)) {
     throw new LoginError('protocol', `票据校验后未回到 eLearning（落点：${final.url}）。`);

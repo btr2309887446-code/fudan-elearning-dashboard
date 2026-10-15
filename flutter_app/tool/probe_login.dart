@@ -59,7 +59,7 @@ Future<void> main(List<String> args) async {
     stdout.writeln('  chainCode  = ${ctx.chainCode}');
     stdout.writeln('  moduleCode = ${ctx.authModuleCode}');
     stdout.writeln('  requestType= ${ctx.requestType}');
-    stdout.writeln('  spaUrl     = ${ctx.spaUrl}');
+    stdout.writeln('  spaUrl     = ${_safeUrl(ctx.spaUrl)}');
     stdout.writeln('  公钥长度   = ${ctx.publicKey.length} 字符');
     stdout.writeln('');
 
@@ -89,8 +89,8 @@ Future<void> main(List<String> args) async {
     stdout.writeln('--- 完整请求轨迹 ---');
     for (final t in http.trace) {
       stdout.writeln('  ${t.method} ${t.url} → ${t.statusCode}'
-          '${t.location != null ? ' → ${t.location}' : ''}'
-          '${t.setCookies.isNotEmpty ? '  [set-cookie: ${t.setCookies.map((c) => c.split('=').first).join(',')}]' : ''}');
+          '${t.location != null ? ' → ${_safeUrl(Uri.parse(t.url).resolve(t.location!).toString())}' : ''}'
+          '${t.setCookieNames.isNotEmpty ? '  [set-cookie: ${t.setCookieNames.join(',')}]' : ''}');
     }
   } catch (e, st) {
     stdout.writeln('✗ 失败：${e.runtimeType}: $e');
@@ -99,9 +99,18 @@ Future<void> main(List<String> args) async {
     stdout.writeln('--- 失败前的请求轨迹 ---');
     for (final t in http.trace) {
       stdout.writeln('  ${t.method} ${t.url} → ${t.statusCode}'
-          '${t.location != null ? ' → ${t.location}' : ''}'
-          '${t.setCookies.isNotEmpty ? '  [set-cookie: ${t.setCookies.map((c) => c.split('=').first).join(',')}]' : ''}');
+          '${t.location != null ? ' → ${_safeUrl(Uri.parse(t.url).resolve(t.location!).toString())}' : ''}'
+          '${t.setCookieNames.isNotEmpty ? '  [set-cookie: ${t.setCookieNames.join(',')}]' : ''}');
     }
     exitCode = 1;
+  }
+}
+
+String _safeUrl(String value) {
+  try {
+    final uri = Uri.parse(value);
+    return uri.replace(query: null, fragment: null).toString();
+  } catch (_) {
+    return '<invalid-url>';
   }
 }

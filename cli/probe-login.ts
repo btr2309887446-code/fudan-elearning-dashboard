@@ -62,11 +62,11 @@ try {
 
   console.log('--- 完整请求轨迹 ---');
   for (const t of http.trace) {
-    const cookies = t.setCookie?.length
-      ? `  [set-cookie: ${t.setCookie.map((c) => c.split('=')[0]).join(',')}]`
+    const cookies = t.setCookieNames?.length
+      ? `  [set-cookie: ${t.setCookieNames.join(',')}]`
       : '';
     console.log(
-      `  ${t.method} ${t.url} → ${t.status}${t.location ? ' → ' + t.location : ''}${cookies}`
+      `  ${t.method} ${safeUrl(t.url)} → ${t.status}${t.location ? ' → ' + safeUrl(new URL(t.location, t.url).toString()) : ''}${cookies}`
     );
   }
 } catch (err) {
@@ -76,12 +76,21 @@ try {
   console.log('');
   console.log('--- 失败前的请求轨迹 ---');
   for (const t of http.trace) {
-    const cookies = t.setCookie?.length
-      ? `  [set-cookie: ${t.setCookie.map((c) => c.split('=')[0]).join(',')}]`
+    const cookies = t.setCookieNames?.length
+      ? `  [set-cookie: ${t.setCookieNames.join(',')}]`
       : '';
     console.log(
-      `  ${t.method} ${t.url} → ${t.status}${t.location ? ' → ' + t.location : ''}${cookies}`
+      `  ${t.method} ${safeUrl(t.url)} → ${t.status}${t.location ? ' → ' + safeUrl(new URL(t.location, t.url).toString()) : ''}${cookies}`
     );
   }
   process.exit(1);
+}
+
+function safeUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return '<invalid-url>';
+  }
 }

@@ -123,6 +123,110 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertNil(NativeCookieHeader.value(cookies, for: wrongPath, permittedDomains: [".fudan.edu.cn"]))
     }
 
+    func testNativeHTTPManuallyPersistsCookiesAndRedactsTicketTrace() async throws {
+        let transport = ScriptedNativeHTTPTransport { request in
+            let url = try XCTUnwrap(request.url)
+            switch url.path {
+            case "/idp/authCenter/authnEngine":
+                XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+                return httpReply(url, status: 302, headers: [
+                    "Location": "/step",
+                    "Set-Cookie": "idp_session=IDP_COOKIE_SECRET; Path=/; Secure, shared=SHARED_COOKIE_SECRET; Domain=.example.edu; Path=/; Secure",
+                ])
+            case "/step":
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("idp_session=IDP_COOKIE_SECRET") == true)
+                return httpReply(url, status: 303, headers: [
+                    "Location": "https://canvas.example.edu/login/cas?ticket=CAS_TICKET_SECRET",
+                ])
+            case "/login/cas":
+                let cookie = request.value(forHTTPHeaderField: "Cookie") ?? ""
+                XCTAssertFalse(cookie.contains("idp_session"), "host-only IdP cookie must not cross hosts")
+                XCTAssertTrue(cookie.contains("shared=SHARED_COOKIE_SECRET"))
+                return httpReply(url, status: 302, headers: [
+                    "Location": "/api/v1/users/self/profile",
+                    "Set-Cookie": "canvas_session=CANVAS_COOKIE_SECRET; Path=/api; Secure",
+                ])
+            case "/api/v1/users/self/profile":
+                let cookie = request.value(forHTTPHeaderField: "Cookie") ?? ""
+                XCTAssertTrue(cookie.contains("canvas_session=CANVAS_COOKIE_SECRET"))
+                XCTAssertFalse(cookie.contains("idp_session"))
+                return httpReply(url, status: 200)
+            default:
+                return httpReply(url, status: 404)
+            }
+        }
+        let http = NativeHTTP(transport: transport)
+        let engineURL = try XCTUnwrap(URL(string: "https://id.example.edu/idp/authCenter/authnEngine?locale=zh-CN"))
+        let _ = try await http.request(engineURL, method: "POST", body: Data("loginToken=TOKEN_SECRET".utf8),
+                                       headers: ["Content-Type": "application/x-www-form-urlencoded"])
+        let ticketURL = try XCTUnwrap(URL(string: "https://canvas.example.edu/login/cas?ticket=CAS_TICKET_SECRET"))
+        let (_, response) = try await http.request(ticketURL)
+
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertEqual(http.trace.map(\.phase), ["authnEngine", "other", "ticket", "canvas-profile"])
+        XCTAssertEqual(http.trace[1].sentCookieNames.sorted(), ["idp_session", "shared"])
+        XCTAssertEqual(http.trace[2].sentCookieNames, ["shared"])
+        XCTAssertEqual(http.trace[3].sentCookieNames.sorted(), ["canvas_session", "shared"])
+        XCTAssertEqual(http.trace[0].bodyShape, ["loginToken": []])
+        let encoded = String(decoding: try JSONEncoder().encode(http.trace), as: UTF8.self)
+        for secret in ["IDP_COOKIE_SECRET", "SHARED_COOKIE_SECRET", "CANVAS_COOKIE_SECRET", "TOKEN_SECRET", "CAS_TICKET_SECRET"] {
+            XCTAssertFalse(encoded.contains(secret))
+        }
+    }
+
+    func testNativeHTTPRedirectMethodsAndStatusResponses() async throws {
+        let transport = ScriptedNativeHTTPTransport { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path.hasPrefix("/redirect/") {
+                let status = Int(url.lastPathComponent) ?? 302
+                return httpReply(url, status: status, headers: ["Location": "/target/\(status)"])
+            }
+            if url.path.hasPrefix("/target/") {
+                return httpReply(url, status: 200)
+            }
+            if url.path.hasPrefix("/status/") {
+                return httpReply(url, status: Int(url.lastPathComponent) ?? 500)
+            }
+            return httpReply(url, status: 404)
+        }
+        let http = NativeHTTP(transport: transport)
+        for status in [301, 302, 303, 307, 308] {
+            let url = try XCTUnwrap(URL(string: "https://example.edu/redirect/\(status)"))
+            let _ = try await http.request(url, method: "POST", body: Data("x=1".utf8))
+        }
+        let methods = transport.requests.compactMap { $0.url?.path.hasPrefix("/target/") == true ? $0.httpMethod : nil }
+        XCTAssertEqual(methods, ["GET", "GET", "GET", "POST", "POST"])
+
+        for status in [200, 401, 403, 500] {
+            let url = try XCTUnwrap(URL(string: "https://example.edu/status/\(status)"))
+            let (_, response) = try await http.request(url)
+            XCTAssertEqual(response.statusCode, status)
+        }
+    }
+
+    func testNativeHTTPRejectsRedirectLoopsAndExcessiveHops() async throws {
+        let looping = ScriptedNativeHTTPTransport { request in
+            let url = try XCTUnwrap(request.url)
+            return httpReply(url, status: 302, headers: ["Location": "/loop"])
+        }
+        let loopURL = try XCTUnwrap(URL(string: "https://example.edu/loop"))
+        do {
+            _ = try await NativeHTTP(transport: looping).request(loopURL)
+            XCTFail("expected redirect loop rejection")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("重定向循环")) }
+
+        let chain = ScriptedNativeHTTPTransport { request in
+            let url = try XCTUnwrap(request.url)
+            let hop = Int(url.lastPathComponent) ?? 0
+            return httpReply(url, status: 302, headers: ["Location": "/chain/\(hop + 1)"])
+        }
+        let start = try XCTUnwrap(URL(string: "https://example.edu/chain/0"))
+        do {
+            _ = try await NativeHTTP(transport: chain).request(start, maxRedirects: 1)
+            XCTFail("expected redirect limit rejection")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("重定向次数")) }
+    }
+
     func testPaginationLinkSelectsOnlyNextRelation() throws {
         let header = #"<https://elearning.fudan.edu.cn/api/v1/courses?page=2>; rel="next", <https://elearning.fudan.edu.cn/api/v1/courses?page=9>; rel="last""#
         XCTAssertEqual(CanvasAPI.nextLink(header)?.query, "page=2")
@@ -168,4 +272,27 @@ final class NativeDomainTests: XCTestCase {
                      assignmentCount: 0, submittedCount: 0, gradedCount: 0, missingCount: 0,
                      lateCount: 0, upcomingCount: 0)
     }
+}
+
+private final class ScriptedNativeHTTPTransport: NativeHTTPTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var sentRequests: [URLRequest] = []
+    private let handler: (URLRequest) throws -> NativeHTTPReply
+
+    init(handler: @escaping (URLRequest) throws -> NativeHTTPReply) { self.handler = handler }
+
+    var requests: [URLRequest] {
+        lock.lock(); defer { lock.unlock() }
+        return sentRequests
+    }
+
+    func send(_ request: URLRequest) async throws -> NativeHTTPReply {
+        lock.lock(); sentRequests.append(request); lock.unlock()
+        return try handler(request)
+    }
+}
+
+private func httpReply(_ url: URL, status: Int, headers: [String: String] = [:]) -> NativeHTTPReply {
+    let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
+    return NativeHTTPReply(data: Data("{}".utf8), response: response)
 }
