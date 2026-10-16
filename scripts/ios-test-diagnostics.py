@@ -33,6 +33,15 @@ for archive in list(output.rglob("*.zip")):
         zipped.extractall(destination)
 
 reports = []
+for path in sorted(output.rglob("*")):
+    if not path.is_file():
+        continue
+    print(f"EXPORTED_FILE {path.relative_to(output)} ({path.stat().st_size} bytes)")
+    if path.suffix in (".crash", ".txt", ".log") and path.stat().st_size < 10_000_000:
+        raw = path.read_text(errors="replace")
+        markers = ("Fatal error", "Assertion failed", "Terminating app", "Exception Type:", "Last Exception Backtrace", "AttributeGraph")
+        if "NativeRunner" in raw and any(marker in raw for marker in markers):
+            print(f"CRASH_TEXT {path.relative_to(output)}\n{raw[:24000]}")
 for path in output.rglob("*.ips"):
     if "NativeRunner" not in path.name:
         continue
