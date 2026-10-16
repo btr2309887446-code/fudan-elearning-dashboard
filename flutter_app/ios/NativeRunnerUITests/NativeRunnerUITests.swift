@@ -88,8 +88,22 @@ final class NativeRunnerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["calendar-month-title"].exists)
         capture(app, "assignments-calendar")
 
-        app.buttons["列表"].tap()
+        var beijing = Calendar(identifier: .gregorian)
+        beijing.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
+        let now = Date()
+        let tomorrow = try! XCTUnwrap(beijing.date(byAdding: .day, value: 1, to: beijing.startOfDay(for: now)))
+        if beijing.component(.month, from: now) != beijing.component(.month, from: tomorrow) {
+            app.buttons["calendar-next-month"].tap()
+        }
+        let key = DateFormatter()
+        key.calendar = beijing
+        key.locale = Locale(identifier: "en_US_POSIX")
+        key.timeZone = beijing.timeZone
+        key.dateFormat = "yyyy-MM-dd"
+        app.buttons["calendar-day-\(key.string(from: tomorrow))"].tap()
         let assignment = app.staticTexts["演示作业：阅读报告"]
+        let calendar = app.scrollViews["task-calendar"]
+        for _ in 0..<3 where !assignment.isHittable { calendar.swipeUp() }
         XCTAssertTrue(assignment.waitForExistence(timeout: 5))
         assignment.tap()
         XCTAssertTrue(app.navigationBars["作业详情"].waitForExistence(timeout: 5))
