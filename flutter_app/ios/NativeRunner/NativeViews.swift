@@ -337,7 +337,7 @@ struct TasksView: View {
         let taskCounts = NativeDomain.taskCountsByDay(visibleTasks)
         let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
 
-        List(selection: $selectedTaskID) {
+        return List(selection: $selectedTaskID) {
             Section {
                 Picker("显示方式", selection: $calendarMode) {
                     Text("列表").tag(false)
