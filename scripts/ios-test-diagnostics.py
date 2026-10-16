@@ -41,7 +41,9 @@ for path in sorted(output.rglob("*")):
         raw = path.read_text(errors="replace")
         markers = ("Fatal error", "Assertion failed", "Terminating app", "Exception Type:", "Last Exception Backtrace", "AttributeGraph")
         if "NativeRunner" in raw and any(marker in raw for marker in markers):
-            print(f"CRASH_TEXT {path.relative_to(output)}\n{raw[:24000]}")
+            locations = sorted({raw.find(marker) for marker in markers if marker in raw})
+            for location in locations[:5]:
+                print(f"CRASH_TEXT {path.relative_to(output)}\n{raw[max(0, location - 1000):location + 16000]}")
 for path in output.rglob("*.ips"):
     if "NativeRunner" not in path.name:
         continue
