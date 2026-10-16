@@ -34,7 +34,7 @@ jobs:
   build:
     name: Test and build native IPA
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -50,7 +50,8 @@ jobs:
           DEVICE_IDS=()
           while IFS= read -r DEVICE_ID; do
             DEVICE_IDS+=("$DEVICE_ID")
-          done < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[x for group in d["devices"].values() for x in group if x["isAvailable"]]; print(next(x["udid"] for x in devices if x["name"].startswith("iPhone"))); print(next(x["udid"] for x in devices if x["name"].startswith("iPad")))')
+          done < <(python3 "$GITHUB_WORKSPACE/scripts/ios-ci-devices.py")
+          test "${#DEVICE_IDS[@]}" -eq 2
           DEVICE_INDEX=0
           mkdir -p "$GITHUB_WORKSPACE/flutter_app/build/native-screenshots"
           for DEVICE_ID in "${DEVICE_IDS[@]}"; do
@@ -58,7 +59,7 @@ jobs:
             xcrun simctl shutdown all || true
             xcrun simctl boot "$DEVICE_ID" || true
             xcrun simctl bootstatus "$DEVICE_ID" -b
-            python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=600).returncode)' \
+            python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=1000).returncode)' \
               xcodebuild test \
               -project NativeRunner.xcodeproj \
               -scheme NativeRunnerCI \
@@ -72,7 +73,17 @@ jobs:
             xcrun xcresulttool export attachments --path "$RESULT_BUNDLE" --output-path "$GITHUB_WORKSPACE/flutter_app/build/native-screenshots/$DEVICE_NAME"
           done
 
+      - name: Upload native test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-results
+          path: flutter_app/build/native-test/Logs/Test/*.xcresult
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload native UI screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:

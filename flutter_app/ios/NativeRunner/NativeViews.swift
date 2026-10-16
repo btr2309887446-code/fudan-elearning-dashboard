@@ -117,13 +117,14 @@ struct TodayView: View {
     @Binding var selection: Int
     @State private var showOverdue = false
 
-    private var pending: [NativeTask] { store.selectedTasks.filter { $0.status == .pending } }
-    private var overdue: [NativeTask] { pending.filter { $0.bucket() == .overdue } }
-    private var today: [NativeTask] { pending.filter { $0.bucket() == .today } }
-    private var week: [NativeTask] { pending.filter { $0.bucket() == .week } }
-
     var body: some View {
-        List {
+        let pending = store.selectedTasks.filter { $0.status == .pending }
+        let now = Date()
+        let grouped = Dictionary(grouping: pending) { $0.bucket(now: now) }
+        let overdue = grouped[.overdue, default: []]
+        let today = grouped[.today, default: []]
+        let week = grouped[.week, default: []]
+        return List {
             Section {
                 HStack(alignment: .firstTextBaseline, spacing: 20) {
                     count("今天", today.count)
@@ -164,7 +165,7 @@ struct TodayView: View {
 
             Section {
                 if let fetched = store.snapshot?.fetchedAt {
-                    Text("上次同步 \(fetched.formatted(date: .abbreviated, time: .shortened)) · 北京时间")
+                    Text("上次同步 \(Beijing.label(fetched, absolute: true).replacingOccurrences(of: " 截止", with: "")) · 北京时间")
                         .font(.footnote).foregroundStyle(.secondary)
                 } else {
                     Text("尚未同步").font(.footnote).foregroundStyle(.secondary)
@@ -265,60 +266,77 @@ struct EmptyState: View {
 
 struct TasksView: View {
     @ObservedObject var store: NativeAppStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var search = ""
     @State private var calendarMode = false
     @State private var selectedCourse: Int?
     @State private var selectedTaskID: String?
+    @State private var path: [String] = []
     @State private var selectedDay = Beijing.day(Date())
     @State private var month = Beijing.calendar.dateInterval(of: .month, for: Date())?.start ?? Date()
 
     private var status: TaskStatus { TaskStatus(rawValue: store.preferences.taskFilter) ?? .pending }
     private var filtered: [NativeTask] {
-        store.selectedTasks.filter { task in
+        let now = Date()
+        return store.selectedTasks.filter { task in
             task.status == status && (selectedCourse == nil || task.courseID == selectedCourse) &&
-            (store.taskBucket == nil || task.bucket() == store.taskBucket) &&
+            (store.taskBucket == nil || task.bucket(now: now) == store.taskBucket) &&
             (search.isEmpty || "\(task.title) \(task.courseName)".localizedCaseInsensitiveContains(search))
         }
     }
 
     var body: some View {
         Group {
-            if #available(iOS 16.0, *) {
+            if #available(iOS 16.0, *), horizontalSizeClass == .regular {
                 NavigationSplitView {
-                    listBody
-                        .navigationTitle("作业")
-                        .toolbar { listToolbar }
+                    content
                 } detail: {
-                    if let task = filtered.first(where: { $0.id == selectedTaskID }) {
-                        AssignmentDetailView(task: task, store: store)
-                    } else {
-                        EmptyState(title: "选择一项作业查看详情。", systemImage: "doc.text")
-                    }
+                    selectedDetail
                 }
                 .navigationSplitViewStyle(.balanced)
-            } else {
-                NavigationView {
-                    listBody
-                        .navigationTitle("作业")
-                        .toolbar { listToolbar }
-                    if let task = filtered.first(where: { $0.id == selectedTaskID }) {
-                        AssignmentDetailView(task: task, store: store)
-                    } else {
-                        EmptyState(title: "选择一项作业查看详情。", systemImage: "doc.text")
-                    }
+            } else if #available(iOS 16.0, *) {
+                NavigationStack(path: $path) {
+                    content
+                        // Register once on a stable ancestor, outside both Lists.
+                        .navigationDestination(for: String.self) { id in
+                            if let task = store.taskIndex.byID[id] {
+                                AssignmentDetailView(task: task, store: store)
+                            } else {
+                                EmptyState(title: "此作业已不在同步数据中。", systemImage: "doc.text")
+                            }
+                        }
                 }
-                .navigationViewStyle(.columns)
+            } else if horizontalSizeClass == .regular {
+                NavigationView { content; selectedDetail }.navigationViewStyle(.columns)
+            } else {
+                NavigationView { content }.navigationViewStyle(.stack)
             }
         }
         .onChange(of: store.reminderDay) { value in
             guard let value, let day = Beijing.parseKey(value) else { return }
+            path = []
+            selectedTaskID = nil
             selectedDay = day
-            month = Beijing.calendar.dateInterval(of: .month, for: day)?.start ?? day
+            month = NativeMonthGrid(month: day).firstDay
             calendarMode = true
             store.setTaskFilter(.pending)
             store.taskBucket = nil
         }
-        .searchable(text: $search, prompt: "搜索作业或课程")
+    }
+
+    @ViewBuilder private var selectedDetail: some View {
+        if let id = selectedTaskID, let task = store.taskIndex.byID[id] {
+            AssignmentDetailView(task: task, store: store)
+        } else {
+            EmptyState(title: "选择一项作业查看详情。", systemImage: "doc.text")
+        }
+    }
+
+    private var content: some View {
+        listBody
+            .navigationTitle("作业")
+            .toolbar { listToolbar }
+            .searchable(text: $search, prompt: "搜索作业或课程")
     }
 
     private var listToolbar: some ToolbarContent {
@@ -329,77 +347,82 @@ struct TasksView: View {
         }
     }
 
-    private var listBody: some View {
-        // Keep the filtered snapshot stable for this render pass. Calendar
-        // cells and the selected-day section should not independently rebuild
-        // the full NativeTask array.
-        let visibleTasks = filtered
-        let taskCounts = NativeDomain.taskCountsByDay(visibleTasks)
-        let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
-
-        return List(selection: $selectedTaskID) {
-            Section {
-                Picker("显示方式", selection: $calendarMode) {
-                    Text("列表").tag(false)
-                    Text("日历").tag(true)
-                }.pickerStyle(.segmented)
-                HStack {
-                    Menu {
-                        ForEach(TaskStatus.allCases) { value in
-                            Button { store.setTaskFilter(value) } label: {
-                                if status == value { Label(value.title, systemImage: "checkmark") }
-                                else { Text(value.title) }
-                            }
+    private var filters: some View {
+        Section {
+            Picker("显示方式", selection: $calendarMode) {
+                Text("列表").tag(false)
+                Text("日历").tag(true)
+            }.pickerStyle(.segmented)
+            HStack {
+                Menu {
+                    ForEach(TaskStatus.allCases) { value in
+                        Button { store.setTaskFilter(value) } label: {
+                            if status == value { Label(value.title, systemImage: "checkmark") }
+                            else { Text(value.title) }
                         }
-                    } label: { Label(status.title, systemImage: "line.3.horizontal.decrease.circle") }
-                    Spacer()
-                    Menu {
-                        Button("全部课程") { selectedCourse = nil }
-                        ForEach(store.selectedCourses) { course in
-                            Button(course.displayName) { selectedCourse = course.id }
-                        }
-                    } label: { Label(selectedCourseName, systemImage: "book.closed") }
-                    if store.taskBucket != nil {
-                        Button { store.taskBucket = nil } label: { Image(systemName: "xmark.circle.fill") }
-                            .accessibilityLabel("清除截止日期筛选")
                     }
-                }.font(.subheadline)
-            }
-
-            if calendarMode {
-                Section { MonthGrid(month: $month, day: $selectedDay, taskCounts: taskCounts) }
-                Section("\(selectedDay.formatted(.dateTime.month(.wide).day()))") {
-                    if dayTasks.isEmpty { Text("这一天没有符合条件的作业。").foregroundStyle(.secondary) }
-                    else { ForEach(dayTasks) { task in taskRow(task) } }
+                } label: { Label(status.title, systemImage: "line.3.horizontal.decrease.circle") }
+                .accessibilityIdentifier("task-status-filter")
+                Spacer()
+                Menu {
+                    Button("全部课程") { selectedCourse = nil }
+                    ForEach(store.selectedCourses) { course in
+                        Button(course.displayName) { selectedCourse = course.id }
+                    }
+                } label: { Label(selectedCourseName, systemImage: "book.closed") }
+                .accessibilityIdentifier("task-course-filter")
+                if store.taskBucket != nil {
+                    Button { store.taskBucket = nil } label: { Image(systemName: "xmark.circle.fill") }
+                        .accessibilityLabel("清除截止日期筛选")
                 }
-                Section { Text("北京时间 · 无截止时间的作业请在列表中查看").font(.footnote).foregroundStyle(.secondary) }
+            }.font(.subheadline)
+        }
+    }
+
+    private var listBody: some View {
+        let visibleTasks = filtered
+        let now = Date()
+        // Separate List identities avoid asking UICollectionView to reconcile
+        // thousands of assignment rows with a grid during a segmented switch.
+        return Group {
+            if calendarMode {
+                let counts = NativeDomain.taskCountsByDay(visibleTasks)
+                let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
+                List(selection: $selectedTaskID) {
+                    filters
+                    Section { MonthGrid(month: $month, day: $selectedDay, taskCounts: counts) }
+                    Section(Beijing.dayTitle(selectedDay)) {
+                        if dayTasks.isEmpty { Text("这一天没有符合条件的作业。").foregroundStyle(.secondary) }
+                        ForEach(dayTasks) { task in taskRow(task) }
+                    }
+                    Section { Text("北京时间 · 无截止时间的作业请在列表中查看").font(.footnote).foregroundStyle(.secondary) }
+                }
+                .id("task-calendar")
+                .accessibilityIdentifier("task-calendar")
             } else {
-                if filtered.isEmpty {
-                    Section { EmptyState(title: "没有符合条件的作业。试试其他状态或课程。", systemImage: "magnifyingglass") }
-                } else {
+                let groups = Dictionary(grouping: visibleTasks) { $0.bucket(now: now) }
+                List(selection: $selectedTaskID) {
+                    filters
+                    if visibleTasks.isEmpty {
+                        Section { EmptyState(title: "没有符合条件的作业。试试其他状态或课程。", systemImage: "magnifyingglass") }
+                    }
                     ForEach(TaskBucket.allCases) { bucket in
-                        let rows = filtered.filter { $0.bucket() == bucket }
-                        if !rows.isEmpty {
+                        if let rows = groups[bucket], !rows.isEmpty {
                             Section(bucket.title) { ForEach(rows) { task in taskRow(task) } }
                         }
                     }
                 }
+                .id("task-list")
+                .accessibilityIdentifier("task-list")
             }
         }
         .listStyle(.insetGrouped)
-        // Replacing a long list with the month grid should be an immediate
-        // mode switch. Implicit row animations make this transition expensive
-        // and can race navigation updates on older iOS releases.
         .animation(nil, value: calendarMode)
         .refreshable { await store.refresh() }
     }
 
     @ViewBuilder private func taskRow(_ task: NativeTask) -> some View {
-        if #available(iOS 16.0, *) {
-            // The split view already renders the selected task in its detail
-            // column. A direct selection avoids registering one navigation
-            // destination per row, which is both costly and crash-prone when
-            // the calendar replaces the list contents.
+        if horizontalSizeClass == .regular {
             Button { selectedTaskID = task.id } label: {
                 TaskRowLabel(task: task)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -407,10 +430,14 @@ struct TasksView: View {
             }
             .buttonStyle(.plain)
             .tag(task.id)
+            .accessibilityIdentifier("task-row-\(task.id)")
+        } else if #available(iOS 16.0, *) {
+            NavigationLink(value: task.id) { TaskRowLabel(task: task) }
+                .accessibilityIdentifier("task-row-\(task.id)")
         } else {
             NavigationLink(destination: AssignmentDetailView(task: task, store: store)) {
                 TaskRowLabel(task: task)
-            }.tag(task.id)
+            }.accessibilityIdentifier("task-row-\(task.id)")
         }
     }
 
@@ -428,61 +455,49 @@ struct MonthGrid: View {
     private let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
 
     var body: some View {
-        VStack(spacing: 8) {
+        let grid = NativeMonthGrid(month: month)
+        let today = Beijing.day(Date())
+        return VStack(spacing: 8) {
             HStack {
-                Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }.buttonStyle(.plain)
+                Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.plain).accessibilityLabel("上个月").accessibilityIdentifier("calendar-previous-month")
                 Spacer()
-                Text(month.formatted(.dateTime.year().month(.wide))).font(.headline)
+                Text(Beijing.monthTitle(month)).font(.headline).accessibilityIdentifier("calendar-month-title")
                 Spacer()
-                Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }.buttonStyle(.plain)
+                Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
+                    .buttonStyle(.plain).accessibilityLabel("下个月").accessibilityIdentifier("calendar-next-month")
             }.padding(.vertical, 4)
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(weekdaySymbols, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity) }
-                ForEach(0..<42, id: \.self) { index in
-                    if let date = date(at: index) {
+                ForEach(grid.cells) { cell in
+                    if let date = cell.date, let number = cell.number {
                         let count = taskCounts[date, default: 0]
                         Button { day = date } label: {
                             VStack(spacing: 3) {
-                                Text(date.formatted(.dateTime.day())).font(.body.weight(date == Beijing.day(Date()) ? .semibold : .regular))
+                                Text(String(number)).font(.body.weight(date == today ? .semibold : .regular))
                                 Circle().fill(count > 0 ? Color.accentColor : .clear).frame(width: 4, height: 4)
                             }
-                            .frame(maxWidth: .infinity, minHeight: 42)
-                            .foregroundStyle(date == day ? Color.white : (date == Beijing.day(Date()) ? Color.accentColor : Color.primary))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundStyle(date == day ? Color.white : (date == today ? Color.accentColor : Color.primary))
                             .background(date == day ? Color.accentColor : Color.clear, in: Circle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("\(date.formatted(date: .complete, time: .omitted))，\(count) 项作业")
-                    } else { Color.clear.frame(height: 42) }
+                        .accessibilityLabel("\(Beijing.fullDayTitle(date))，\(count) 项作业")
+                        .accessibilityIdentifier("calendar-day-\(Beijing.key(date))")
+                        .accessibilityAddTraits(date == day ? [.isSelected] : [])
+                    } else { Color.clear.frame(height: 44) }
                 }
             }
         }
         .padding(.vertical, 4)
-        .onChange(of: month) { _ in
-            // Keep the selected day in the visible month. This uses the same
-            // Beijing calendar as task bucketing so timezone changes cannot
-            // make a valid day look like an invalid grid index.
-            if !isSameMonth(day, as: month) { day = firstDay }
-        }
     }
 
-    private var firstDay: Date { Beijing.calendar.dateInterval(of: .month, for: month)?.start ?? month }
     private func shiftMonth(_ value: Int) {
-        month = Beijing.calendar.date(byAdding: .month, value: value, to: month) ?? month
-    }
-    private func date(at index: Int) -> Date? {
-        let calendar = Beijing.calendar
-        let start = calendar.dateInterval(of: .month, for: month)?.start ?? month
-        let weekday = calendar.component(.weekday, from: start)
-        let mondayOffset = (weekday + 5) % 7
-        let days = calendar.range(of: .day, in: .month, for: start)?.count ?? 30
-        let number = index - mondayOffset + 1
-        guard (1...days).contains(number) else { return nil }
-        return calendar.date(byAdding: .day, value: number - 1, to: start)
-    }
-    private func isSameMonth(_ lhs: Date, as rhs: Date) -> Bool {
-        let calendar = Beijing.calendar
-        return calendar.component(.year, from: lhs) == calendar.component(.year, from: rhs) &&
-            calendar.component(.month, from: lhs) == calendar.component(.month, from: rhs)
+        guard let shifted = Beijing.calendar.date(byAdding: .month, value: value, to: month) else { return }
+        let first = NativeMonthGrid(month: shifted).firstDay
+        // Update both bindings in the user action, not during a layout callback.
+        month = first
+        day = first
     }
 }
 
@@ -604,7 +619,7 @@ struct CoursesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(course.displayName)
                 Text("\(course.courseCode) · \(course.termName)").font(.subheadline).foregroundStyle(.secondary)
-                Text("\(store.tasks.filter { $0.courseID == course.id && $0.status == .pending }.count) 项待交")
+                Text("\(store.taskIndex.pendingByCourse[course.id, default: 0]) 项待交")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -1045,7 +1060,7 @@ struct AssignmentDetailView: View {
         _store = ObservedObject(wrappedValue: store)
     }
 
-    private var currentTask: NativeTask { store.tasks.first(where: { $0.id == task.id }) ?? task }
+    private var currentTask: NativeTask { store.taskIndex.byID[task.id] ?? task }
     private var isReminderOn: Bool {
         store.preferences.remindersEnabled && !store.preferences.mutedTasks.contains(task.id)
     }

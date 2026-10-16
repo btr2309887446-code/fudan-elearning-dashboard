@@ -1,6 +1,6 @@
 import Foundation
 
-enum TaskStatus: String, Codable, CaseIterable, Identifiable {
+enum TaskStatus: String, Codable, CaseIterable, Identifiable, Sendable {
     case pending
     case submitted
     case ignored
@@ -30,14 +30,14 @@ enum TaskBucket: String, CaseIterable, Identifiable {
     }
 }
 
-struct NativeProfile: Codable {
+struct NativeProfile: Codable, Sendable {
     var id: Int
     var name: String
     var loginID: String?
     var primaryEmail: String?
 }
 
-struct NativeTerm: Codable, Identifiable {
+struct NativeTerm: Codable, Identifiable, Sendable {
     var id: Int?
     var name: String
     var startAt: String?
@@ -46,7 +46,7 @@ struct NativeTerm: Codable, Identifiable {
     var courseCount = 0
 }
 
-struct NativeCourse: Codable, Identifiable, Hashable {
+struct NativeCourse: Codable, Identifiable, Hashable, Sendable {
     var id: Int
     var name: String
     var displayName: String
@@ -72,7 +72,7 @@ struct NativeCourse: Codable, Identifiable, Hashable {
     var upcomingCount: Int
 }
 
-struct NativeAssignment: Codable, Identifiable, Hashable {
+struct NativeAssignment: Codable, Identifiable, Hashable, Sendable {
     var id: Int
     var courseID: Int
     var courseName: String
@@ -100,7 +100,7 @@ struct NativeAssignment: Codable, Identifiable, Hashable {
     }
 }
 
-struct NativeTodo: Codable, Identifiable {
+struct NativeTodo: Codable, Identifiable, Sendable {
     var id: String { "\(courseID ?? 0):\(assignmentID ?? 0):\(title)" }
     var title: String
     var courseName: String
@@ -112,7 +112,7 @@ struct NativeTodo: Codable, Identifiable {
     var htmlURL: String?
 }
 
-struct NativeSnapshot: Codable {
+struct NativeSnapshot: Codable, Sendable {
     var fetchedAt: Date
     var profile: NativeProfile
     var courses: [NativeCourse]
@@ -123,7 +123,7 @@ struct NativeSnapshot: Codable {
     var reusedCourseCount: Int
 }
 
-struct NativeTask: Identifiable, Hashable {
+struct NativeTask: Identifiable, Hashable, Sendable {
     var id: String
     var title: String
     var courseName: String
@@ -166,25 +166,40 @@ struct NativePreferences: Codable {
 
 enum Beijing {
     static let timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
-    static var calendar: Calendar {
+    static let calendar: Calendar = {
         var value = Calendar(identifier: .gregorian)
         value.timeZone = timeZone
         return value
-    }
+    }()
+
+    private static let parser = NativeDateParser()
 
     static func parse(_ raw: String?) -> Date? {
-        guard let raw, !raw.isEmpty else { return nil }
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: raw) { return date }
-        iso.formatOptions = [.withInternetDateTime]
-        if let date = iso.date(from: raw) { return date }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        return formatter.date(from: raw)
+        parser.parse(raw)
     }
+
+    private static func formatter(_ pattern: String, locale: String = "zh_CN") -> DateFormatter {
+        let value = DateFormatter()
+        value.locale = Locale(identifier: locale)
+        value.calendar = calendar
+        value.timeZone = timeZone
+        value.dateFormat = pattern
+        value.isLenient = false
+        return value
+    }
+
+    // These formatters are immutable after initialization. Foundation's
+    // DateFormatter supports concurrent string/date conversion on iOS.
+    private static let keyFormatter = formatter("yyyy-MM-dd", locale: "en_US_POSIX")
+    private static let shortFormatter = formatter("M月d日 HH:mm")
+    private static let absoluteFormatter = formatter("yyyy/M/d HH:mm")
+    private static let monthFormatter = formatter("yyyy年M月")
+    private static let dayFormatter = formatter("M月d日")
+    private static let fullDayFormatter = formatter("yyyy年M月d日 EEEE")
+
+    static func monthTitle(_ date: Date) -> String { monthFormatter.string(from: date) }
+    static func dayTitle(_ date: Date) -> String { dayFormatter.string(from: date) }
+    static func fullDayTitle(_ date: Date) -> String { fullDayFormatter.string(from: date) }
 
     static func day(_ date: Date) -> Date {
         calendar.startOfDay(for: date)
@@ -194,36 +209,99 @@ enum Beijing {
         calendar.date(byAdding: .day, value: count, to: date) ?? date
     }
 
-    static func key(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
+    static func key(_ date: Date) -> String { keyFormatter.string(from: date) }
 
     static func parseKey(_ value: String) -> Date? {
-        guard value.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: value), key(date) == value else { return nil }
+        guard value.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil,
+              let date = keyFormatter.date(from: value), key(date) == value else { return nil }
         return date
     }
 
     static func label(_ date: Date?, now: Date = Date(), absolute: Bool = false) -> String {
         guard let date else { return "无截止时间" }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = absolute ? "yyyy/M/d HH:mm" : "M月d日 HH:mm"
+        let formatter = absolute ? absoluteFormatter : shortFormatter
         let prefix: String
         if absolute { prefix = "" }
         else if day(date) == day(now) { prefix = "今天 " }
         else if day(date) == addDays(1, to: day(now)) { prefix = "明天 " }
         else { prefix = "" }
         return "\(prefix)\(formatter.string(from: date)) 截止"
+    }
+}
+
+// Reuse date parsers instead of creating ICU/ISO formatters for every row,
+// comparison and view update. The lock also protects ISO8601DateFormatter.
+private final class NativeDateParser: @unchecked Sendable {
+    private let lock = NSLock()
+    private let fractional = ISO8601DateFormatter()
+    private let standard = ISO8601DateFormatter()
+    private let local = DateFormatter()
+
+    init() {
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        standard.formatOptions = [.withInternetDateTime]
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.calendar = Beijing.calendar
+        local.timeZone = Beijing.timeZone
+        local.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        local.isLenient = false
+    }
+
+    func parse(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return fractional.date(from: raw) ?? standard.date(from: raw) ?? local.date(from: raw)
+    }
+}
+
+struct NativeTaskIndex: Sendable {
+    let tasks: [NativeTask]
+    let byID: [String: NativeTask]
+    let pendingByCourse: [Int: Int]
+
+    init(tasks: [NativeTask] = []) {
+        self.tasks = tasks
+        byID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        pendingByCourse = tasks.reduce(into: [:]) { counts, task in
+            if task.status == .pending, let id = task.courseID { counts[id, default: 0] += 1 }
+        }
+    }
+
+    init(snapshot: NativeSnapshot) {
+        self.init(tasks: NativeDomain.tasks(in: snapshot))
+    }
+
+    func applyingIgnored(_ ignored: Set<String>) -> NativeTaskIndex {
+        NativeTaskIndex(tasks: tasks.map { task in
+            var updated = task
+            updated.status = ignored.contains(task.id) ? .ignored :
+                (task.assignment?.isCompleted == true ? .submitted : .pending)
+            return updated
+        })
+    }
+}
+
+struct NativeMonthGrid {
+    struct Cell: Identifiable {
+        let id: Int
+        let date: Date?
+        let number: Int?
+    }
+    let firstDay: Date
+    let cells: [Cell]
+
+    init(month: Date) {
+        let calendar = Beijing.calendar
+        let start = calendar.dateInterval(of: .month, for: month)?.start ?? Beijing.day(month)
+        firstDay = start
+        let offset = (calendar.component(.weekday, from: start) + 5) % 7
+        let days = calendar.range(of: .day, in: .month, for: start)?.count ?? 0
+        cells = (0..<42).map { index in
+            let number = index - offset + 1
+            guard number > 0, number <= days else { return Cell(id: index, date: nil, number: nil) }
+            return Cell(id: index, date: calendar.date(byAdding: .day, value: number - 1, to: start), number: number)
+        }
     }
 }
 
@@ -265,17 +343,18 @@ enum NativeDomain {
                                      assignment: row)
         }
         for item in snapshot.todo {
+            let dueAt = Beijing.parse(item.dueAt)
             let explicit = item.courseID.flatMap { courseID in item.assignmentID.map { assignmentKey(courseID, $0) } }
             if let explicit, values[explicit] != nil { continue }
             if explicit == nil, values.values.contains(where: {
-                $0.title == item.title && $0.courseID == item.courseID && $0.dueAt == Beijing.parse(item.dueAt)
+                $0.title == item.title && $0.courseID == item.courseID && $0.dueAt == dueAt
             }) { continue }
             let key = explicit ?? "todo:\(item.courseID ?? 0):\(item.htmlURL ?? "\(item.title):\(item.dueAt ?? "")")"
             guard values[key] == nil else { continue }
             values[key] = NativeTask(id: key, title: item.title, courseName: item.courseName,
                                      courseID: item.courseID,
                                      status: ignored.contains(key) ? .ignored : .pending,
-                                     dueAt: Beijing.parse(item.dueAt), url: item.htmlURL.flatMap(URL.init(string:)),
+                                     dueAt: dueAt, url: item.htmlURL.flatMap(URL.init(string:)),
                                      assignment: nil)
         }
         return values.values.sorted {

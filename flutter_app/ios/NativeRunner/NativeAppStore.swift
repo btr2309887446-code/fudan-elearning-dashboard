@@ -12,6 +12,10 @@ struct NativeAssignmentDetail {
 @MainActor
 final class NativeAppStore: ObservableObject {
     @Published private(set) var snapshot: NativeSnapshot?
+    @Published private(set) var taskIndex = NativeTaskIndex()
+    private var snapshotGeneration = 0
+    private var sessionGeneration = 0
+    private var cachedSnapshotData: Data?
     @Published private(set) var preferences: NativePreferences
     @Published private(set) var cookies: [NativeCookie] = []
     @Published var isBooting = true
@@ -55,7 +59,7 @@ final class NativeAppStore: ObservableObject {
             cookies = []
         } else {
             if let data = defaults.data(forKey: "native.snapshot.v1") {
-                snapshot = try? JSONDecoder().decode(NativeSnapshot.self, from: data)
+                cachedSnapshotData = data
             }
             if let data = defaults.data(forKey: "native.cookies.v1") {
                 cookies = (try? JSONDecoder().decode([NativeCookie].self, from: data)) ?? []
@@ -67,10 +71,29 @@ final class NativeAppStore: ObservableObject {
     }
 
     var isLoggedIn: Bool { !cookies.isEmpty }
-    var tasks: [NativeTask] {
-        guard let snapshot else { return [] }
-        return NativeDomain.tasks(in: snapshot, ignored: preferences.ignoredAssignments)
+    // Accessed by many SwiftUI bodies; never parse or sort from this getter.
+    var tasks: [NativeTask] { taskIndex.tasks }
+
+    @discardableResult
+    func applySnapshot(_ value: NativeSnapshot) async -> Bool {
+        snapshotGeneration += 1
+        let generation = snapshotGeneration
+        let prepared = await Task.detached(priority: .userInitiated) {
+            NativeTaskIndex(snapshot: value)
+        }.value
+        guard generation == snapshotGeneration, !Task.isCancelled else { return false }
+        taskIndex = prepared.applyingIgnored(preferences.ignoredAssignments)
+        snapshot = value
+        return true
     }
+
+    private func clearSnapshot() {
+        snapshotGeneration += 1
+        snapshot = nil
+        taskIndex = NativeTaskIndex()
+        cachedSnapshotData = nil
+    }
+
     var defaultTermID: Int? { snapshot.map(NativeDomain.defaultTermID(in:)) ?? nil }
     var currentTasks: [NativeTask] {
         guard let id = defaultTermID else { return tasks }
@@ -103,6 +126,14 @@ final class NativeAppStore: ObservableObject {
     func boot() async {
         guard isBooting else { return }
         defer { isBooting = false }
+        if let data = cachedSnapshotData {
+            cachedSnapshotData = nil
+            if let cached = await Task.detached(priority: .userInitiated, operation: {
+                try? JSONDecoder().decode(NativeSnapshot.self, from: data)
+            }).value { await applySnapshot(cached) }
+        } else if let snapshot {
+            await applySnapshot(snapshot)
+        }
         if uiTesting { return }
         if isLoggedIn {
             do {
@@ -164,7 +195,8 @@ final class NativeAppStore: ObservableObject {
             preferences.rememberPassword = remember
             NativeSecrets.write(remember ? password : nil, account: "native.password")
             persistPreferences()
-            snapshot = nil
+            sessionGeneration += 1
+            clearSnapshot()
             isBusy = false
             await refresh(force: true)
             return snapshot != nil
@@ -182,14 +214,18 @@ final class NativeAppStore: ObservableObject {
         isBusy = true
         errorMessage = nil
         refreshProgress = nil
+        let session = sessionGeneration
         defer { isBusy = false; refreshProgress = nil }
         do {
             let api = CanvasAPI(http: NativeHTTP(cookies: cookies))
             let fresh = try await api.buildSnapshot(previous: snapshot, full: force, scope: preferences.refreshScope) { [weak self] done, total, label in
                 Task { @MainActor in self?.refreshProgress = (done, total, label) }
             }
-            snapshot = fresh
-            defaults.set(try JSONEncoder().encode(fresh), forKey: snapshotKey)
+            guard session == sessionGeneration, isLoggedIn else { return }
+            guard await applySnapshot(fresh) else { return }
+            let encoded = try await Task.detached(priority: .utility) { try JSONEncoder().encode(fresh) }.value
+            guard session == sessionGeneration, isLoggedIn else { return }
+            defaults.set(encoded, forKey: snapshotKey)
             defaults.set(try JSONEncoder().encode(cookies), forKey: cookieKey)
             noticeMessage = fresh.warnings.isEmpty ? nil : fresh.warnings.joined(separator: "\n")
             appendLog("同步完成：\(fresh.courses.count) 门课程，\(fresh.assignments.count) 项作业")
@@ -266,7 +302,7 @@ final class NativeAppStore: ObservableObject {
         }
         guard let termID = NativeDomain.defaultTermID(in: snapshot) else { return }
         let ids = Set(snapshot.courses.filter { $0.termID == termID }.map(\.id))
-        let tasks = NativeDomain.tasks(in: snapshot, ignored: preferences.ignoredAssignments).filter { $0.courseID.map(ids.contains) ?? true }
+        let tasks = self.tasks.filter { $0.courseID.map(ids.contains) ?? true }
         let reminders = NativeReminderPlanner.make(tasks: tasks, now: Date(), account: String(snapshot.profile.id), muted: preferences.mutedTasks)
         do { try await NativeNotifications.replace(with: reminders) }
         catch { reminderNotice = "提醒安排失败，请在「我的」中重新开启。" }
@@ -276,6 +312,7 @@ final class NativeAppStore: ObservableObject {
         let key = NativeDomain.assignmentKey(assignment.courseID, assignment.id)
         if preferences.ignoredAssignments.contains(key) { preferences.ignoredAssignments.remove(key) }
         else { preferences.ignoredAssignments.insert(key) }
+        taskIndex = taskIndex.applyingIgnored(preferences.ignoredAssignments)
         persistPreferences()
         await reconcileReminders()
     }
@@ -419,8 +456,9 @@ final class NativeAppStore: ObservableObject {
     func clearReminderDay() { reminderDay = nil }
 
     func logout() async {
+        sessionGeneration += 1
         cookies = []
-        snapshot = nil
+        clearSnapshot()
         preferences.remindersEnabled = false
         preferences.mutedTasks = []
         preferences.calendarExports = [:]
@@ -479,7 +517,6 @@ final class NativeAppStore: ObservableObject {
 
     private func persistPreferences() {
         if let data = try? JSONEncoder().encode(preferences) { defaults.set(data, forKey: prefsKey) }
-        objectWillChange.send()
     }
 
     private func isAuthFailure(_ error: Error) -> Bool {
@@ -532,8 +569,37 @@ final class NativeAppStore: ObservableObject {
                                           missing: false, excused: false, omitFromFinalGrade: false,
                                           htmlURL: "https://elearning.fudan.edu.cn",
                                           descriptionExcerpt: "<p>请阅读课程材料并提交一份简短报告。</p><p>格式要求：PDF &#8220;附件&#8221;。</p>")
+        var courses = [course]
+        var assignments = [assignment]
+        var terms = [term]
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-large-data") {
+            var historical = term
+            historical.id = 2025
+            historical.name = "历史学期"
+            historical.isCurrent = false
+            terms.append(historical)
+            for index in 0..<24 {
+                var extra = course
+                extra.id = 1100 + index
+                extra.name = "压力测试课程 \(index)"
+                extra.displayName = extra.name
+                extra.termID = index < 12 ? term.id : historical.id
+                extra.termName = index < 12 ? term.name : historical.name
+                courses.append(extra)
+                for offset in 0..<100 {
+                    var row = assignment
+                    row.id = 10000 + index * 100 + offset
+                    row.courseID = extra.id
+                    row.courseName = extra.name
+                    row.name = "压力测试作业 \(index)-\(offset)"
+                    row.dueAt = offset % 17 == 0 ? nil : formatter.string(from: Beijing.addDays(offset - 20, to: due))
+                    row.workflowState = offset % 4 == 0 ? "submitted" : "unsubmitted"
+                    assignments.append(row)
+                }
+            }
+        }
         return NativeSnapshot(fetchedAt: now, profile: NativeProfile(id: 1, name: "测试同学"),
-                              courses: [course], terms: [term], assignments: [assignment], todo: [],
+                              courses: courses, terms: terms, assignments: assignments, todo: [],
                               warnings: [], reusedCourseCount: 0)
     }
 }

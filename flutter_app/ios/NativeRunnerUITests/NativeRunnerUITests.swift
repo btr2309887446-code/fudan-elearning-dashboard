@@ -95,4 +95,45 @@ final class NativeRunnerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["提醒与日历"].exists)
         capture(app, "assignment-detail")
     }
+    func testCalendarSurvivesLargeHistoryRepeatedSwitchesAndNavigation() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--ui-testing-large-data", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(tab(app, "作业").waitForExistence(timeout: 15))
+        tab(app, "作业").tap()
+        XCTAssertTrue(app.buttons["日历"].waitForExistence(timeout: 5))
+        for _ in 0..<6 {
+            app.buttons["日历"].tap()
+            let next = app.buttons["calendar-next-month"]
+            XCTAssertTrue(next.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["calendar-month-title"].label.contains("年"))
+            next.tap()
+            app.buttons["calendar-previous-month"].tap()
+            let dates = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "calendar-day-"))
+            XCTAssertGreaterThanOrEqual(dates.count, 28)
+            dates.element(boundBy: 14).tap()
+            XCTAssertEqual(app.state, .runningForeground)
+            app.buttons["列表"].tap()
+            XCTAssertTrue(app.buttons["日历"].waitForExistence(timeout: 5))
+        }
+        // Narrow to the retained fixture only after exercising the full dataset.
+        app.buttons["task-course-filter"].tap()
+        app.buttons["演示课程"].tap()
+        let assignment = app.staticTexts["演示作业：阅读报告"]
+        XCTAssertTrue(assignment.waitForExistence(timeout: 5))
+        assignment.tap()
+        XCTAssertTrue(app.navigationBars["作业详情"].waitForExistence(timeout: 5))
+        let back = app.navigationBars["作业详情"].buttons.firstMatch
+        if back.exists && back.isHittable { back.tap() }
+        // A new tab round trip must preserve a valid task navigation container.
+        tab(app, "今日").tap()
+        tab(app, "作业").tap()
+        if !app.buttons["日历"].isHittable && back.exists && back.isHittable { back.tap() }
+        XCTAssertTrue(app.buttons["日历"].waitForExistence(timeout: 5))
+        app.buttons["日历"].tap()
+        XCTAssertTrue(app.buttons["calendar-next-month"].waitForExistence(timeout: 5))
+        capture(app, "large-data-calendar")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
 }

@@ -297,6 +297,95 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertEqual(Data(base64Encoded: encrypted)?.count, 256)
     }
 
+    func testMonthGridIsCompleteAndUsesBeijingDatesInAnyDeviceTimeZone() throws {
+        let originalZone = NSTimeZone.default
+        defer { NSTimeZone.default = originalZone }
+        for zone in ["America/Los_Angeles", "UTC", "Asia/Shanghai"] {
+            NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: zone))
+            for (key, count) in [("2024-02-01", 29), ("2026-02-01", 28), ("2026-10-01", 31), ("2027-01-01", 31)] {
+                let month = try XCTUnwrap(Beijing.parseKey(key))
+                let grid = NativeMonthGrid(month: month)
+                let dates = grid.cells.compactMap(\.date)
+                XCTAssertEqual(grid.cells.count, 42)
+                XCTAssertEqual(Set(grid.cells.map(\.id)).count, 42)
+                XCTAssertEqual(Set(dates).count, count)
+                XCTAssertEqual(dates.first, month)
+                XCTAssertEqual(grid.cells.compactMap(\.number), Array(1...count))
+                let firstIndex = try XCTUnwrap(grid.cells.firstIndex(where: { $0.date != nil }))
+                XCTAssertEqual(firstIndex, (Beijing.calendar.component(.weekday, from: month) + 5) % 7)
+                for date in dates { XCTAssertEqual(Beijing.day(date), date) }
+            }
+            let october = try XCTUnwrap(Beijing.parseKey("2026-10-01"))
+            XCTAssertEqual(Beijing.monthTitle(october), "2026年10月")
+            XCTAssertEqual(Beijing.dayTitle(october), "10月1日")
+            XCTAssertEqual(Beijing.key(october), "2026-10-01")
+        }
+    }
+
+    @MainActor
+    func testLargeSnapshotIsIndexedOnceAndInvalidatedAfterChanges() async throws {
+        let suite = "NativePerformanceTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "native.didClearFlutterState.v1")
+        let store = NativeAppStore(defaults: defaults)
+        var snapshot = snapshotFixture()
+        let template = snapshot.assignments[0]
+        snapshot.assignments = (0..<5000).map { index in
+            var row = template
+            row.id = index
+            row.dueAt = index % 2 == 0 ? "2026-10-16T10:00:00+08:00" : "2026-10-17T02:00:00.000Z"
+            return row
+        }
+        let applied = await store.applySnapshot(snapshot)
+        XCTAssertTrue(applied)
+        XCTAssertEqual(store.tasks.count, 5000)
+        XCTAssertEqual(store.taskIndex.pendingByCourse[4], 5000)
+        let started = ProcessInfo.processInfo.systemUptime
+        var observed = 0
+        for _ in 0..<10000 { observed += store.tasks.count }
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        XCTAssertEqual(observed, 50_000_000)
+        XCTAssertLessThan(elapsed, 1.0, "Reading task state during rendering must not reparse the snapshot")
+        print("TASK_CACHE_5000_ROWS_10000_READS_SECONDS=\(elapsed)")
+        await store.toggleIgnored(snapshot.assignments[0])
+        XCTAssertEqual(store.taskIndex.byID["4:0"]?.status, .ignored)
+        XCTAssertEqual(store.taskIndex.pendingByCourse[4], 4999)
+        await store.toggleIgnored(snapshot.assignments[0])
+        XCTAssertEqual(store.taskIndex.byID["4:0"]?.status, .pending)
+        var updated = snapshot
+        updated.assignments[0].dueAt = "2026-11-01T12:00:00+08:00"
+        updated.assignments[0].workflowState = "submitted"
+        await store.applySnapshot(updated)
+        XCTAssertEqual(store.taskIndex.byID["4:0"]?.dueAt, Beijing.parse("2026-11-01T12:00:00+08:00"))
+        XCTAssertEqual(store.taskIndex.byID["4:0"]?.status, .submitted)
+        await store.toggleIgnored(updated.assignments[0])
+        await store.toggleIgnored(updated.assignments[0])
+        XCTAssertEqual(store.taskIndex.byID["4:0"]?.status, .submitted)
+        await store.logout()
+        XCTAssertTrue(store.tasks.isEmpty)
+        XCTAssertTrue(store.taskIndex.byID.isEmpty)
+        XCTAssertNil(store.snapshot)
+    }
+
+    func testLargeCalendarAggregationPreservesEveryTask() {
+        var snapshot = snapshotFixture()
+        let template = snapshot.assignments[0]
+        snapshot.assignments = (0..<5000).map { index in
+            var row = template
+            row.id = index
+            row.dueAt = index % 3 == 0 ? nil : (index % 2 == 0 ? "2026-10-15T23:59:00+08:00" : "2026-10-15T16:01:00Z")
+            return row
+        }
+        let index = NativeTaskIndex(snapshot: snapshot)
+        let counts = NativeDomain.taskCountsByDay(index.tasks)
+        XCTAssertEqual(counts.values.reduce(0, +), snapshot.assignments.filter { $0.dueAt != nil }.count)
+        for (day, count) in counts {
+            XCTAssertEqual(NativeDomain.tasks(index.tasks, on: day).count, count)
+        }
+        XCTAssertEqual(index.tasks.count, 5000)
+    }
+
     private func snapshotFixture() -> NativeSnapshot {
         let row = NativeAssignment(id: 8, courseID: 4, courseName: "数学", name: "实验报告",
                                    groupID: 1, groupName: "平时", dueAt: nil,
