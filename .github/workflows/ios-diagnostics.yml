@@ -1,0 +1,33 @@
+name: Inspect native iOS test results
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: 'Build run ID containing native-test-results'
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and export results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+        run: |
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name native-test-results --dir downloaded
+          python3 scripts/ios-test-diagnostics.py downloaded diagnostics
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-readable-diagnostics
+          path: diagnostics
+          if-no-files-found: warn
+          retention-days: 14
