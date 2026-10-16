@@ -3,7 +3,7 @@
 # 这个工作流的意义在于：**开发者不需要拥有一台 Mac**。
 # GitHub Actions 对公开仓库免费提供 macOS 运行器，直接产出可侧载的 IPA。
 #
-# iOS 不再使用 Flutter Runner；Android/Windows 仍由 Flutter 项目构建。
+# iOS 使用独立 SwiftUI target；Android/macOS 使用 Flutter，Windows 使用 Electron。
 # 推送到 `master` 会自动构建；也可以在仓库页面手动运行。
 # 产物在本次运行的 Artifacts 里，下载后用 Sideloadly / AltStore / TrollStore
 # 装到 iPhone 上（免费开发者账号签名的有效期是 7 天，到期重装即可）。

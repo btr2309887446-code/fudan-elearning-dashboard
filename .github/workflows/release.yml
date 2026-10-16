@@ -2,7 +2,7 @@
 #
 # 目的：让安装包有一个**固定的下载地址**，不用每次进 Actions 页面翻 Artifacts。
 #
-#   https://github.com/btr2308987446-code/fudan-elearning-dashboard/releases/latest
+#   https://github.com/btr2309887446-code/fudan-elearning-dashboard/releases/latest
 #
 # 触发方式：
 #   git tag v0.9.1 && git push origin v0.9.1

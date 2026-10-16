@@ -1238,7 +1238,7 @@ struct ProfileView: View {
             Section("作业摘要与帮助") {
                 NavigationLink("作业摘要配置") { SummarySettingsView(store: store) }
                 NavigationLink("诊断日志") { DiagnosticsView(store: store) }
-                Link("使用帮助", destination: URL(string: "https://github.com/btr2309887446-code/fudan-elearning/blob/master/flutter_app/README.md")!)
+                Link("使用帮助", destination: URL(string: "https://github.com/btr2309887446-code/fudan-elearning-dashboard/blob/master/docs/ios.md")!)
             }
 
             Section {

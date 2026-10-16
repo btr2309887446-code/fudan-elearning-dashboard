@@ -4,6 +4,12 @@ release/
 dist/
 *.log
 
+# 本地诊断、下载的 CI 产物和 Python 缓存。
+/artifacts/
+__pycache__/
+*.py[cod]
+recon/out*.html
+
 # Local session cookies / snapshots produced by the CLI helpers.
 .session.json
 snapshot.json
