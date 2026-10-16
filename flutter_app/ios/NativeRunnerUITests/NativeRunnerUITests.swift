@@ -84,7 +84,8 @@ final class NativeRunnerUITests: XCTestCase {
         let calendarButton = app.buttons["日历"]
         XCTAssertTrue(calendarButton.waitForExistence(timeout: 5))
         calendarButton.tap()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '北京时间'")).firstMatch.exists)
+        XCTAssertTrue(app.buttons["calendar-next-month"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["calendar-month-title"].exists)
         capture(app, "assignments-calendar")
 
         app.buttons["列表"].tap()

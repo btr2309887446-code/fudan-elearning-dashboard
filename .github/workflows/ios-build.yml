@@ -73,6 +73,10 @@ jobs:
             xcrun xcresulttool export attachments --path "$RESULT_BUNDLE" --output-path "$GITHUB_WORKSPACE/flutter_app/build/native-screenshots/$DEVICE_NAME"
           done
 
+      - name: Export test failure diagnostics
+        if: failure()
+        run: python3 scripts/ios-test-diagnostics.py flutter_app/build/native-test/Logs/Test flutter_app/build/native-diagnostics
+
       - name: Upload native test results
         if: always()
         uses: actions/upload-artifact@v4

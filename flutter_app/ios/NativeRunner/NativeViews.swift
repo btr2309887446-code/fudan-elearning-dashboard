@@ -347,8 +347,10 @@ struct TasksView: View {
         }
     }
 
-    private var filters: some View {
-        Section {
+    private var filters: some View { Section { filterControls } }
+
+    private var filterControls: some View {
+        VStack(spacing: 16) {
             Picker("显示方式", selection: $calendarMode) {
                 Text("列表").tag(false)
                 Text("日历").tag(true)
@@ -382,21 +384,40 @@ struct TasksView: View {
     private var listBody: some View {
         let visibleTasks = filtered
         let now = Date()
-        // Separate List identities avoid asking UICollectionView to reconcile
-        // thousands of assignment rows with a grid during a segmented switch.
+        // Keep the calendar outside UICollectionView's self-sizing List cells.
+        // Its grid must not participate in recursive List height measurement.
         return Group {
             if calendarMode {
                 let counts = NativeDomain.taskCountsByDay(visibleTasks)
                 let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
-                List {
-                    filters
-                    Section { MonthGrid(month: $month, day: $selectedDay, taskCounts: counts) }
-                    Section(Beijing.dayTitle(selectedDay)) {
-                        if dayTasks.isEmpty { Text("这一天没有符合条件的作业。").foregroundStyle(.secondary) }
-                        ForEach(dayTasks) { task in taskRow(task) }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        filterControls
+                            .padding(16)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                        MonthGrid(month: $month, day: $selectedDay, taskCounts: counts)
+                            .padding(16)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                        Text(Beijing.dayTitle(selectedDay))
+                            .font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 16)
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            if dayTasks.isEmpty {
+                                Text("这一天没有符合条件的作业。")
+                                    .foregroundStyle(.secondary).padding(16)
+                            }
+                            ForEach(dayTasks) { task in
+                                taskRow(task).padding(16)
+                                if task.id != dayTasks.last?.id { Divider().padding(.leading, 16) }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                        Text("北京时间 · 无截止时间的作业请在列表中查看")
+                            .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
                     }
-                    Section { Text("北京时间 · 无截止时间的作业请在列表中查看").font(.footnote).foregroundStyle(.secondary) }
+                    .padding(16)
                 }
+                .background(Color(uiColor: .systemGroupedBackground))
                 .id("task-calendar")
                 .accessibilityIdentifier("task-calendar")
             } else {
@@ -451,7 +472,8 @@ struct MonthGrid: View {
     @Binding var month: Date
     @Binding var day: Date
     let taskCounts: [Date: Int]
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
+    @ScaledMetric(relativeTo: .body) private var cellHeight: CGFloat = 44
+    @ScaledMetric(relativeTo: .caption) private var weekdayHeight: CGFloat = 20
     private let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
 
     var body: some View {
@@ -459,43 +481,65 @@ struct MonthGrid: View {
         let today = Beijing.day(Date())
         return VStack(spacing: 8) {
             HStack {
-                Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
-                    .buttonStyle(.plain).accessibilityLabel("上个月").accessibilityIdentifier("calendar-previous-month")
-                Spacer()
-                Text(Beijing.monthTitle(month)).font(.headline).accessibilityIdentifier("calendar-month-title")
-                Spacer()
-                Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
-                    .buttonStyle(.plain).accessibilityLabel("下个月").accessibilityIdentifier("calendar-next-month")
-            }.padding(.vertical, 4)
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(weekdaySymbols, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity) }
-                ForEach(grid.cells) { cell in
-                    if let date = cell.date, let number = cell.number {
-                        let count = taskCounts[date, default: 0]
-                        Button { day = date } label: {
-                            VStack(spacing: 3) {
-                                Text(String(number)).font(.body.weight(date == today ? .semibold : .regular))
-                                Circle().fill(count > 0 ? Color.accentColor : .clear).frame(width: 4, height: 4)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .foregroundStyle(date == day ? Color.white : (date == today ? Color.accentColor : Color.primary))
-                            .background(date == day ? Color.accentColor : Color.clear, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(Beijing.fullDayTitle(date))，\(count) 项作业")
-                        .accessibilityIdentifier("calendar-day-\(Beijing.key(date))")
-                        .accessibilityAddTraits(date == day ? [.isSelected] : [])
-                    } else { Color.clear.frame(height: 44) }
+                Button { shiftMonth(-1) } label: {
+                    Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44)
                 }
+                .accessibilityLabel("上个月").accessibilityIdentifier("calendar-previous-month")
+                Spacer()
+                Text(Beijing.monthTitle(month)).font(.headline)
+                    .lineLimit(1).minimumScaleFactor(0.7).accessibilityIdentifier("calendar-month-title")
+                Spacer()
+                Button { shiftMonth(1) } label: {
+                    Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("下个月").accessibilityIdentifier("calendar-next-month")
+            }.frame(height: cellHeight)
+            HStack(spacing: 2) {
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                }
+            }.frame(height: weekdayHeight)
+            // This is always 6 x 7 cells. LazyVGrid inside a self-sizing List row
+            // caused UICollectionViewFeedbackLoopDebugger fatal layout loops on
+            // iOS 26. Use eager, explicitly sized rows in the calendar ScrollView.
+            ForEach(0..<6, id: \.self) { row in
+                HStack(spacing: 2) {
+                    ForEach(grid.cells[(row * 7)..<(row * 7 + 7)]) { cell in
+                        dayCell(cell, today: today)
+                    }
+                }.frame(height: cellHeight)
             }
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private func dayCell(_ cell: NativeMonthGrid.Cell, today: Date) -> some View {
+        if let date = cell.date, let number = cell.number {
+            let count = taskCounts[date, default: 0]
+            Button { day = date } label: {
+                VStack(spacing: 3) {
+                    Text(String(number)).font(.body.weight(date == today ? .semibold : .regular))
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    Circle().fill(count > 0 ? Color.accentColor : .clear).frame(width: 4, height: 4)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: cellHeight)
+                .foregroundStyle(date == day ? Color.white : (date == today ? Color.accentColor : Color.primary))
+                .background(date == day ? Color.accentColor : Color.clear, in: Circle())
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("\(Beijing.fullDayTitle(date))，\(count) 项作业")
+            .accessibilityIdentifier("calendar-day-\(Beijing.key(date))")
+            .accessibilityAddTraits(date == day ? [.isSelected] : [])
+        } else {
+            Color.clear.frame(maxWidth: .infinity).frame(height: cellHeight).accessibilityHidden(true)
+        }
     }
 
     private func shiftMonth(_ value: Int) {
         guard let shifted = Beijing.calendar.date(byAdding: .month, value: value, to: month) else { return }
         let first = NativeMonthGrid(month: shifted).firstDay
-        // Update both bindings in the user action, not during a layout callback.
         month = first
         day = first
     }
