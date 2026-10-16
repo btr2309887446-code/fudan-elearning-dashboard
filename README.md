@@ -29,6 +29,18 @@ iOS 提供“今日、作业、课程、我的”四个标签页，支持作业�
 
 提醒默认关闭，开启后根据已同步的数据安排。网页提交作业或截止时间变化后，需要重新同步。系统日历采用用户确认的单向添加，不自动更新或删除旧事件。
 
+### iOS 界面预览
+
+以下为 2026 年 10 月 15 日原生 SwiftUI 应用的模拟器测试截图，使用演示数据，并非真机截图；后续界面可能有所调整。
+
+| iPhone · 今日 | iPhone · 作业详情 |
+| --- | --- |
+| ![iPhone 今日页，模拟器演示数据](docs/ios/iphone-today.png) | ![iPhone 作业详情，模拟器演示数据](docs/ios/iphone-assignment-detail.png) |
+
+![iPad 课程分栏，模拟器演示数据](docs/ios/ipad-course-detail.png)
+
+### Windows 界面预览
+
 ![Windows 桌面端总览](docs/dashboard.png)
 
 上图为 Windows 桌面端界面，不代表原生 iOS 的外观。
