@@ -232,6 +232,24 @@ enum NativeDomain {
         "\(courseID):\(assignmentID)"
     }
 
+    /// Groups dated tasks once so calendar rendering does not rescan the full
+    /// assignment list for every one of the 42 cells in a month.
+    static func taskCountsByDay(_ tasks: [NativeTask]) -> [Date: Int] {
+        tasks.reduce(into: [Date: Int]()) { counts, task in
+            guard let dueAt = task.dueAt else { return }
+            let day = Beijing.day(dueAt)
+            counts[day, default: 0] += 1
+        }
+    }
+
+    static func tasks(_ tasks: [NativeTask], on day: Date) -> [NativeTask] {
+        let selectedDay = Beijing.day(day)
+        return tasks.filter { task in
+            guard let dueAt = task.dueAt else { return false }
+            return Beijing.day(dueAt) == selectedDay
+        }
+    }
+
     static func defaultTermID(in snapshot: NativeSnapshot) -> Int? {
         snapshot.terms.first(where: \.isCurrent)?.id ?? snapshot.terms.first?.id
     }

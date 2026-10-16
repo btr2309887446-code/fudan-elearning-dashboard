@@ -270,7 +270,7 @@ struct TasksView: View {
     @State private var selectedCourse: Int?
     @State private var selectedTaskID: String?
     @State private var selectedDay = Beijing.day(Date())
-    @State private var month = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+    @State private var month = Beijing.calendar.dateInterval(of: .month, for: Date())?.start ?? Date()
 
     private var status: TaskStatus { TaskStatus(rawValue: store.preferences.taskFilter) ?? .pending }
     private var filtered: [NativeTask] {
@@ -313,7 +313,7 @@ struct TasksView: View {
         .onChange(of: store.reminderDay) { value in
             guard let value, let day = Beijing.parseKey(value) else { return }
             selectedDay = day
-            month = Calendar.current.dateInterval(of: .month, for: day)?.start ?? day
+            month = Beijing.calendar.dateInterval(of: .month, for: day)?.start ?? day
             calendarMode = true
             store.setTaskFilter(.pending)
             store.taskBucket = nil
@@ -330,6 +330,13 @@ struct TasksView: View {
     }
 
     private var listBody: some View {
+        // Keep the filtered snapshot stable for this render pass. Calendar
+        // cells and the selected-day section should not independently rebuild
+        // the full NativeTask array.
+        let visibleTasks = filtered
+        let taskCounts = NativeDomain.taskCountsByDay(visibleTasks)
+        let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
+
         List(selection: $selectedTaskID) {
             Section {
                 Picker("显示方式", selection: $calendarMode) {
@@ -360,9 +367,8 @@ struct TasksView: View {
             }
 
             if calendarMode {
-                Section { MonthGrid(month: $month, day: $selectedDay, tasks: filtered) }
+                Section { MonthGrid(month: $month, day: $selectedDay, taskCounts: taskCounts) }
                 Section("\(selectedDay.formatted(.dateTime.month(.wide).day()))") {
-                    let dayTasks = filtered.filter { $0.dueAt.map { Beijing.day($0) == selectedDay } ?? false }
                     if dayTasks.isEmpty { Text("这一天没有符合条件的作业。").foregroundStyle(.secondary) }
                     else { ForEach(dayTasks) { task in taskRow(task) } }
                 }
@@ -381,16 +387,26 @@ struct TasksView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // Replacing a long list with the month grid should be an immediate
+        // mode switch. Implicit row animations make this transition expensive
+        // and can race navigation updates on older iOS releases.
+        .animation(nil, value: calendarMode)
         .refreshable { await store.refresh() }
     }
 
     @ViewBuilder private func taskRow(_ task: NativeTask) -> some View {
         if #available(iOS 16.0, *) {
-            NavigationLink(value: task.id) { TaskRowLabel(task: task) }
-                .tag(task.id)
-                .navigationDestination(for: String.self) { id in
-                    if let selected = filtered.first(where: { $0.id == id }) { AssignmentDetailView(task: selected, store: store) }
-                }
+            // The split view already renders the selected task in its detail
+            // column. A direct selection avoids registering one navigation
+            // destination per row, which is both costly and crash-prone when
+            // the calendar replaces the list contents.
+            Button { selectedTaskID = task.id } label: {
+                TaskRowLabel(task: task)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .tag(task.id)
         } else {
             NavigationLink(destination: AssignmentDetailView(task: task, store: store)) {
                 TaskRowLabel(task: task)
@@ -407,7 +423,7 @@ struct TasksView: View {
 struct MonthGrid: View {
     @Binding var month: Date
     @Binding var day: Date
-    let tasks: [NativeTask]
+    let taskCounts: [Date: Int]
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
     private let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -424,7 +440,7 @@ struct MonthGrid: View {
                 ForEach(weekdaySymbols, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity) }
                 ForEach(0..<42, id: \.self) { index in
                     if let date = date(at: index) {
-                        let count = tasks.filter { $0.dueAt.map { Beijing.day($0) == date } ?? false }.count
+                        let count = taskCounts[date, default: 0]
                         Button { day = date } label: {
                             VStack(spacing: 3) {
                                 Text(date.formatted(.dateTime.day())).font(.body.weight(date == Beijing.day(Date()) ? .semibold : .regular))
@@ -441,12 +457,17 @@ struct MonthGrid: View {
             }
         }
         .padding(.vertical, 4)
-        .onChange(of: month) { _ in if date(at: dayIndex(day)) == nil { day = firstDay } }
+        .onChange(of: month) { _ in
+            // Keep the selected day in the visible month. This uses the same
+            // Beijing calendar as task bucketing so timezone changes cannot
+            // make a valid day look like an invalid grid index.
+            if !isSameMonth(day, as: month) { day = firstDay }
+        }
     }
 
-    private var firstDay: Date { Calendar.current.dateInterval(of: .month, for: month)?.start ?? month }
+    private var firstDay: Date { Beijing.calendar.dateInterval(of: .month, for: month)?.start ?? month }
     private func shiftMonth(_ value: Int) {
-        month = Calendar.current.date(byAdding: .month, value: value, to: month) ?? month
+        month = Beijing.calendar.date(byAdding: .month, value: value, to: month) ?? month
     }
     private func date(at index: Int) -> Date? {
         let calendar = Beijing.calendar
@@ -458,11 +479,10 @@ struct MonthGrid: View {
         guard (1...days).contains(number) else { return nil }
         return calendar.date(byAdding: .day, value: number - 1, to: start)
     }
-    private func dayIndex(_ value: Date) -> Int {
+    private func isSameMonth(_ lhs: Date, as rhs: Date) -> Bool {
         let calendar = Beijing.calendar
-        let start = calendar.dateInterval(of: .month, for: month)?.start ?? month
-        let offset = (calendar.component(.weekday, from: start) + 5) % 7
-        return offset + calendar.component(.day, from: value) - 1
+        return calendar.component(.year, from: lhs) == calendar.component(.year, from: rhs) &&
+            calendar.component(.month, from: lhs) == calendar.component(.month, from: rhs)
     }
 }
 

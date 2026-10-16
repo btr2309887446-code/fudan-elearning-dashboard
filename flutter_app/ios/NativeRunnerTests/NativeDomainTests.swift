@@ -44,6 +44,19 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertEqual(overdue.bucket(now: now), .overdue)
     }
 
+    func testCalendarAggregationCountsEachBeijingDayOnce() throws {
+        let first = NativeTask(id: "a", title: "上午", courseName: "课程", courseID: 1,
+                               status: .pending, dueAt: Beijing.parse("2026-10-15T01:00:00+08:00"), url: nil, assignment: nil)
+        let second = NativeTask(id: "b", title: "晚上", courseName: "课程", courseID: 1,
+                                status: .pending, dueAt: Beijing.parse("2026-10-15T23:00:00+08:00"), url: nil, assignment: nil)
+        let other = NativeTask(id: "c", title: "无截止", courseName: "课程", courseID: 1,
+                               status: .pending, dueAt: nil, url: nil, assignment: nil)
+        let counts = NativeDomain.taskCountsByDay([first, second, other])
+        let day = try XCTUnwrap(Beijing.parseKey("2026-10-15"))
+        XCTAssertEqual(counts[day], 2)
+        XCTAssertEqual(NativeDomain.tasks([first, second, other], on: day).map(\.id), ["a", "b"])
+    }
+
     func testDefaultTermSelectionAndTermCourseCounts() throws {
         let now = try XCTUnwrap(Beijing.parse("2026-10-15T12:00:00+08:00"))
         let api = CanvasAPI(http: NativeHTTP())
