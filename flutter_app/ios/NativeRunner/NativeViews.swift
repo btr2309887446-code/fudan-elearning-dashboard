@@ -388,7 +388,7 @@ struct TasksView: View {
             if calendarMode {
                 let counts = NativeDomain.taskCountsByDay(visibleTasks)
                 let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
-                List(selection: $selectedTaskID) {
+                List {
                     filters
                     Section { MonthGrid(month: $month, day: $selectedDay, taskCounts: counts) }
                     Section(Beijing.dayTitle(selectedDay)) {
@@ -401,7 +401,7 @@ struct TasksView: View {
                 .accessibilityIdentifier("task-calendar")
             } else {
                 let groups = Dictionary(grouping: visibleTasks) { $0.bucket(now: now) }
-                List(selection: $selectedTaskID) {
+                List {
                     filters
                     if visibleTasks.isEmpty {
                         Section { EmptyState(title: "没有符合条件的作业。试试其他状态或课程。", systemImage: "magnifyingglass") }
@@ -429,7 +429,7 @@ struct TasksView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .tag(task.id)
+            .listRowBackground(selectedTaskID == task.id ? Color.accentColor.opacity(0.12) : Color(uiColor: .secondarySystemGroupedBackground))
             .accessibilityIdentifier("task-row-\(task.id)")
         } else if #available(iOS 16.0, *) {
             NavigationLink(value: task.id) { TaskRowLabel(task: task) }
@@ -662,7 +662,7 @@ struct CourseDetailView: View {
                     } label: { Label(taskFilter?.title ?? "未提交", systemImage: "line.3.horizontal.decrease.circle") }
                     if assignments.isEmpty { Text("这个范围内没有作业。").foregroundStyle(.secondary) }
                     ForEach(assignments) { assignment in
-                        if let task = store.tasks.first(where: { $0.id == NativeDomain.assignmentKey(assignment.courseID, assignment.id) }) {
+                        if let task = store.taskIndex.byID[NativeDomain.assignmentKey(assignment.courseID, assignment.id)] {
                             TaskNavigationRow(task: task, store: store)
                         }
                     }

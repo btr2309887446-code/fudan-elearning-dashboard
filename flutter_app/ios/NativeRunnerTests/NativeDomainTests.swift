@@ -368,6 +368,26 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertNil(store.snapshot)
     }
 
+    @MainActor
+    func testBootLoadsCachedTasksWithoutNetworkAndKeepsIgnoredStatus() async throws {
+        let suite = "NativeCacheTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "native.didClearFlutterState.v1")
+        let cached = snapshotFixture()
+        defaults.set(try JSONEncoder().encode(cached), forKey: "native.snapshot.v1")
+        var prefs = NativePreferences()
+        prefs.ignoredAssignments = ["4:8"]
+        defaults.set(try JSONEncoder().encode(prefs), forKey: "native.preferences.v1")
+        let store = NativeAppStore(defaults: defaults)
+        await store.boot()
+        XCTAssertFalse(store.isBooting)
+        XCTAssertFalse(store.isLoggedIn)
+        XCTAssertEqual(store.tasks.count, 1)
+        XCTAssertEqual(store.taskIndex.byID["4:8"]?.status, .ignored)
+        XCTAssertEqual(store.snapshot?.profile.id, cached.profile.id)
+    }
+
     func testLargeCalendarAggregationPreservesEveryTask() {
         var snapshot = snapshotFixture()
         let template = snapshot.assignments[0]

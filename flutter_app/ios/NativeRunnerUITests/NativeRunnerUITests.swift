@@ -95,6 +95,26 @@ final class NativeRunnerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["提醒与日历"].exists)
         capture(app, "assignment-detail")
     }
+    func testLargeAssignmentListScrollingPerformance() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Performance regression targets the reported iOS 26 environment") }
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--ui-testing-large-data"]
+        app.launch()
+        XCTAssertTrue(tab(app, "作业").waitForExistence(timeout: 15))
+        tab(app, "作业").tap()
+        let list = app.descendants(matching: .any).matching(identifier: "task-list").firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        options.invocationOptions = [.manuallyStop]
+        measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric], options: options) {
+            list.swipeUp(velocity: .fast)
+            stopMeasuring()
+            list.swipeDown(velocity: .fast)
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testCalendarSurvivesLargeHistoryRepeatedSwitchesAndNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--ui-testing-large-data", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
