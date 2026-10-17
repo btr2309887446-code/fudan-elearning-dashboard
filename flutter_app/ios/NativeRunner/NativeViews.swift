@@ -267,6 +267,7 @@ struct EmptyState: View {
 struct TasksView: View {
     @ObservedObject var store: NativeAppStore
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var search = ""
     @State private var calendarMode = false
     @State private var selectedCourse: Int?
@@ -297,7 +298,7 @@ struct TasksView: View {
             } else if #available(iOS 16.0, *) {
                 NavigationStack(path: $path) {
                     content
-                        // Register once on a stable ancestor, outside both Lists.
+                        // Register once on a stable ancestor, outside the scrolling content.
                         .navigationDestination(for: String.self) { id in
                             if let task = store.taskIndex.byID[id] {
                                 AssignmentDetailView(task: task, store: store)
@@ -335,6 +336,7 @@ struct TasksView: View {
     private var content: some View {
         listBody
             .navigationTitle("作业")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { listToolbar }
             .searchable(text: $search, prompt: "搜索作业或课程")
     }
@@ -347,14 +349,13 @@ struct TasksView: View {
         }
     }
 
-    private var filters: some View { Section { filterControls } }
-
     private var filterControls: some View {
         VStack(spacing: 16) {
             Picker("显示方式", selection: $calendarMode) {
                 Text("列表").tag(false)
                 Text("日历").tag(true)
             }.pickerStyle(.segmented)
+                .accessibilityIdentifier("task-display-mode")
             HStack {
                 Menu {
                     ForEach(TaskStatus.allCases) { value in
@@ -386,59 +387,76 @@ struct TasksView: View {
         let now = Date()
         // Keep the calendar outside UICollectionView's self-sizing List cells.
         // Its grid must not participate in recursive List height measurement.
-        return Group {
-            if calendarMode {
-                let counts = NativeDomain.taskCountsByDay(visibleTasks)
-                let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        filterControls
-                            .padding(16)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                        MonthGrid(month: $month, day: $selectedDay, taskCounts: counts)
-                            .padding(16)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                        Text(Beijing.dayTitle(selectedDay))
-                            .font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 16)
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            if dayTasks.isEmpty {
-                                Text("这一天没有符合条件的作业。")
-                                    .foregroundStyle(.secondary).padding(16)
+        return VStack(spacing: 0) {
+            // Keep one instance of the controls in place while the content changes.
+            // Replacing the entire scroll view also replaced the Picker and reset
+            // navigation-bar scroll state, which made the switch look like a jump.
+            filterControls
+                .padding(16)
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 4)
+                .accessibilityIdentifier("task-filters")
+
+            ZStack(alignment: .top) {
+                if calendarMode {
+                    let counts = NativeDomain.taskCountsByDay(visibleTasks)
+                    let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 20) {
+                            MonthGrid(month: $month, day: $selectedDay, taskCounts: counts)
+                                .padding(16)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                            Text(Beijing.dayTitle(selectedDay))
+                                .font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 16)
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                if dayTasks.isEmpty {
+                                    Text("这一天没有符合条件的作业。")
+                                        .foregroundStyle(.secondary).padding(16)
+                                }
+                                ForEach(dayTasks) { task in
+                                    taskRow(task).padding(16)
+                                    if task.id != dayTasks.last?.id { Divider().padding(.leading, 16) }
+                                }
                             }
-                            ForEach(dayTasks) { task in
-                                taskRow(task).padding(16)
-                                if task.id != dayTasks.last?.id { Divider().padding(.leading, 16) }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                            Text("北京时间 · 无截止时间的作业请在列表中查看")
+                                .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
+                        }
+                        .padding(16)
+                    }
+                    .background(Color(uiColor: .systemGroupedBackground))
+                    .id("task-calendar")
+                    .accessibilityIdentifier("task-calendar")
+                    .transition(.opacity)
+                    .zIndex(1)
+                } else {
+                    let groups = Dictionary(grouping: visibleTasks) { $0.bucket(now: now) }
+                    List {
+                        if visibleTasks.isEmpty {
+                            Section { EmptyState(title: "没有符合条件的作业。试试其他状态或课程。", systemImage: "magnifyingglass") }
+                        }
+                        ForEach(TaskBucket.allCases) { bucket in
+                            if let rows = groups[bucket], !rows.isEmpty {
+                                Section(bucket.title) { ForEach(rows) { task in taskRow(task) } }
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                        Text("北京时间 · 无截止时间的作业请在列表中查看")
-                            .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
                     }
-                    .padding(16)
+                    .id("task-list")
+                    .accessibilityIdentifier("task-list")
+                    .transition(.opacity)
+                    .zIndex(1)
                 }
-                .background(Color(uiColor: .systemGroupedBackground))
-                .id("task-calendar")
-                .accessibilityIdentifier("task-calendar")
-            } else {
-                let groups = Dictionary(grouping: visibleTasks) { $0.bucket(now: now) }
-                List {
-                    filters
-                    if visibleTasks.isEmpty {
-                        Section { EmptyState(title: "没有符合条件的作业。试试其他状态或课程。", systemImage: "magnifyingglass") }
-                    }
-                    ForEach(TaskBucket.allCases) { bucket in
-                        if let rows = groups[bucket], !rows.isEmpty {
-                            Section(bucket.title) { ForEach(rows) { task in taskRow(task) } }
-                        }
-                    }
-                }
-                .id("task-list")
-                .accessibilityIdentifier("task-list")
             }
+            // Animate only the content replacement, not the controls, navigation
+            // chrome or the calendar's measured row heights. Equal nonzero z-order
+            // keeps the outgoing scroll view visible for the whole crossfade.
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: calendarMode)
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .listStyle(.insetGrouped)
-        .animation(nil, value: calendarMode)
         .refreshable { await store.refresh() }
     }
 

@@ -130,6 +130,39 @@ final class NativeRunnerUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    func testDisplayModeControlsStayInPlaceAfterScrollingAndSwitching() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--ui-testing-large-data"]
+        app.launch()
+        tab(app, "作业").tap()
+        let calendarButton = app.buttons["日历"]
+        let courseFilter = app.buttons["task-course-filter"]
+        XCTAssertTrue(calendarButton.waitForExistence(timeout: 5))
+        let switchFrame = calendarButton.frame
+        let filterFrame = courseFilter.frame
+
+        for _ in 0..<3 {
+            let list = app.descendants(matching: .any).matching(identifier: "task-list").firstMatch
+            XCTAssertTrue(list.waitForExistence(timeout: 5))
+            list.swipeUp()
+            XCTAssertTrue(calendarButton.isHittable)
+            calendarButton.tap()
+            XCTAssertTrue(app.buttons["calendar-next-month"].waitForExistence(timeout: 5))
+            XCTAssertEqual(calendarButton.frame.minY, switchFrame.minY, accuracy: 1)
+            XCTAssertEqual(calendarButton.frame.minX, switchFrame.minX, accuracy: 1)
+            XCTAssertEqual(courseFilter.frame.minY, filterFrame.minY, accuracy: 1)
+            XCTAssertEqual(courseFilter.frame.width, filterFrame.width, accuracy: 1)
+            app.scrollViews["task-calendar"].swipeUp()
+            XCTAssertTrue(app.buttons["列表"].isHittable)
+            app.buttons["列表"].tap()
+            XCTAssertTrue(list.waitForExistence(timeout: 5))
+            XCTAssertEqual(calendarButton.frame.minY, switchFrame.minY, accuracy: 1)
+            XCTAssertEqual(courseFilter.frame.minY, filterFrame.minY, accuracy: 1)
+        }
+        capture(app, "stable-mode-controls")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testCalendarSurvivesLargeHistoryRepeatedSwitchesAndNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--ui-testing-large-data", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
