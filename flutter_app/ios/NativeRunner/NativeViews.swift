@@ -355,7 +355,6 @@ struct TasksView: View {
                 Text("列表").tag(false)
                 Text("日历").tag(true)
             }.pickerStyle(.segmented)
-                .accessibilityIdentifier("task-display-mode")
             HStack {
                 Menu {
                     ForEach(TaskStatus.allCases) { value in
@@ -397,7 +396,6 @@ struct TasksView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 4)
-                .accessibilityIdentifier("task-filters")
 
             ZStack(alignment: .top) {
                 if calendarMode {
