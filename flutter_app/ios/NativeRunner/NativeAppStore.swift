@@ -13,6 +13,9 @@ struct NativeAssignmentDetail {
 final class NativeAppStore: ObservableObject {
     @Published private(set) var snapshot: NativeSnapshot?
     @Published private(set) var taskIndex = NativeTaskIndex()
+    private var sourceTaskIndex = NativeTaskIndex()
+    private var manualDeadlinesByAccount: [String: [String: Date]] = [:]
+    private let deadlinesKey = "native.manualDeadlines.v1"
     private var snapshotGeneration = 0
     private var sessionGeneration = 0
     private var cachedSnapshotData: Data?
@@ -58,6 +61,9 @@ final class NativeAppStore: ObservableObject {
             snapshot = uiTestingLogin ? nil : Self.uiTestSnapshot()
             cookies = []
         } else {
+            if let data = defaults.data(forKey: deadlinesKey) {
+                manualDeadlinesByAccount = (try? JSONDecoder().decode([String: [String: Date]].self, from: data)) ?? [:]
+            }
             if let data = defaults.data(forKey: "native.snapshot.v1") {
                 cachedSnapshotData = data
             }
@@ -82,14 +88,41 @@ final class NativeAppStore: ObservableObject {
             NativeTaskIndex(snapshot: value)
         }.value
         guard generation == snapshotGeneration, !Task.isCancelled else { return false }
-        taskIndex = prepared.applyingIgnored(preferences.ignoredAssignments)
+        sourceTaskIndex = prepared
         snapshot = value
+        rebuildTaskIndex()
         return true
+    }
+
+    func manualDeadline(for taskID: String) -> Date? {
+        guard let account = snapshot?.profile.id else { return nil }
+        return manualDeadlinesByAccount[String(account)]?[taskID]
+    }
+
+    func schoolDeadline(for taskID: String) -> Date? { sourceTaskIndex.byID[taskID]?.dueAt }
+
+    func setManualDeadline(for taskID: String, date: Date?) async {
+        guard let account = snapshot?.profile.id, sourceTaskIndex.byID[taskID] != nil,
+              date?.timeIntervalSince1970.isFinite != false else { return }
+        var deadlines = manualDeadlinesByAccount[String(account), default: [:]]
+        deadlines[taskID] = date
+        manualDeadlinesByAccount[String(account)] = deadlines
+        if !uiTesting, let data = try? JSONEncoder().encode(manualDeadlinesByAccount) {
+            defaults.set(data, forKey: deadlinesKey)
+        }
+        rebuildTaskIndex()
+        await reconcileReminders()
+    }
+
+    private func rebuildTaskIndex() {
+        let deadlines = snapshot.map { manualDeadlinesByAccount[String($0.profile.id), default: [:]] } ?? [:]
+        taskIndex = sourceTaskIndex.applyingIgnored(preferences.ignoredAssignments).applyingDeadlines(deadlines)
     }
 
     private func clearSnapshot() {
         snapshotGeneration += 1
         snapshot = nil
+        sourceTaskIndex = NativeTaskIndex()
         taskIndex = NativeTaskIndex()
         cachedSnapshotData = nil
     }
@@ -312,7 +345,7 @@ final class NativeAppStore: ObservableObject {
         let key = NativeDomain.assignmentKey(assignment.courseID, assignment.id)
         if preferences.ignoredAssignments.contains(key) { preferences.ignoredAssignments.remove(key) }
         else { preferences.ignoredAssignments.insert(key) }
-        taskIndex = taskIndex.applyingIgnored(preferences.ignoredAssignments)
+        rebuildTaskIndex()
         persistPreferences()
         await reconcileReminders()
     }
@@ -571,6 +604,7 @@ final class NativeAppStore: ObservableObject {
                                           descriptionExcerpt: "<p>请阅读课程材料并提交一份简短报告。</p><p>格式要求：PDF &#8220;附件&#8221;。</p>")
         var courses = [course]
         var assignments = [assignment]
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-undated") { assignments[0].dueAt = nil }
         var terms = [term]
         if ProcessInfo.processInfo.arguments.contains("--ui-testing-large-data") {
             var historical = term

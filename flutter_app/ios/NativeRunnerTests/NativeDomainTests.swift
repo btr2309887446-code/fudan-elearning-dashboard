@@ -406,6 +406,97 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertEqual(index.tasks.count, 5000)
     }
 
+    @MainActor
+    func testManualDeadlineUpdatesBucketsCalendarRemindersAndRestoresLatestSchoolDate() async throws {
+        let suite = "ManualDeadlineTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "native.didClearFlutterState.v1")
+        let store = NativeAppStore(defaults: defaults)
+        var snapshot = snapshotFixture()
+        var dated = snapshot.assignments[0]
+        dated.id = 9
+        dated.dueAt = "2026-10-20T18:00:00+08:00"
+        snapshot.assignments.append(dated)
+        await store.applySnapshot(snapshot)
+        XCTAssertEqual(store.tasks.map(\.id), ["4:9", "4:8"])
+        let now = try XCTUnwrap(Beijing.parse("2026-10-17T12:00:00+08:00"))
+        let custom = try XCTUnwrap(Beijing.parse("2026-10-18T23:59:00+08:00"))
+        await store.setManualDeadline(for: "4:8", date: custom)
+        XCTAssertEqual(store.tasks.first?.id, "4:8")
+        XCTAssertEqual(store.tasks.first?.bucket(now: now), .week)
+        XCTAssertTrue(try XCTUnwrap(store.taskIndex.byID["4:8"]).hasManualDeadline)
+        XCTAssertNil(store.snapshot?.assignments[0].dueAt)
+        XCTAssertEqual(NativeDomain.taskCountsByDay(store.tasks)[Beijing.day(custom)], 1)
+        XCTAssertEqual(NativeDomain.tasks(store.tasks, on: custom).map(\.id), ["4:8"])
+        func reminders() -> [NativeReminderPlanner.Reminder] {
+            NativeReminderPlanner.make(tasks: store.tasks, now: now, account: "1", muted: [])
+        }
+        XCTAssertTrue(reminders().contains { $0.day == "2026-10-18" })
+        await store.toggleIgnored(snapshot.assignments[0])
+        XCTAssertEqual(store.taskIndex.byID["4:8"]?.dueAt, custom)
+        XCTAssertFalse(reminders().contains { $0.day == "2026-10-18" })
+        await store.toggleIgnored(snapshot.assignments[0])
+        let revised = try XCTUnwrap(Beijing.parse("2026-10-19T06:00:00+08:00"))
+        await store.setManualDeadline(for: "4:8", date: revised)
+        XCTAssertFalse(reminders().contains { $0.day == "2026-10-18" })
+        XCTAssertTrue(reminders().contains { $0.day == "2026-10-19" && $0.at == Beijing.parse("2026-10-18T20:00:00+08:00") })
+        await store.setManualDeadline(for: "4:8", date: nil)
+        XCTAssertNil(store.taskIndex.byID["4:8"]?.dueAt)
+        XCTAssertEqual(store.taskIndex.byID["4:8"]?.bucket(now: now), .undated)
+        XCTAssertEqual(store.tasks.map(\.id), ["4:9", "4:8"])
+        await store.setManualDeadline(for: "4:8", date: custom)
+        snapshot.assignments[0].dueAt = "2026-10-21T15:30:00+08:00"
+        await store.applySnapshot(snapshot)
+        XCTAssertEqual(store.taskIndex.byID["4:8"]?.dueAt, custom)
+        XCTAssertEqual(store.schoolDeadline(for: "4:8"), Beijing.parse(snapshot.assignments[0].dueAt))
+        await store.setManualDeadline(for: "4:8", date: nil)
+        XCTAssertEqual(store.taskIndex.byID["4:8"]?.dueAt, Beijing.parse(snapshot.assignments[0].dueAt))
+        XCTAssertFalse(try XCTUnwrap(store.taskIndex.byID["4:8"]).hasManualDeadline)
+        await store.setManualDeadline(for: "4:8", date: now.addingTimeInterval(-60))
+        XCTAssertEqual(store.taskIndex.byID["4:8"]?.bucket(now: now), .overdue)
+    }
+
+    @MainActor
+    func testManualDeadlinePersistsAcrossBootAndSyncAndIsIsolatedByAccount() async throws {
+        let suite = "ManualDeadlinePersistence-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "native.didClearFlutterState.v1")
+        let snapshot = snapshotFixture()
+        defaults.set(try JSONEncoder().encode(snapshot), forKey: "native.snapshot.v1")
+        var prefs = NativePreferences()
+        prefs.theme = "dark"
+        defaults.set(try JSONEncoder().encode(prefs), forKey: "native.preferences.v1")
+        let store = NativeAppStore(defaults: defaults)
+        await store.boot()
+        let date = try XCTUnwrap(Beijing.parse("2026-10-18T23:59:00+08:00"))
+        await store.setManualDeadline(for: "4:8", date: date)
+        let restored = NativeAppStore(defaults: defaults)
+        await restored.boot()
+        XCTAssertEqual(restored.preferences.theme, "dark")
+        XCTAssertEqual(restored.taskIndex.byID["4:8"]?.dueAt, date)
+        await restored.applySnapshot(snapshot)
+        XCTAssertEqual(restored.manualDeadline(for: "4:8"), date)
+        await restored.logout()
+        XCTAssertTrue(restored.tasks.isEmpty)
+        var other = snapshot
+        other.profile.id = 2
+        await restored.applySnapshot(other)
+        XCTAssertNil(restored.manualDeadline(for: "4:8"))
+        XCTAssertNil(restored.taskIndex.byID["4:8"]?.dueAt)
+        await restored.setManualDeadline(for: "4:8", date: date.addingTimeInterval(3600))
+        await restored.applySnapshot(snapshot)
+        XCTAssertEqual(restored.taskIndex.byID["4:8"]?.dueAt, date)
+        await restored.setManualDeadline(for: "4:8", date: nil)
+        let cleared = NativeAppStore(defaults: defaults)
+        await cleared.applySnapshot(snapshot)
+        XCTAssertNil(cleared.manualDeadline(for: "4:8"))
+        XCTAssertNil(cleared.taskIndex.byID["4:8"]?.dueAt)
+        await cleared.applySnapshot(other)
+        XCTAssertEqual(cleared.taskIndex.byID["4:8"]?.dueAt, date.addingTimeInterval(3600))
+    }
+
     private func snapshotFixture() -> NativeSnapshot {
         let row = NativeAssignment(id: 8, courseID: 4, courseName: "数学", name: "实验报告",
                                    groupID: 1, groupName: "平时", dueAt: nil,

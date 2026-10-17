@@ -132,6 +132,7 @@ struct NativeTask: Identifiable, Hashable, Sendable {
     var dueAt: Date?
     var url: URL?
     var assignment: NativeAssignment?
+    var hasManualDeadline = false
 
     func bucket(now: Date = Date()) -> TaskBucket {
         guard let dueAt else { return .undated }
@@ -280,6 +281,18 @@ struct NativeTaskIndex: Sendable {
             return updated
         })
     }
+
+    func applyingDeadlines(_ deadlines: [String: Date]) -> NativeTaskIndex {
+        guard !deadlines.isEmpty else { return self }
+        return NativeTaskIndex(tasks: tasks.map { task in
+            var updated = task
+            if let due = deadlines[task.id] {
+                updated.dueAt = due
+                updated.hasManualDeadline = true
+            }
+            return updated
+        }.sorted(by: NativeDomain.taskPrecedes))
+    }
 }
 
 struct NativeMonthGrid {
@@ -357,13 +370,15 @@ enum NativeDomain {
                                      dueAt: dueAt, url: item.htmlURL.flatMap(URL.init(string:)),
                                      assignment: nil)
         }
-        return values.values.sorted {
-            switch ($0.dueAt, $1.dueAt) {
-            case let (a?, b?): a == b ? $0.id < $1.id : a < b
-            case (_?, nil): true
-            case (nil, _?): false
-            case (nil, nil): $0.id < $1.id
-            }
+        return values.values.sorted(by: taskPrecedes)
+    }
+
+    static func taskPrecedes(_ lhs: NativeTask, _ rhs: NativeTask) -> Bool {
+        switch (lhs.dueAt, rhs.dueAt) {
+        case let (a?, b?): a == b ? lhs.id < rhs.id : a < b
+        case (_?, nil): true
+        case (nil, _?): false
+        case (nil, nil): lhs.id < rhs.id
         }
     }
 

@@ -110,6 +110,57 @@ final class NativeRunnerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["提醒与日历"].exists)
         capture(app, "assignment-detail")
     }
+    func testManualDeadlineCanBeCancelledSavedShownInCalendarAndCleared() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--ui-testing-undated"]
+        app.launch()
+        tab(app, "作业").tap()
+        let assignment = app.staticTexts["演示作业：阅读报告"]
+        XCTAssertTrue(assignment.waitForExistence(timeout: 5))
+        assignment.tap()
+        let edit = app.buttons["edit-manual-deadline"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        XCTAssertTrue(app.navigationBars["手动截止时间"].waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
+        XCTAssertFalse(app.staticTexts["manual-deadline-active"].exists)
+        edit.tap()
+        capture(app, "manual-deadline-editor")
+        app.buttons["save-manual-deadline"].tap()
+        XCTAssertTrue(app.staticTexts["manual-deadline-active"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '23:59'")).firstMatch.exists)
+        capture(app, "manual-deadline-detail")
+
+        let back = app.navigationBars["作业详情"].buttons.firstMatch
+        if back.exists && back.isHittable { back.tap() }
+        app.buttons["日历"].tap()
+        XCTAssertTrue(app.buttons["calendar-next-month"].waitForExistence(timeout: 5))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
+        let now = Date()
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: now))
+        if calendar.component(.month, from: now) != calendar.component(.month, from: tomorrow) {
+            app.buttons["calendar-next-month"].tap()
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let day = app.buttons["calendar-day-\(formatter.string(from: tomorrow))"]
+        XCTAssertTrue(day.label.contains("1 项作业"))
+        day.tap()
+        for _ in 0..<3 where !assignment.isHittable { app.scrollViews["task-calendar"].swipeUp() }
+        XCTAssertTrue(assignment.isHittable)
+        assignment.tap()
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        app.buttons["clear-manual-deadline"].tap()
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["manual-deadline-active"].exists)
+        XCTAssertTrue(app.staticTexts["无截止时间"].exists)
+    }
+
     func testLargeAssignmentListScrollingPerformance() throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Performance regression targets the reported iOS 26 environment") }
         let app = XCUIApplication()

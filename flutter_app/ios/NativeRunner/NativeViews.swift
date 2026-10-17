@@ -226,6 +226,7 @@ struct TaskRowLabel: View {
                 Text(task.title).font(.body).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
                 Text(task.courseName).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(Beijing.label(task.dueAt)).font(.footnote).foregroundStyle(deadlineColor)
+                if task.hasManualDeadline { Text("手动截止").font(.caption).foregroundStyle(.secondary) }
                 if task.status == .submitted { Text(task.assignment?.score == nil ? "已提交待评分" : "已评分").font(.footnote).foregroundStyle(.secondary) }
             }
         }.padding(.vertical, 3)
@@ -1114,6 +1115,7 @@ struct AssignmentDetailView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var confirmCalendar = false
+    @State private var editingDeadline = false
 
     init(task: NativeTask, store: NativeAppStore) {
         self.task = task
@@ -1125,9 +1127,9 @@ struct AssignmentDetailView: View {
         store.preferences.remindersEnabled && !store.preferences.mutedTasks.contains(task.id)
     }
     private var canRemind: Bool {
-        guard let due = task.dueAt, let snapshot = store.snapshot,
-              let course = snapshot.courses.first(where: { $0.id == task.courseID }) else { return false }
-        return task.status == .pending && course.termID == NativeDomain.defaultTermID(in: snapshot) && due > Date()
+        guard let due = currentTask.dueAt, let snapshot = store.snapshot,
+              let course = snapshot.courses.first(where: { $0.id == currentTask.courseID }) else { return false }
+        return currentTask.status == .pending && course.termID == NativeDomain.defaultTermID(in: snapshot) && due > Date()
     }
 
     var body: some View {
@@ -1136,6 +1138,15 @@ struct AssignmentDetailView: View {
                 Text(currentTask.courseName).font(.subheadline).foregroundStyle(.secondary)
                 NativeLabeledContent(title: "状态", value: status)
                 NativeLabeledContent(title: "截止时间", value: Beijing.label(currentTask.dueAt, absolute: true))
+                if currentTask.hasManualDeadline {
+                    Text("当前使用手动截止时间").font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("manual-deadline-active")
+                    NativeLabeledContent(title: "学校截止时间", value: Beijing.label(store.schoolDeadline(for: task.id), absolute: true))
+                }
+                Button(currentTask.hasManualDeadline ? "修改手动截止时间" : "设置手动截止时间") {
+                    editingDeadline = true
+                }
+                .accessibilityIdentifier("edit-manual-deadline")
                 if let assignment = currentTask.assignment, let score = assignment.score {
                     NativeLabeledContent(title: "得分", value: "\(score.formatted(.number.precision(.fractionLength(0...2)))) / \(assignment.pointsPossible.map { $0.formatted(.number.precision(.fractionLength(0...2))) } ?? "—")")
                 }
@@ -1171,7 +1182,7 @@ struct AssignmentDetailView: View {
             Section("提醒与日历") {
                 if canRemind {
                     Toggle("此作业提醒", isOn: Binding(get: { isReminderOn }, set: { enabled in
-                        Task { await store.setTaskReminder(task, enabled: enabled) }
+                        Task { await store.setTaskReminder(currentTask, enabled: enabled) }
                     }))
                     Text(store.preferences.remindersEnabled ? "包含在截止日的汇总提醒中" : "开启后将允许当前学期作业提醒")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -1212,6 +1223,9 @@ struct AssignmentDetailView: View {
             }
         }
         .task(id: task.id) { await load() }
+        .sheet(isPresented: $editingDeadline) {
+            ManualDeadlineEditor(task: currentTask, store: store)
+        }
         .confirmationDialog(calendarConfirmationTitle, isPresented: $confirmCalendar, titleVisibility: .visible) {
             Button("继续添加") { Task { _ = await store.presentCalendarEditor(for: currentTask) } }
             Button("取消", role: .cancel) { }
@@ -1256,6 +1270,68 @@ struct AssignmentDetailView: View {
         catch let loadError {
             error = loadError.localizedDescription
             detail = NativeAssignmentDetail(description: task.assignment?.descriptionExcerpt ?? "", summary: "", summaryError: nil, links: [])
+        }
+    }
+}
+
+private struct ManualDeadlineEditor: View {
+    let task: NativeTask
+    @ObservedObject var store: NativeAppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var date: Date
+    @State private var saving = false
+
+    init(task: NativeTask, store: NativeAppStore) {
+        self.task = task
+        self.store = store
+        let tomorrow = Beijing.addDays(1, to: Beijing.day(Date()))
+        let suggested = Beijing.calendar.date(bySettingHour: 23, minute: 59, second: 0, of: tomorrow) ?? tomorrow
+        _date = State(initialValue: task.dueAt ?? suggested)
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    Text(task.title)
+                    DatePicker("截止日期与时间", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                        .environment(\.timeZone, Beijing.timeZone)
+                        .environment(\.calendar, Beijing.calendar)
+                        .accessibilityIdentifier("manual-deadline-picker")
+                } footer: {
+                    Text("北京时间。保存后用于本机的作业排序、月历和已开启的提醒，不修改学校记录。")
+                }
+                if task.hasManualDeadline {
+                    Section {
+                        Button("清除手动截止时间", role: .destructive) { save(nil) }
+                            .accessibilityIdentifier("clear-manual-deadline")
+                    } footer: {
+                        Text("清除后恢复学校截止时间；学校未设置时恢复为无截止时间。")
+                    }
+                }
+            }
+            .disabled(saving)
+            .navigationTitle("手动截止时间")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }.disabled(saving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save(date) }.disabled(saving)
+                        .accessibilityIdentifier("save-manual-deadline")
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .interactiveDismissDisabled(saving)
+    }
+
+    private func save(_ value: Date?) {
+        saving = true
+        Task {
+            await store.setManualDeadline(for: task.id, date: value)
+            dismiss()
         }
     }
 }
