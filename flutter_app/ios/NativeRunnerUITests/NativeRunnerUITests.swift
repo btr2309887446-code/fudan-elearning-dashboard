@@ -2,6 +2,46 @@ import XCTest
 import UIKit
 
 final class NativeRunnerUITests: XCTestCase {
+    func testPersonalTaskCreateAndComplete() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing"]
+        app.launch()
+        tab(app, "任务").tap()
+        app.buttons["new-personal-task"].tap()
+        let title = app.textFields["personal-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.tap(); title.typeText("Personal reading")
+        app.switches["personal-has-deadline"].tap()
+        capture(app, "personal-task-editor")
+        app.buttons["personal-save"].tap()
+        let row = app.staticTexts["Personal reading"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.buttons["personal-complete"].waitForExistence(timeout: 5))
+        capture(app, "personal-task-detail")
+        app.buttons["personal-complete"].tap()
+        XCTAssertTrue(app.buttons["恢复为未完成"].waitForExistence(timeout: 5))
+    }
+
+    func testChangesCenterShowsDiffAndMarksRead() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--ui-testing-changes"]
+        app.launch()
+        let entry = app.buttons["changes-center"]
+        let link = app.descendants(matching: .any).matching(identifier: "changes-center").firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 5))
+        if entry.exists { entry.tap() } else { link.tap() }
+        let row = app.descendants(matching: .any).matching(identifier: "change-fixture-change").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        capture(app, "changes-center")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["此前"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["现在"].exists)
+        capture(app, "change-detail")
+        app.navigationBars["变化详情"].buttons.firstMatch.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.contains("已读"))
+    }
     private func capture(_ app: XCUIApplication, _ name: String) {
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
         let screenshot = app.screenshot()
@@ -44,7 +84,7 @@ final class NativeRunnerUITests: XCTestCase {
         app.launchArguments += ["--ui-testing"]
         app.launch()
 
-        for title in ["今日", "作业", "课程", "我的"] {
+        for title in ["今日", "任务", "课程", "我的"] {
             XCTAssertTrue(
                 tab(app, title).waitForExistence(timeout: 5),
                 "Missing \(title) tab. Accessibility hierarchy: \(app.debugDescription)"
@@ -54,8 +94,8 @@ final class NativeRunnerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["未来七天"].exists)
         capture(app, "today")
 
-        tab(app, "作业").tap()
-        XCTAssertTrue(app.navigationBars["作业"].waitForExistence(timeout: 5))
+        tab(app, "任务").tap()
+        XCTAssertTrue(app.navigationBars["任务"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["演示作业：阅读报告"].waitForExistence(timeout: 5))
         capture(app, "assignments-list")
 
@@ -79,7 +119,7 @@ final class NativeRunnerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing"]
         app.launch()
-        tab(app, "作业").tap()
+        tab(app, "任务").tap()
 
         let calendarButton = app.buttons["日历"]
         XCTAssertTrue(calendarButton.waitForExistence(timeout: 5))
@@ -114,7 +154,7 @@ final class NativeRunnerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--ui-testing-undated"]
         app.launch()
-        tab(app, "作业").tap()
+        tab(app, "任务").tap()
         let assignment = app.staticTexts["演示作业：阅读报告"]
         XCTAssertTrue(assignment.waitForExistence(timeout: 5))
         assignment.tap()
@@ -148,7 +188,7 @@ final class NativeRunnerUITests: XCTestCase {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         let day = app.buttons["calendar-day-\(formatter.string(from: tomorrow))"]
-        XCTAssertTrue(day.label.contains("1 项作业"))
+        XCTAssertTrue(day.label.contains("1 项任务"))
         day.tap()
         for _ in 0..<3 where !assignment.isHittable { app.scrollViews["task-calendar"].swipeUp() }
         XCTAssertTrue(assignment.isHittable)
@@ -166,8 +206,8 @@ final class NativeRunnerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--ui-testing-large-data"]
         app.launch()
-        XCTAssertTrue(tab(app, "作业").waitForExistence(timeout: 15))
-        tab(app, "作业").tap()
+        XCTAssertTrue(tab(app, "任务").waitForExistence(timeout: 15))
+        tab(app, "任务").tap()
         let list = app.descendants(matching: .any).matching(identifier: "task-list").firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 5))
         let options = XCTMeasureOptions()
@@ -185,7 +225,7 @@ final class NativeRunnerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--ui-testing-large-data"]
         app.launch()
-        tab(app, "作业").tap()
+        tab(app, "任务").tap()
         let calendarButton = app.buttons["日历"]
         let courseFilter = app.buttons["task-course-filter"]
         XCTAssertTrue(calendarButton.waitForExistence(timeout: 5))
@@ -218,8 +258,8 @@ final class NativeRunnerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--ui-testing-large-data", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        XCTAssertTrue(tab(app, "作业").waitForExistence(timeout: 15))
-        tab(app, "作业").tap()
+        XCTAssertTrue(tab(app, "任务").waitForExistence(timeout: 15))
+        tab(app, "任务").tap()
         XCTAssertTrue(app.buttons["日历"].waitForExistence(timeout: 5))
         for _ in 0..<6 {
             app.buttons["日历"].tap()
@@ -246,7 +286,7 @@ final class NativeRunnerUITests: XCTestCase {
         if back.exists && back.isHittable { back.tap() }
         // A new tab round trip must preserve a valid task navigation container.
         tab(app, "今日").tap()
-        tab(app, "作业").tap()
+        tab(app, "任务").tap()
         if !app.buttons["日历"].isHittable && back.exists && back.isHittable { back.tap() }
         XCTAssertTrue(app.buttons["日历"].waitForExistence(timeout: 5))
         app.buttons["日历"].tap()

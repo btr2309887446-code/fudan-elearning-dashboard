@@ -6,6 +6,7 @@ enum TaskStatus: String, Codable, CaseIterable, Identifiable, Sendable {
     case ignored
 
     var id: String { rawValue }
+    var filterTitle: String { switch self { case .pending: "待处理"; case .submitted: "已完成"; case .ignored: "无需提交" } }
     var title: String {
         switch self {
         case .pending: "未提交"
@@ -21,7 +22,7 @@ enum TaskBucket: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .overdue: "已逾期未交"
+        case .overdue: "已逾期"
         case .today: "今天截止"
         case .week: "未来七天"
         case .later: "其他日期"
@@ -121,6 +122,7 @@ struct NativeSnapshot: Codable, Sendable {
     var todo: [NativeTodo]
     var warnings: [String]
     var reusedCourseCount: Int
+    var changeBatches: [ChangeBatch]?
 }
 
 struct NativeTask: Identifiable, Hashable, Sendable {
@@ -133,6 +135,7 @@ struct NativeTask: Identifiable, Hashable, Sendable {
     var url: URL?
     var assignment: NativeAssignment?
     var hasManualDeadline = false
+    var personal: PersonalOccurrence?
 
     func bucket(now: Date = Date()) -> TaskBucket {
         guard let dueAt else { return .undated }
@@ -265,7 +268,7 @@ struct NativeTaskIndex: Sendable {
         self.tasks = tasks
         byID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         pendingByCourse = tasks.reduce(into: [:]) { counts, task in
-            if task.status == .pending, let id = task.courseID { counts[id, default: 0] += 1 }
+            if task.personal == nil, task.status == .pending, let id = task.courseID { counts[id, default: 0] += 1 }
         }
     }
 

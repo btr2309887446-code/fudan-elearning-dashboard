@@ -11,6 +11,15 @@ final class NativeNotificationRouter: ObservableObject {
     static let shared = NativeNotificationRouter()
     var handler: ((String) -> Void)?
     private var pendingDay: String?
+    private var taskHandler: ((Int, String) -> Void)?
+    private var pendingTask: (Int, String)?
+    func receiveTask(account: Int, id: String) {
+        if let taskHandler { taskHandler(account, id) } else { pendingTask = (account, id) }
+    }
+    func installTask(_ handler: @escaping (Int, String) -> Void) {
+        taskHandler = handler
+        if let (account, id) = pendingTask { pendingTask = nil; handler(account, id) }
+    }
 
     func receive(_ day: String) {
         guard Beijing.parseKey(day) != nil else { return }
@@ -58,7 +67,10 @@ final class NativeAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                didReceive response: UNNotificationResponse,
                                withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let day = response.notification.request.content.userInfo["day"] as? String {
+        let info = response.notification.request.content.userInfo
+        if let account = info["account"] as? Int, let id = info["taskID"] as? String {
+            Task { @MainActor in NativeNotificationRouter.shared.receiveTask(account: account, id: id) }
+        } else if let day = info["day"] as? String {
             Task { @MainActor in NativeNotificationRouter.shared.receive(day) }
         }
         completionHandler()
@@ -76,9 +88,9 @@ enum NativeNotifications {
         try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
     }
 
-    static func replace(with reminders: [NativeReminderPlanner.Reminder]) async throws {
+    static func replace(with reminders: [NativeReminderPlanner.Reminder], personal: [PersonalNotification] = []) async throws {
         let center = UNUserNotificationCenter.current()
-        center.removeAllPendingNotificationRequests()
+        var requests: [(Date, UNNotificationRequest)] = []
         for reminder in reminders {
             let content = UNMutableNotificationContent()
             content.title = reminder.title
@@ -91,8 +103,25 @@ enum NativeNotifications {
             let request = UNNotificationRequest(identifier: "deadline-\(reminder.id)",
                                                 content: content,
                                                 trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
-            try await center.add(request)
+            requests.append((reminder.at, request))
         }
+        for reminder in personal {
+            let content = UNMutableNotificationContent()
+            content.title = "个人任务提醒"
+            content.body = reminder.title
+            content.sound = .default
+            content.threadIdentifier = "personal-tasks"
+            content.userInfo = ["account": reminder.account, "taskID": reminder.taskID]
+            var components = Beijing.calendar.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.at)
+            components.timeZone = Beijing.timeZone
+            requests.append((reminder.at, UNNotificationRequest(identifier: reminder.id, content: content,
+                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))))
+        }
+        let selected = requests.sorted { $0.0 == $1.0 ? $0.1.identifier < $1.1.identifier : $0.0 < $1.0 }.prefix(60)
+        let desired = Set(selected.map { $0.1.identifier })
+        let pending = await center.pendingNotificationRequests()
+        center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { !desired.contains($0) })
+        for (_, request) in selected { try await center.add(request) }
     }
 
     static func cancelAll() {

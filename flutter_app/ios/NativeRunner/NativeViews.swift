@@ -16,6 +16,7 @@ struct NativeLabeledContent: View {
 
 struct NativeRootView: View {
     @StateObject var store: NativeAppStore
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -34,6 +35,12 @@ struct NativeRootView: View {
         .tint(.blue)
         .preferredColorScheme(colorScheme)
         .task { await store.boot() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                store.ensurePersonalRange(through: Beijing.addDays(90, to: Date()))
+                Task { await store.reconcileReminders() }
+            }
+        }
     }
 
     private var colorScheme: ColorScheme? {
@@ -56,7 +63,7 @@ struct MainTabsView: View {
                 .tabItem { Label("今日", systemImage: "sun.max") }
                 .tag(0)
             TasksView(store: store)
-                .tabItem { Label("作业", systemImage: "checkmark.circle") }
+                .tabItem { Label("任务", systemImage: "checkmark.circle") }
                 .tag(1)
             CoursesView(store: store)
                 .tabItem { Label("课程", systemImage: "book.closed") }
@@ -68,6 +75,9 @@ struct MainTabsView: View {
         }
         .onChange(of: store.reminderDay) { day in
             if day != nil { selection = 1 }
+        }
+        .sheet(item: $store.notificationTask) { task in
+            NavigationView { TaskDetailDestination(task: task, store: store) }.navigationViewStyle(.stack)
         }
         .sheet(item: $store.calendarTask) { task in
             if let due = task.dueAt {
@@ -144,6 +154,15 @@ struct TodayView: View {
                 Text(Beijing.key(Date()).replacingOccurrences(of: "-", with: "/"))
             }
 
+            Section("变化中心") {
+                NavigationLink(destination: ChangesView(store: store)) {
+                    Label("变化中心 · \(store.unreadChanges) 条未读", systemImage: "bell.badge")
+                }.accessibilityIdentifier("changes-center")
+                ForEach(store.localAccount.events.prefix(3)) { event in
+                    NavigationLink(destination: ChangeDetailView(event: event, store: store)) { ChangeRow(event: event) }
+                }
+                if let error = store.localError { Text(error).foregroundStyle(.red) }
+            }
             if !overdue.isEmpty {
                 Section {
                     DisclosureGroup(isExpanded: $showOverdue) {
@@ -226,8 +245,9 @@ struct TaskRowLabel: View {
                 Text(task.title).font(.body).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
                 Text(task.courseName).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(Beijing.label(task.dueAt)).font(.footnote).foregroundStyle(deadlineColor)
+                if task.personal != nil { Text("个人任务").font(.caption).foregroundStyle(.secondary) }
                 if task.hasManualDeadline { Text("手动截止").font(.caption).foregroundStyle(.secondary) }
-                if task.status == .submitted { Text(task.assignment?.score == nil ? "已提交待评分" : "已评分").font(.footnote).foregroundStyle(.secondary) }
+                if task.status == .submitted { Text(task.personal != nil ? "已完成" : (task.assignment?.score == nil ? "已提交待评分" : "已评分")).font(.footnote).foregroundStyle(.secondary) }
             }
         }.padding(.vertical, 3)
     }
@@ -248,7 +268,7 @@ struct TaskNavigationRow: View {
     let task: NativeTask
     let store: NativeAppStore
     var body: some View {
-        NavigationLink(destination: AssignmentDetailView(task: task, store: store)) {
+        NavigationLink(destination: TaskDetailDestination(task: task, store: store)) {
             TaskRowLabel(task: task)
         }
     }
@@ -270,6 +290,9 @@ struct TasksView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var search = ""
+    @State private var taskSource = "all"
+    @State private var creatingPersonal = false
+    @State private var listLimit = 100
     @State private var calendarMode = false
     @State private var selectedCourse: Int?
     @State private var selectedTaskID: String?
@@ -281,6 +304,7 @@ struct TasksView: View {
     private var filtered: [NativeTask] {
         let now = Date()
         return store.selectedTasks.filter { task in
+            (taskSource == "all" || (taskSource == "personal" ? task.personal != nil : task.personal == nil)) &&
             task.status == status && (selectedCourse == nil || task.courseID == selectedCourse) &&
             (store.taskBucket == nil || task.bucket(now: now) == store.taskBucket) &&
             (search.isEmpty || "\(task.title) \(task.courseName)".localizedCaseInsensitiveContains(search))
@@ -302,7 +326,7 @@ struct TasksView: View {
                         // Register once on a stable ancestor, outside the scrolling content.
                         .navigationDestination(for: String.self) { id in
                             if let task = store.taskIndex.byID[id] {
-                                AssignmentDetailView(task: task, store: store)
+                                TaskDetailDestination(task: task, store: store)
                             } else {
                                 EmptyState(title: "此作业已不在同步数据中。", systemImage: "doc.text")
                             }
@@ -314,6 +338,8 @@ struct TasksView: View {
                 NavigationView { content }.navigationViewStyle(.stack)
             }
         }
+        .sheet(isPresented: $creatingPersonal) { PersonalTaskEditor(store: store) }
+        .onChange(of: month) { value in store.ensurePersonalRange(through: Beijing.calendar.date(byAdding: .month, value: 1, to: value)!) }
         .onChange(of: store.reminderDay) { value in
             guard let value, let day = Beijing.parseKey(value) else { return }
             path = []
@@ -328,23 +354,25 @@ struct TasksView: View {
 
     @ViewBuilder private var selectedDetail: some View {
         if let id = selectedTaskID, let task = store.taskIndex.byID[id] {
-            AssignmentDetailView(task: task, store: store)
+            TaskDetailDestination(task: task, store: store)
         } else {
-            EmptyState(title: "选择一项作业查看详情。", systemImage: "doc.text")
+            EmptyState(title: "选择一项任务查看详情。", systemImage: "doc.text")
         }
     }
 
     private var content: some View {
         listBody
-            .navigationTitle("作业")
+            .navigationTitle("任务")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { listToolbar }
-            .searchable(text: $search, prompt: "搜索作业或课程")
+            .searchable(text: $search, prompt: "搜索任务或课程")
     }
 
     private var listToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .navigationBarTrailing) {
             TermChooser(store: store)
+            Button { creatingPersonal = true } label: { Image(systemName: "plus") }
+                .accessibilityLabel("新建个人任务").accessibilityIdentifier("new-personal-task")
             Button { Task { await store.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                 .disabled(store.isBusy || !store.isLoggedIn).accessibilityLabel("同步")
         }
@@ -356,15 +384,20 @@ struct TasksView: View {
                 Text("列表").tag(false)
                 Text("日历").tag(true)
             }.pickerStyle(.segmented)
+            Picker("任务来源", selection: $taskSource) {
+                Text("全部").tag("all")
+                Text("学校作业").tag("school")
+                Text("个人任务").tag("personal")
+            }.pickerStyle(.segmented).accessibilityIdentifier("task-source-filter")
             HStack {
                 Menu {
                     ForEach(TaskStatus.allCases) { value in
                         Button { store.setTaskFilter(value) } label: {
-                            if status == value { Label(value.title, systemImage: "checkmark") }
-                            else { Text(value.title) }
+                            if status == value { Label(value.filterTitle, systemImage: "checkmark") }
+                            else { Text(value.filterTitle) }
                         }
                     }
-                } label: { Label(status.title, systemImage: "line.3.horizontal.decrease.circle") }
+                } label: { Label(status.filterTitle, systemImage: "line.3.horizontal.decrease.circle") }
                 .accessibilityIdentifier("task-status-filter")
                 Spacer()
                 Menu {
@@ -411,7 +444,7 @@ struct TasksView: View {
                                 .font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 16)
                             LazyVStack(alignment: .leading, spacing: 0) {
                                 if dayTasks.isEmpty {
-                                    Text("这一天没有符合条件的作业。")
+                                    Text("这一天没有符合条件的任务。")
                                         .foregroundStyle(.secondary).padding(16)
                                 }
                                 ForEach(dayTasks) { task in
@@ -421,7 +454,7 @@ struct TasksView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                            Text("北京时间 · 无截止时间的作业请在列表中查看")
+                            Text("北京时间 · 无截止时间的任务请在列表中查看")
                                 .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
                         }
                         .padding(16)
@@ -435,13 +468,18 @@ struct TasksView: View {
                     let groups = Dictionary(grouping: visibleTasks) { $0.bucket(now: now) }
                     List {
                         if visibleTasks.isEmpty {
-                            Section { EmptyState(title: "没有符合条件的作业。试试其他状态或课程。", systemImage: "magnifyingglass") }
+                            Section { EmptyState(title: "没有符合条件的任务。试试其他状态或课程。", systemImage: "magnifyingglass") }
                         }
                         ForEach(TaskBucket.allCases) { bucket in
                             if let rows = groups[bucket], !rows.isEmpty {
-                                Section(bucket.title) { ForEach(rows) { task in taskRow(task) } }
+                                Section(bucket.title) {
+                                    ForEach(rows.prefix(listLimit)) { task in taskRow(task) }
+                                    if rows.count > listLimit { Button("显示更多任务") { listLimit += 100 } }
+                                }
                             }
                         }
+                        Section { Button("加载更多未来任务") { store.ensurePersonalRange(through: Beijing.addDays(90, to: store.personalHorizon)) } }
+                        if let error = store.localError { Section { Text(error).foregroundStyle(.red) } }
                     }
                     .id("task-list")
                     .accessibilityIdentifier("task-list")
@@ -473,7 +511,7 @@ struct TasksView: View {
             NavigationLink(value: task.id) { TaskRowLabel(task: task) }
                 .accessibilityIdentifier("task-row-\(task.id)")
         } else {
-            NavigationLink(destination: AssignmentDetailView(task: task, store: store)) {
+            NavigationLink(destination: TaskDetailDestination(task: task, store: store)) {
                 TaskRowLabel(task: task)
             }.accessibilityIdentifier("task-row-\(task.id)")
         }
@@ -546,7 +584,7 @@ struct MonthGrid: View {
                 .background(date == day ? Color.accentColor : Color.clear, in: Circle())
                 .contentShape(Rectangle())
             }
-            .accessibilityLabel("\(Beijing.fullDayTitle(date))，\(count) 项作业")
+            .accessibilityLabel("\(Beijing.fullDayTitle(date))，\(count) 项任务")
             .accessibilityIdentifier("calendar-day-\(Beijing.key(date))")
             .accessibilityAddTraits(date == day ? [.isSelected] : [])
         } else {
@@ -1351,6 +1389,14 @@ struct ProfileView: View {
                 }.padding(.vertical, 4)
             }
 
+            Section("个人任务提醒") {
+                Toggle("个人任务提醒", isOn: Binding(get: { store.localAccount.personalRemindersEnabled }, set: { value in
+                    Task { await store.setPersonalReminders(value) }
+                }))
+                Text("学校与个人提醒合计安排未来 30 天内最近 60 条，打开应用时补充。长期不打开应用可能无法持续提醒。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let error = store.localError { Text(error).foregroundStyle(.red) }
+            }
             Section("作业提醒") {
                 Toggle("每日截止提醒", isOn: Binding(get: { store.preferences.remindersEnabled }, set: { value in
                     Task { await store.setRemindersEnabled(value) }

@@ -13,6 +13,17 @@ struct NativeAssignmentDetail {
 final class NativeAppStore: ObservableObject {
     @Published private(set) var snapshot: NativeSnapshot?
     @Published private(set) var taskIndex = NativeTaskIndex()
+    @Published var localAccount = NativeLocalAccount()
+    @Published var localSaving = false
+    @Published var localError: String?
+    @Published var personalHorizon = Beijing.addDays(90, to: Date())
+    @Published var notificationTask: NativeTask?
+    var localAccountID: Int?
+    var localLoadFailed = false
+    let localRepository: NativeLocalRepository
+    var pendingPersonalNotification: (Int, String)?
+    private var reminderReconcileRunning = false
+    private var reminderNeedsUpdate = false
     private var sourceTaskIndex = NativeTaskIndex()
     private var manualDeadlinesByAccount: [String: [String: Date]] = [:]
     private let deadlinesKey = "native.manualDeadlines.v1"
@@ -46,8 +57,9 @@ final class NativeAppStore: ObservableObject {
     private var snapshotKey = "native.snapshot.v1"
     private var prefsKey = "native.preferences.v1"
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, localRepository: NativeLocalRepository = NativeLocalRepository()) {
         self.defaults = defaults
+        self.localRepository = localRepository
         NativeFreshStart.run(defaults: defaults)
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
             preferences = NativePreferences()
@@ -74,6 +86,11 @@ final class NativeAppStore: ObservableObject {
         NativeNotificationRouter.shared.install { [weak self] day in
             self?.reminderDay = day
         }
+        NativeNotificationRouter.shared.installTask { [weak self] account, id in
+            guard let self else { return }
+            self.pendingPersonalNotification = (account, id)
+            self.openPendingPersonalNotification()
+        }
     }
 
     var isLoggedIn: Bool { !cookies.isEmpty }
@@ -87,10 +104,33 @@ final class NativeAppStore: ObservableObject {
         let prepared = await Task.detached(priority: .userInitiated) {
             NativeTaskIndex(snapshot: value)
         }.value
+        if localAccountID != value.profile.id {
+            do {
+                let saved = uiTesting ? NativeLocalAccount() : try await localRepository.load(account: value.profile.id)
+                guard generation == snapshotGeneration else { return false }
+                localAccount = saved
+                if uiTesting && ProcessInfo.processInfo.arguments.contains("--ui-testing-changes") {
+                    let old = ChangeResource(id: "8", kind: .assignment, courseID: 4, courseName: "演示课程", title: "截止时间调整", fields: ["截止时间": "无截止时间"])
+                    var updated = old
+                    updated.fields["截止时间"] = String(Date().addingTimeInterval(86400).timeIntervalSince1970)
+                    localAccount.events = [ChangeEvent(id: "fixture-change", resource: updated, before: old, changes: ["截止时间"], discoveredAt: Date())]
+                }
+                localAccountID = value.profile.id
+                localLoadFailed = false
+                localError = nil
+            } catch {
+                guard generation == snapshotGeneration else { return false }
+                localAccount = NativeLocalAccount()
+                localAccountID = value.profile.id
+                localLoadFailed = true
+                localError = "无法读取本地任务，原文件已保留：\(error.localizedDescription)"
+            }
+        }
         guard generation == snapshotGeneration, !Task.isCancelled else { return false }
         sourceTaskIndex = prepared
         snapshot = value
         rebuildTaskIndex()
+        openPendingPersonalNotification()
         return true
     }
 
@@ -114,9 +154,11 @@ final class NativeAppStore: ObservableObject {
         await reconcileReminders()
     }
 
-    private func rebuildTaskIndex() {
+    func rebuildTaskIndex() {
         let deadlines = snapshot.map { manualDeadlinesByAccount[String($0.profile.id), default: [:]] } ?? [:]
-        taskIndex = sourceTaskIndex.applyingIgnored(preferences.ignoredAssignments).applyingDeadlines(deadlines)
+        let school = sourceTaskIndex.applyingIgnored(preferences.ignoredAssignments).applyingDeadlines(deadlines).tasks
+        let personal = localAccount.series.flatMap { $0.occurrences(through: personalHorizon).map(\.nativeTask) }
+        taskIndex = NativeTaskIndex(tasks: (school + personal).sorted(by: NativeDomain.taskPrecedes))
     }
 
     private func clearSnapshot() {
@@ -125,13 +167,19 @@ final class NativeAppStore: ObservableObject {
         sourceTaskIndex = NativeTaskIndex()
         taskIndex = NativeTaskIndex()
         cachedSnapshotData = nil
+        localAccountID = nil
+        localAccount = NativeLocalAccount()
+        notificationTask = nil
     }
 
     var defaultTermID: Int? { snapshot.map(NativeDomain.defaultTermID(in:)) ?? nil }
     var currentTasks: [NativeTask] {
         guard let id = defaultTermID else { return tasks }
         let ids = Set(snapshot?.courses.filter { $0.termID == id }.map(\.id) ?? [])
-        return tasks.filter { $0.courseID.map(ids.contains) ?? true }
+        return tasks.filter { task in
+            if task.personal != nil, let id = task.courseID, snapshot?.courses.contains(where: { $0.id == id }) == false { return true }
+            return task.courseID.map(ids.contains) ?? true
+        }
     }
     var selectedCourses: [NativeCourse] {
         guard let snapshot else { return [] }
@@ -148,7 +196,10 @@ final class NativeAppStore: ObservableObject {
     }
     var selectedTasks: [NativeTask] {
         let ids = Set(selectedCourses.map(\.id))
-        return tasks.filter { $0.courseID.map(ids.contains) ?? true }
+        return tasks.filter { task in
+            if task.personal != nil, let id = task.courseID, snapshot?.courses.contains(where: { $0.id == id }) == false { return true }
+            return task.courseID.map(ids.contains) ?? true
+        }
     }
 
     func setSelectedTerm(_ token: String) {
@@ -256,6 +307,9 @@ final class NativeAppStore: ObservableObject {
             }
             guard session == sessionGeneration, isLoggedIn else { return }
             guard await applySnapshot(fresh) else { return }
+            if !localLoadFailed {
+                await recordChanges(fresh.changeBatches ?? [], account: fresh.profile.id)
+            }
             let encoded = try await Task.detached(priority: .utility) { try JSONEncoder().encode(fresh) }.value
             guard session == sessionGeneration, isLoggedIn else { return }
             defaults.set(encoded, forKey: snapshotKey)
@@ -329,16 +383,21 @@ final class NativeAppStore: ObservableObject {
     }
 
     func reconcileReminders() async {
-        guard preferences.remindersEnabled, let snapshot else {
-            NativeNotifications.cancelAll()
-            return
+        reminderNeedsUpdate = true
+        guard !reminderReconcileRunning else { return }
+        reminderReconcileRunning = true
+        defer { reminderReconcileRunning = false }
+        while reminderNeedsUpdate {
+            reminderNeedsUpdate = false
+            guard let snapshot else { NativeNotifications.cancelAll(); continue }
+            let termID = NativeDomain.defaultTermID(in: snapshot)
+            let ids = Set(snapshot.courses.filter { termID == nil || $0.termID == termID }.map(\.id))
+            let schoolTasks = self.tasks.filter { $0.personal == nil && ($0.courseID.map(ids.contains) ?? true) }
+            let school = preferences.remindersEnabled ? NativeReminderPlanner.make(tasks: schoolTasks, now: Date(), account: String(snapshot.profile.id), muted: preferences.mutedTasks) : []
+            let personal = localAccount.personalRemindersEnabled ? PersonalNotificationPlan.make(series: localAccount.series, now: Date(), account: snapshot.profile.id) : []
+            do { try await NativeNotifications.replace(with: school, personal: personal) }
+            catch { reminderNotice = "提醒安排失败，请在「我的」中重新开启。" }
         }
-        guard let termID = NativeDomain.defaultTermID(in: snapshot) else { return }
-        let ids = Set(snapshot.courses.filter { $0.termID == termID }.map(\.id))
-        let tasks = self.tasks.filter { $0.courseID.map(ids.contains) ?? true }
-        let reminders = NativeReminderPlanner.make(tasks: tasks, now: Date(), account: String(snapshot.profile.id), muted: preferences.mutedTasks)
-        do { try await NativeNotifications.replace(with: reminders) }
-        catch { reminderNotice = "提醒安排失败，请在「我的」中重新开启。" }
     }
 
     func toggleIgnored(_ assignment: NativeAssignment) async {
@@ -499,7 +558,7 @@ final class NativeAppStore: ObservableObject {
         defaults.removeObject(forKey: cookieKey)
         defaults.removeObject(forKey: snapshotKey)
         NativeSecrets.write(nil, account: "native.password")
-        await NativeNotifications.cancelAll()
+        await reconcileReminders()
         persistPreferences()
         fileTrees = [:]
         errorMessage = nil

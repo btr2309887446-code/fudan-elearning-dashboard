@@ -697,12 +697,14 @@ struct CanvasAPI {
             }
         }
         let now = Date()
+        let previous = previous?.profile.id == CanvasJSON.int(profile["id"]) ? previous : nil
         let oldCourses = Dictionary(uniqueKeysWithValues: (previous?.courses ?? []).map { ($0.id, $0) })
         let oldRows = Dictionary(grouping: previous?.assignments ?? [], by: \.courseID)
         var courses: [NativeCourse] = []
         var rows: [NativeAssignment] = []
         var warnings: [String] = []
         var reusedCourseCount = 0
+        var changeBatches: [ChangeBatch] = []
         let shouldReuse = !full && scope != "all"
         for (index, wire) in wireCourses.sorted(by: { (CanvasJSON.string($0["name"]) ?? "") < (CanvasJSON.string($1["name"]) ?? "") }).enumerated() {
             guard let id = CanvasJSON.int(wire["id"]) else { continue }
@@ -733,11 +735,13 @@ struct CanvasAPI {
                 groups = []
             }
             let assignments: [[String: Any]]
+            var assignmentsSucceeded = true
             do { assignments = try await assignmentsResult }
             catch {
                 try await confirmSessionAfterAuthStatus(error)
                 warnings.append("\(displayName)：作业列表获取失败（\(error.localizedDescription)）")
                 assignments = []
+                assignmentsSucceeded = false
             }
             let groupMap = Dictionary(uniqueKeysWithValues: groups.compactMap { item -> (Int, [String: Any])? in
                 guard let id = CanvasJSON.int(item["id"]) else { return nil }; return (id, item)
@@ -765,9 +769,36 @@ struct CanvasAPI {
                                         htmlURL: CanvasJSON.string(raw["html_url"]),
                                         descriptionExcerpt: NativeDomain.truncate(NativeDomain.summarize(CanvasJSON.string(raw["description"])), limit: 600))
             }
-            rows.append(contentsOf: nativeRows)
+            let effectiveRows = assignmentsSucceeded ? nativeRows : oldRows[id, default: []]
+            if assignmentsSucceeded {
+                let rawByID = Dictionary(assignments.compactMap { raw -> (Int, [String: Any])? in
+                    CanvasJSON.int(raw["id"]).map { ($0, raw) }
+                }, uniquingKeysWith: { _, last in last })
+                let resources = nativeRows.map { row -> ChangeResource in
+                    let html = CanvasJSON.string(rawByID[row.id]?["description"]) ?? ""
+                    let due = Beijing.parse(row.dueAt).map { String($0.timeIntervalSince1970) } ?? "无截止时间"
+                    return ChangeResource(id: String(row.id), kind: .assignment, courseID: id, courseName: displayName,
+                        title: row.name, fields: ["标题": row.name, "截止时间": due, "说明": NativeChangeTracker.fingerprint(html)],
+                        body: NativeDomain.summarize(html), url: row.htmlURL, assignmentID: row.id)
+                }
+                changeBatches.append(ChangeBatch(key: "\(id):assignment", resources: resources))
+                changeBatches.append(ChangeBatch(key: "\(id):grade", resources: nativeRows.map { row in
+                    let grade = row.excused ? "免交" : row.score.map { String($0) } ?? row.grade ?? "未评分"
+                    return ChangeResource(id: String(row.id), kind: .grade, courseID: id, courseName: displayName,
+                        title: row.name, fields: ["成绩": grade, "满分": row.pointsPossible.map { String($0) } ?? "未设置"],
+                        url: row.htmlURL, assignmentID: row.id)
+                }))
+            }
+            for kind in [ChangeKind.announcement, .file] {
+                do { changeBatches.append(try await changeResources(courseID: id, courseName: displayName, kind: kind)) }
+                catch {
+                    try await confirmSessionAfterAuthStatus(error)
+                    warnings.append("\(displayName)：\(kind.title)更新检查失败（\(error.localizedDescription)）")
+                }
+            }
+            rows.append(contentsOf: effectiveRows)
             courses.append(makeCourse(wire, id: id, displayName: displayName, nickname: nicknames[id], termID: termID,
-                                      termWire: termWire, rows: nativeRows))
+                                      termWire: termWire, rows: effectiveRows))
             progress(index + 1, wireCourses.count, displayName)
         }
         var todos: [NativeTodo] = []
@@ -799,7 +830,7 @@ struct CanvasAPI {
                                                      loginID: CanvasJSON.string(profile["login_id"]),
                                                      primaryEmail: CanvasJSON.string(profile["primary_email"])),
                               courses: courses, terms: terms, assignments: rows, todo: todoSorted,
-                              warnings: warnings, reusedCourseCount: reusedCourseCount)
+                              warnings: warnings, reusedCourseCount: reusedCourseCount, changeBatches: changeBatches)
     }
 
     private static func isAuthStatus(_ error: Error) -> Bool {
