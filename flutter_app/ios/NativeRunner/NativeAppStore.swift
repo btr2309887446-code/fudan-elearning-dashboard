@@ -11,6 +11,7 @@ struct NativeAssignmentDetail {
 
 @MainActor
 final class NativeAppStore: ObservableObject {
+    let lectures = LectureStore()
     @Published private(set) var snapshot: NativeSnapshot?
     @Published private(set) var taskIndex = NativeTaskIndex()
     @Published var localAccount = NativeLocalAccount()
@@ -129,6 +130,8 @@ final class NativeAppStore: ObservableObject {
         guard generation == snapshotGeneration, !Task.isCancelled else { return false }
         sourceTaskIndex = prepared
         snapshot = value
+        await lectures.activate(account: value.profile.id, demo: uiTesting ? value.courses : nil)
+        guard generation == snapshotGeneration else { return false }
         rebuildTaskIndex()
         openPendingPersonalNotification()
         return true
@@ -294,7 +297,8 @@ final class NativeAppStore: ObservableObject {
     }
 
     func refresh(force: Bool = false) async {
-        guard !isBusy, isLoggedIn else { return }
+        guard !isBusy else { return }
+        guard isLoggedIn else { await lectures.sync(store: self); return }
         isBusy = true
         errorMessage = nil
         refreshProgress = nil
@@ -327,6 +331,7 @@ final class NativeAppStore: ObservableObject {
             }
             appendLog("同步失败：\(error.localizedDescription)")
         }
+        if session == sessionGeneration { await lectures.sync(store: self) }
     }
 
     func setTheme(_ value: String) {
@@ -551,6 +556,7 @@ final class NativeAppStore: ObservableObject {
         sessionGeneration += 1
         cookies = []
         clearSnapshot()
+        await lectures.activate(account: nil)
         preferences.remindersEnabled = false
         preferences.mutedTasks = []
         preferences.calendarExports = [:]

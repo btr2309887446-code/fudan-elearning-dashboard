@@ -74,7 +74,13 @@ struct ChangeDetailView: View {
                     Text("学校发布时间：" + Beijing.label(date, absolute: true).replacingOccurrences(of: " 截止", with: ""))
                 }
             }
-            ForEach(event.changes, id: \.self) { field in
+            if event.resource.kind == .lecture, let reference = LectureReference.parse(event.resource.id) {
+                Section {
+                    Text(event.before == nil ? "已新增课堂摘要。" : "这节课的摘要已更新，可打开阅读最新内容。")
+                    NavigationLink("打开课堂笔记") { LectureReaderView(store: store, lectures: store.lectures, courseID: event.resource.courseID, reference: reference) }
+                }
+            }
+            ForEach(event.resource.kind == .lecture ? [] : event.changes, id: \.self) { field in
                 Section(field) {
                     if field == "说明" || field == "正文" {
                         if let old = event.before { Text("此前").font(.caption); Text(old.body.isEmpty ? "无正文" : old.body) }

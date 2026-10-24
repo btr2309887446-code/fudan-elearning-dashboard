@@ -32,6 +32,9 @@ struct PersonalTaskDetail: View {
                 if repeated { Text("每一期独立完成，未完成的往期任务会保留。").font(.footnote).foregroundStyle(.secondary) }
             }
             if !current.task.notes.isEmpty { Section("备注") { Text(current.task.notes).textSelection(.enabled) } }
+            if let source = current.task.lectureSource, let courseID = current.task.courseID {
+                Section("课堂来源") { NavigationLink(source.title) { LectureReaderView(store: store, lectures: store.lectures, courseID: courseID, reference: source.reference) } }
+            }
             if !current.task.checklist.isEmpty {
                 Section("子任务 \(current.checked.count)/\(current.task.checklist.count)") {
                     ForEach(current.task.checklist) { item in
@@ -88,9 +91,9 @@ struct PersonalTaskEditor: View {
     @State private var saving = false
     @State private var validation: String?
 
-    init(store: NativeAppStore, occurrence: PersonalOccurrence? = nil, following: Bool = false) {
+    init(store: NativeAppStore, occurrence: PersonalOccurrence? = nil, following: Bool = false, initialDraft: PersonalTaskSeries? = nil) {
         self.store = store; self.occurrence = occurrence; self.following = following
-        var value = occurrence?.task.withoutExceptions ?? PersonalTaskSeries()
+        var value = occurrence?.task.withoutExceptions ?? initialDraft ?? PersonalTaskSeries()
         if let occurrence { value.dueAt = occurrence.dueAt }
         if following, let parent = store.localAccount.series.first(where: { $0.id == occurrence?.seriesID }) {
             value.repeatRule = parent.repeatRule; value.weekdays = parent.weekdays; value.endDate = parent.endDate

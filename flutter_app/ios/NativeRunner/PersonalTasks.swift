@@ -17,6 +17,7 @@ struct PersonalTaskSeries: Codable, Identifiable, Hashable, Sendable {
     var id = UUID().uuidString
     var title = ""
     var notes = ""
+    var lectureSource: LectureTaskSource?
     var courseID: Int?
     var courseName = "个人任务"
     var dueAt: Date?

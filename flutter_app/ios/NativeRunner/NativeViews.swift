@@ -38,7 +38,12 @@ struct NativeRootView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 store.ensurePersonalRange(through: Beijing.addDays(90, to: Date()))
-                Task { await store.reconcileReminders() }
+                Task {
+                    await store.reconcileReminders()
+                    if !store.lectures.connection.locked, Date().timeIntervalSince(store.lectures.connection.lastSynced ?? .distantPast) >= 900 {
+                        await store.lectures.sync(store: store)
+                    }
+                }
             }
         }
     }
@@ -747,13 +752,19 @@ struct CourseDetailView: View {
                 Text(course.courseCode.isEmpty ? course.termName : "\(course.courseCode) · \(course.termName)")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Picker("课程内容", selection: $section) {
-                    Text("作业").tag(0)
-                    Text("成绩").tag(1)
-                    Text("文件").tag(2)
-                }.pickerStyle(.segmented)
+                    Text("概览").tag(0)
+                    Text("课堂笔记").tag(1)
+                    Text("作业").tag(2)
+                    Text("成绩").tag(3)
+                    Text("文件").tag(4)
+                }.pickerStyle(.menu).accessibilityIdentifier("course-content-picker")
             }
 
             if section == 0 {
+                CourseOverviewSections(store: store, lectures: store.lectures, course: course)
+            } else if section == 1 {
+                Section { NavigationLink("阅读课堂笔记") { LectureListView(store: store, lectures: store.lectures, course: course) } }
+            } else if section == 2 {
                 Section {
                     Menu {
                         Button("全部作业") { taskFilter = nil }
@@ -766,7 +777,7 @@ struct CourseDetailView: View {
                         }
                     }
                 } header: { Text("作业") }
-            } else if section == 1 {
+            } else if section == 3 {
                 Section("eLearning 当前得分") {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(score(course.currentScore)).font(.largeTitle.weight(.semibold))
@@ -1433,6 +1444,7 @@ struct ProfileView: View {
             }
 
             Section("作业摘要与帮助") {
+                NavigationLink("课堂笔记连接") { LectureSettingsView(store: store, lectures: store.lectures) }
                 NavigationLink("作业摘要配置") { SummarySettingsView(store: store) }
                 NavigationLink("诊断日志") { DiagnosticsView(store: store) }
                 Link("使用帮助", destination: URL(string: "https://github.com/btr2309887446-code/fudan-elearning-dashboard/blob/master/docs/ios.md")!)
