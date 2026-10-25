@@ -3,6 +3,10 @@ import UIKit
 
 final class LectureUITests: XCTestCase {
     private func capture(_ app: XCUIApplication, _ name: String) {
+        // WebKit exposes the committed DOM to accessibility before its first remote
+        // compositor frame reaches UIKit, especially on a cold iPad simulator.
+        // This pause is only for screenshots; assertions above still wait on real content.
+        Thread.sleep(forTimeInterval: 1.5)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = (UIDevice.current.userInterfaceIdiom == .pad ? "iPad-" : "iPhone-") + name
         attachment.lifetime = .keepAlways; add(attachment)
@@ -34,6 +38,7 @@ final class LectureUITests: XCTestCase {
         app.buttons["PPT 文字"].tap()
         app.buttons["摘要"].tap()
         XCTAssertTrue(app.webViews.staticTexts["这是虚构课堂笔记。"].waitForExistence(timeout: 10))
+        capture(app, "lecture-summary-after-switching")
         app.buttons["课堂事项（2）"].tap()
         let action = app.buttons["阅读本章并整理三个疑问，下次课讨论。"]
         XCTAssertTrue(action.waitForExistence(timeout: 5)); action.tap()
