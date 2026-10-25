@@ -90,9 +90,11 @@ struct PersonalTaskEditor: View {
     @State private var addingReminder = false
     @State private var saving = false
     @State private var validation: String?
+    private let editingAccount: Int?
 
     init(store: NativeAppStore, occurrence: PersonalOccurrence? = nil, following: Bool = false, initialDraft: PersonalTaskSeries? = nil) {
         self.store = store; self.occurrence = occurrence; self.following = following
+        self.editingAccount = store.snapshot?.profile.id
         var value = occurrence?.task.withoutExceptions ?? initialDraft ?? PersonalTaskSeries()
         if let occurrence { value.dueAt = occurrence.dueAt }
         if following, let parent = store.localAccount.series.first(where: { $0.id == occurrence?.seriesID }) {
@@ -213,6 +215,7 @@ struct PersonalTaskEditor: View {
         if !draft.reminderMinutes.contains(minutes), draft.reminderMinutes.count < 5 { draft.reminderMinutes.append(minutes) }
     }
     private func save() {
+        guard editingAccount == store.snapshot?.profile.id else { validation = "账号已切换，请关闭草稿后在当前账号重新创建。"; return }
         draft.dueAt = hasDeadline ? deadline : nil
         draft.endDate = hasEnd && draft.repeatRule != .none ? endDate : nil
         draft.checklist = draft.checklist.filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

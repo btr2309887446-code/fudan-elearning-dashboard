@@ -146,6 +146,7 @@ actor LectureService {
         do { (value, warning) = try await download(value, key: key, into: candidate) }
         catch { try check(); _ = try hydrate(value, key: key); warning = "已解锁缓存；在线同步失败：\(error.localizedDescription)" }
         try check()
+        if saved?.sourceID == value.sourceID { value.reads = saved?.reads ?? value.reads }
         let oldSecret = saved?.secretID
         value.secretID = input.remember ? "\(account):\(value.sourceID):\(UUID().uuidString)" : nil
         if let id = value.secretID { try LectureKeychain.write(JSONEncoder().encode(key), id: id) }
@@ -154,6 +155,7 @@ actor LectureService {
         return state()
     }
     func disconnect() throws -> LectureConnection {
+        if isDemo { return state() }
         try check(); guard !busy else { throw NativeError.protocolFailure("请等待笔记同步完成。") }
         guard var value = saved else { return state() }
         let old = value.secretID; value.secretID = nil; value.configured = false

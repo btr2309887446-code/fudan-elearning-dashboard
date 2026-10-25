@@ -8,11 +8,14 @@ struct CourseOverviewSections: View {
     @State private var introduction: LectureIntroduction?
     @State private var items: [LectureItem] = []
     @State private var error: String?
+    private var teachers: [String] {
+        if let introduction, !introduction.teachers.isEmpty { return introduction.teachers }
+        return lectures.connection.courses.filter { lectures.connection.bindings[$0.id] == course.id }.map(\.teacher).filter { !$0.isEmpty }
+    }
     var body: some View {
         Section("课程简介") {
+            if !teachers.isEmpty { Text("教师：" + teachers.joined(separator: "、") + (introduction?.teachers.isEmpty != false ? "（iCourse）" : "")).font(.subheadline) }
             if let introduction {
-                let teachers = introduction.teachers.isEmpty ? lectures.connection.courses.filter { lectures.connection.bindings[$0.id] == course.id }.map(\.teacher).filter { !$0.isEmpty } : introduction.teachers
-                if !teachers.isEmpty { Text("教师：" + teachers.joined(separator: "、") + (introduction.teachers.isEmpty ? "（iCourse）" : "")).font(.subheadline) }
                 Text(introduction.description.isEmpty ? "学校暂未提供课程简介。" : introduction.description).textSelection(.enabled)
                 Text("简介保存于 \(introduction.fetchedAt.formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(.secondary)
             } else if error == nil { ProgressView("正在读取课程简介…") }
@@ -232,6 +235,12 @@ struct LectureSettingsView: View {
                 if lectures.connection.courses.isEmpty { Text("解锁后将显示可关联的课程。").foregroundStyle(.secondary) }
             } header: { Text("课程关联") } footer: { Text("首次关联由你确认。同名或跨学期课程不会自动绑定；历史笔记导入不会刷变化消息。") }
             Section { Text("打开应用或手动刷新时检查笔记。锁屏、退出应用后不保证同步；解锁后可离线阅读上次缓存。").font(.footnote).foregroundStyle(.secondary) }
+            Section {
+                NavigationLink("阅读组件开源许可") {
+                    ScrollView { Text(Bundle.main.url(forResource: "lecture-licenses", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "许可文件不可用")
+                        .font(.footnote).textSelection(.enabled).padding() }.navigationTitle("开源许可")
+                }
+            }
         }
         .navigationTitle("课堂笔记连接")
         .onAppear { repository = lectures.connection.repository; branch = lectures.connection.branch; remember = lectures.connection.remembered }
@@ -255,6 +264,12 @@ private struct LectureBindingRow: View {
             Text(external.title).font(.headline)
             Text(([external.teacher] + external.terms).filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
             Text(lectures.connection.bindings[external.id] == nil ? "待关联" : "已关联").font(.caption)
+            if lectures.connection.bindings[external.id] == nil {
+                ForEach((store.snapshot?.courses ?? []).filter { $0.displayName.localizedCaseInsensitiveContains(external.title) || external.title.localizedCaseInsensitiveContains($0.displayName) }.prefix(3)) { candidate in
+                    Text("候选：\(candidate.displayName) · \(candidate.termName)，请核对后选择。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Picker("对应 eLearning 课程", selection: $selected) {
                 Text("暂不关联").tag(Optional<Int>.none)
                 ForEach(store.snapshot?.courses ?? []) { course in Text(course.displayName + " · " + course.termName).tag(Optional(course.id)) }

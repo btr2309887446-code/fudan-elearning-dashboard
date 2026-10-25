@@ -26,7 +26,7 @@ struct NativeRootView: View {
                 if !store.isLoggedIn && store.snapshot == nil {
                     NativeLoginView(store: store)
                 } else {
-                    MainTabsView(store: store)
+                    MainTabsView(store: store).id(store.snapshot?.profile.id)
                 }
             } else {
                 NativeLoginView(store: store)

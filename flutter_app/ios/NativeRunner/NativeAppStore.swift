@@ -238,6 +238,9 @@ final class NativeAppStore: ObservableObject {
             }
         }
         await reconcileReminders()
+        if !lectures.connection.locked, Date().timeIntervalSince(lectures.connection.lastSynced ?? .distantPast) >= 900 {
+            Task { await lectures.sync(store: self) }
+        }
     }
 
     func prepareLogin(username: String) async throws -> NativeUISAuthenticator.Preparation {

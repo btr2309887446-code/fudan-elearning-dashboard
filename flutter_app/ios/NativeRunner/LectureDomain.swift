@@ -82,7 +82,7 @@ enum LectureCrypto {
     }
 }
 
-/// Actor-owned SQLite handles. Protected temporary files are unlinked immediately after opening.
+/// Actor-owned memory databases; protected staging files are closed before removal on Apple SQLite.
 final class LectureDatabase {
     private var db: OpaquePointer?
     init(_ data: Data) throws {
@@ -90,19 +90,41 @@ final class LectureDatabase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("lecture-\(UUID().uuidString).sqlite")
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         defer { try? FileManager.default.removeItem(at: url) }
-        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else {
-            sqlite3_close(db); db = nil; throw NativeError.protocolFailure("无法打开课堂笔记数据库。")
+        var source: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &source, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else {
+            sqlite3_close(source); throw NativeError.protocolFailure("无法打开课堂笔记数据库。")
         }
+        // Apple SQLite invalidates a live handle when its vnode is unlinked. Back up first.
+        defer { sqlite3_close(source) }
+        guard sqlite3_open_v2(":memory:", &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else {
+            sqlite3_close(db); db = nil; throw NativeError.protocolFailure("无法分配课堂笔记数据库。")
+        }
+        guard let backup = sqlite3_backup_init(db, "main", source, "main") else { sqlite3_close(db); db = nil; throw NativeError.protocolFailure("无法读取课堂数据库。") }
+        let copied = sqlite3_backup_step(backup, -1), finished = sqlite3_backup_finish(backup)
+        guard copied == SQLITE_DONE, finished == SQLITE_OK else { sqlite3_close(db); db = nil; throw NativeError.protocolFailure("课堂数据库不完整。") }
         sqlite3_limit(db, SQLITE_LIMIT_LENGTH, 8 * 1024 * 1024)
         _ = try rows("PRAGMA query_only=ON")
     }
     deinit { sqlite3_close(db) }
+    static func cleanStagingFiles() {
+        let root = FileManager.default.temporaryDirectory
+        for file in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+            let name = file.lastPathComponent
+            if name.hasPrefix("lecture-"), name.hasSuffix(".sqlite"), UUID(uuidString: String(name.dropFirst(8).dropLast(7))) != nil {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }
     func rows(_ sql: String, _ args: [String] = []) throws -> [[String: String]] {
+        var result: [[String: String]] = []
+        try eachRow(sql, args) { result.append($0) }
+        return result
+    }
+    func eachRow(_ sql: String, _ args: [String] = [], consume: ([String: String]) -> Void) throws {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { throw NativeError.protocolFailure("笔记数据库字段不兼容。") }
         defer { sqlite3_finalize(statement) }
         for (index, arg) in args.enumerated() { _ = arg.withCString { sqlite3_bind_text(statement, Int32(index + 1), $0, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) } }
-        var result: [[String: String]] = []
         var status = sqlite3_step(statement)
         while status == SQLITE_ROW {
             var row: [String: String] = [:]
@@ -110,10 +132,9 @@ final class LectureDatabase {
                 let key = String(cString: sqlite3_column_name(statement, i))
                 row[key] = sqlite3_column_text(statement, i).map { String(cString: $0) } ?? ""
             }
-            result.append(row); status = sqlite3_step(statement)
+            consume(row); status = sqlite3_step(statement)
         }
         guard status == SQLITE_DONE else { throw NativeError.protocolFailure("笔记内容无法读取或正文过大。") }
-        return result
     }
     func has(_ table: String) throws -> Bool { try !rows("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [table]).isEmpty }
 }
@@ -140,10 +161,10 @@ final class LectureEngine {
                 }
             }
         }
-        let rows = try db.rows("SELECT sub_id,course_id,sub_title,date,summary FROM lectures")
-        let items = rows.map { row -> LectureItem in
+        var items: [LectureItem] = []
+        try db.eachRow("SELECT sub_id,course_id,sub_title,date,summary FROM lectures") { row in
             let id = row["course_id"]!, course = courses.first { $0.id == id }, summary = row["summary"]!.trimmingCharacters(in: .whitespacesAndNewlines)
-            return LectureItem(reference: LectureReference(sourceID: source, courseID: id, lectureID: row["sub_id"]!), title: row["sub_title"]!, date: row["date"]!, courseTitle: course?.title ?? "", teacher: course?.teacher ?? "", summaryHash: summary.isEmpty ? "" : LectureCrypto.hash(Data(summary.utf8)), shard: name)
+            items.append(LectureItem(reference: LectureReference(sourceID: source, courseID: id, lectureID: row["sub_id"]!), title: row["sub_title"]!, date: row["date"]!, courseTitle: course?.title ?? "", teacher: course?.teacher ?? "", summaryHash: summary.isEmpty ? "" : LectureCrypto.hash(Data(summary.utf8)), shard: name))
         }
         databases[name] = db; courseShards[name] = courses; entries[name] = items; hashes[name] = hash
     }
