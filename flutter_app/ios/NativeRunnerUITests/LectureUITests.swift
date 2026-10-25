@@ -20,6 +20,9 @@ final class LectureUITests: XCTestCase {
         XCTAssertTrue(latest.waitForExistence(timeout: 5)); latest.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["AI 生成的摘要，请结合教师原意核对。"].exists)
+        // WebKit may cold-start slowly on a newly booted simulator. Wait for actual content,
+        // not merely the native WKWebView container, before capturing or switching tabs.
+        XCTAssertTrue(app.webViews.staticTexts["这是虚构课堂笔记。"].waitForExistence(timeout: 30))
         capture(app, "lecture-summary")
         app.buttons["转写"].tap()
         XCTAssertTrue(app.webViews.staticTexts["本课次原始转写使用虚构内容，仅供界面测试。"].waitForExistence(timeout: 5))
@@ -27,6 +30,10 @@ final class LectureUITests: XCTestCase {
         app.buttons["PPT 文字"].tap()
         XCTAssertTrue(app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS '第 1 页'")).firstMatch.waitForExistence(timeout: 5))
         app.buttons["摘要"].tap()
+        app.buttons["转写"].tap()
+        app.buttons["PPT 文字"].tap()
+        app.buttons["摘要"].tap()
+        XCTAssertTrue(app.webViews.staticTexts["这是虚构课堂笔记。"].waitForExistence(timeout: 10))
         app.buttons["课堂事项（2）"].tap()
         let action = app.buttons["阅读本章并整理三个疑问，下次课讨论。"]
         XCTAssertTrue(action.waitForExistence(timeout: 5)); action.tap()

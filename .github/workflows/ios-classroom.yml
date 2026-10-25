@@ -47,6 +47,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          name: ios-classroom-delivery
+          path: |
+            flutter_app/build/classroom-screenshots
+            flutter_app/build/classroom-package/*.ipa
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
           name: ios-classroom-results
           path: |
             flutter_app/build/classroom-*.xcresult

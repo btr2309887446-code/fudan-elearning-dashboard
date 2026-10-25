@@ -114,6 +114,8 @@ struct LectureReaderView: View {
     @State private var retry = 0
     @State private var readError: String?
     @State private var createdID: String?
+    @State private var readerState: LectureReaderState = .loading
+    @State private var readerGeneration = 0
     private var content: String {
         guard let value = bodyValue else { return "" }
         switch tab { case "transcript": return value.transcript; case "ppt": return value.pages.joined(separator: "\n\n"); default: return value.summary }
@@ -138,7 +140,20 @@ struct LectureReaderView: View {
                     }
                 }.padding()
                 Divider()
-                LectureWebText(content: content.isEmpty ? "暂无此项内容。" : content, markdown: tab == "summary", identity: reference.key + tab, selection: $selection)
+                ZStack {
+                    LectureWebText(content: content.isEmpty ? "暂无此项内容。" : content, markdown: tab == "summary", identity: reference.key + tab, selection: $selection, state: $readerState)
+                        .id(readerGeneration)
+                    if readerState == .loading {
+                        ProgressView("正在准备正文…").padding().background(.regularMaterial).cornerRadius(8)
+                            .accessibilityIdentifier("lecture-reader-loading").allowsHitTesting(false)
+                    }
+                    if case .failed(let message) = readerState {
+                        VStack(spacing: 12) {
+                            Text(message).multilineTextAlignment(.center)
+                            Button("重新加载正文") { readerState = .loading; readerGeneration += 1 }
+                        }.padding().background(.regularMaterial).cornerRadius(8)
+                    }
+                }
                 Divider()
                 HStack {
                     Button("选中文字建任务") { create(selection) }.disabled(selection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -157,7 +172,7 @@ struct LectureReaderView: View {
             do { let result = try await lectures.body(reference, course: courseID); guard !Task.isCancelled else { return }; bodyValue = result; await markRead(result) }
             catch { if !Task.isCancelled { bodyValue = nil; self.error = error.localizedDescription } }
         }
-        .onChange(of: tab) { _ in selection = "" }
+        .onChange(of: tab) { _ in selection = ""; if readerState == .ready { readerState = .loading } }
         .sheet(item: $draft) { value in PersonalTaskEditor(store: store, initialDraft: value) }
         .confirmationDialog("选择事项创建个人任务", isPresented: $showItems, titleVisibility: .visible) {
             ForEach(actions, id: \.self) { text in Button(text) { create(text) } }
@@ -283,9 +298,12 @@ private struct LectureBindingRow: View {
     }
 }
 
+enum LectureReaderState: Equatable { case loading, ready, failed(String) }
+
 struct LectureWebText: UIViewRepresentable {
     var content: String; var markdown: Bool; var identity: String
     @Binding var selection: String
+    @Binding var state: LectureReaderState
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.sizeCategory) private var sizeCategory
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -297,22 +315,35 @@ struct LectureWebText: UIViewRepresentable {
         web.navigationDelegate = context.coordinator; web.isOpaque = false; web.backgroundColor = .systemBackground
         web.accessibilityIdentifier = "lecture-web-reader"
         if let file = Bundle.main.url(forResource: "lecture-reader", withExtension: "html") { web.loadFileURL(file, allowingReadAccessTo: file) }
+        else { DispatchQueue.main.async { context.coordinator.fail("缺少正文阅读组件，请重新安装应用。") } }
         return web
     }
     func updateUIView(_ web: WKWebView, context: Context) { context.coordinator.parent = self; context.coordinator.render(web) }
-    static func dismantleUIView(_ web: WKWebView, coordinator: Coordinator) { web.configuration.userContentController.removeScriptMessageHandler(forName: "selection"); web.stopLoading(); web.navigationDelegate = nil }
+    static func dismantleUIView(_ web: WKWebView, coordinator: Coordinator) { coordinator.active = false; web.configuration.userContentController.removeScriptMessageHandler(forName: "selection"); web.stopLoading(); web.navigationDelegate = nil }
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: LectureWebText
         var ready = false
         var last = ""
+        var active = true
+        var request = 0
         init(_ parent: LectureWebText) { self.parent = parent }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true; render(webView) }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true; last = ""; render(webView) }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { fail("正文加载失败：\(error.localizedDescription)") }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { fail("正文加载失败：\(error.localizedDescription)") }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { fail("正文阅读组件已中断，请重新加载。") }
+        func fail(_ message: String) { guard active else { return }; ready = false; request += 1; parent.state = .failed(message) }
         func render(_ web: WKWebView) {
-            guard ready else { return }
+            guard ready, active else { return }
             let size = UIFont.preferredFont(forTextStyle: .body).pointSize
             let payload: [String: Any] = ["text": parent.content, "markdown": parent.markdown, "key": parent.identity, "dark": parent.colorScheme == .dark, "size": size]
             guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8), json != last else { return }
-            last = json; web.evaluateJavaScript("window.renderNote(\(json))", completionHandler: nil)
+            last = json; request += 1
+            let currentRequest = request
+            web.evaluateJavaScript("window.renderNote(\(json))") { [weak self] _, error in
+                guard let self, self.active, currentRequest == self.request else { return }
+                if let error { self.fail("正文显示失败：\(error.localizedDescription)") }
+                else { self.parent.state = .ready }
+            }
         }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let text = message.body as? String else { return }; parent.selection = String(text.prefix(10000))
