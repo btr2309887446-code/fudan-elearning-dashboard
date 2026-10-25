@@ -26,7 +26,7 @@ final class LectureUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["AI 生成的摘要，请结合教师原意核对。"].exists)
         // WebKit may cold-start slowly on a newly booted simulator. Wait for actual content,
         // not merely the native WKWebView container, before capturing or switching tabs.
-        XCTAssertTrue(app.webViews.staticTexts["这是虚构课堂笔记。"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.webViews.staticTexts["这是虚构课堂笔记。"].waitForExistence(timeout: 90))
         capture(app, "lecture-summary")
         app.buttons["转写"].tap()
         XCTAssertTrue(app.webViews.staticTexts["本课次原始转写使用虚构内容，仅供界面测试。"].waitForExistence(timeout: 5))
