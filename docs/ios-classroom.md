@@ -26,9 +26,19 @@ Windows 上的 `scripts/test-ios-reader.cjs` 通过 Electron 检查共享网页�
 
 阅读器在 WebKit 启动及正文提交期间显示加载提示；导航失败、脚本错误或网页进程中断时提供重新加载入口。切换页签时只采用最新一次渲染的结果，退出页面后不再更新状态。
 
+## 连接与重试
+
+| 情况 | 检查方法 |
+| --- | --- |
+| GitHub 网页可打开，笔记仍无法同步 | 笔记通过 `api.github.com` 读取，网页与 API 的连通情况可能不同；网络恢复后在笔记连接页重试同步 |
+| 解锁失败 | 使用生成这些加密数据时的学号和 UIS 密码；修改了 UIS 密码不会自动重加密旧数据 |
+| 已连接但课程中没有笔记 | 在连接页确认 iCourse 与 eLearning 的课程关联，再查看该课程的课堂笔记 |
+| 在线同步失败 | 已成功缓存的内容继续保留；若未记住解锁信息，重新进入应用后需再次解锁 |
+| 正文加载失败或阅读组件中断 | 使用正文区域的「重新加载正文」；它只重建本地阅读组件，不重新生成摘要 |
+
 ## 2026-10-25 验证
 
-[构建 40169810675](https://github.com/btr2309887446-code/fudan-elearning-dashboard/actions/runs/40169810675) 对提交 `1ce54f9` 完成以下检查：
+[构建 40193414984](https://github.com/btr2309887446-code/fudan-elearning-dashboard/actions/runs/40193414984) 对提交 `48343c3` 完成以下检查，产物于 2026-10-26 下载核对：
 
 | 环境 | 结果 |
 | --- | --- |
@@ -39,7 +49,9 @@ Windows 上的 `scripts/test-ios-reader.cjs` 通过 Electron 检查共享网页�
 
 核心测试使用合成的 5,000 条课次夹具，覆盖兼容解密、错误密码、损坏分片保留、分页搜索、离线解锁、账号隔离、已读保存失败和变化基线。界面测试确认摘要、转写、PPT 页签、连续切换、任务预填、默认无截止时间和任务来源入口。本轮没有使用真实账号执行解锁，也没有真机测试；深色和字号只在本地阅读组件中自动检查，不代表完整原生界面已逐项验证。
 
-构建产物 `ios-classroom-delivery` 仅包含安装包和截图；`ios-classroom-results` 另含完整测试结果。两者默认保留 14 天。首次校验的安装包大小为 3,979,219 字节，SHA-256 为 `03ff33a9a7cd8631f2c7d12cc15b6877d5ba0d99b3d75d7d1e40e565140ecc19`。
+构建产物 `ios-classroom-delivery` 仅包含安装包和截图；`ios-classroom-results` 另含完整测试结果。两者默认保留 14 天。最终交付的安装包大小为 3,979,219 字节，SHA-256 为 `210141723b681ba6a6e7ed15e2cd96618ab1525953e59bbf1de6a167a1398ae3`。
+
+界面测试首次等待真实正文出现，允许托管模拟器的 WebKit 冷启动最多 90 秒；后续切换仍采用较短等待。截图额外等待合成帧稳定，已人工核对 iPhone 和 iPad 的摘要、公式、表格，以及 iPad 连续切换后的正文，未使用空白帧作为预览。
 
 ## 界面预览
 
@@ -50,5 +62,7 @@ Windows 上的 `scripts/test-ios-reader.cjs` 通过 Electron 检查共享网页�
 | ![摘要含公式和表格](ios/classroom/iphone-lecture-summary.png) | ![任务可返回课堂笔记](ios/classroom/iphone-lecture-task-source.png) |
 
 ![iPad 课程概览](ios/classroom/ipad-lecture-course-overview.png)
+
+![iPad 课堂摘要](ios/classroom/ipad-lecture-summary.png)
 
 ![iPad 原始转写](ios/classroom/ipad-lecture-transcript.png)
