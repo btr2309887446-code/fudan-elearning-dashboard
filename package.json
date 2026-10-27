@@ -1,6 +1,6 @@
 {
   "name": "fudan-elearning-dashboard",
-  "version": "0.9.1",
+  "version": "0.11.0",
   "description": "复旦大学 eLearning (Canvas) 课程 / 作业 / 成绩 图形化看板",
   "main": "./out/main/index.js",
   "author": "ksar",
@@ -23,17 +23,30 @@
     "test:ignored": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-ignored.ts",
     "test:refresh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-refresh.ts",
     "test:download": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-download.ts",
-    "test": "npm run test:files && npm run test:summary && npm run test:ignored && npm run test:refresh && npm run test:download && npm run test:cache",
-    "cli": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/snapshot.ts"
+    "test": "npm run test:files && npm run test:summary && npm run test:ignored && npm run test:refresh && npm run test:download && npm run test:cache && npm run test:workspace && npm run test:course-introduction && npm run test:lectures",
+    "cli": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/snapshot.ts",
+    "test:workspace": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-workspace.ts",
+    "test:workspace-ui": "npm run build && node scripts/test-workspace-ui.mjs",
+    "demo:interaction": "electron-vite build && node scripts/run-feedback-demo.mjs",
+    "test:course-introduction": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-course-introduction.ts",
+    "test:lectures": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-lectures.ts",
+    "test:course-ui": "npm run build && node scripts/test-course-content-ui.mjs"
   },
   "dependencies": {
     "echarts": "^5.5.1",
-    "echarts-for-react": "^3.0.2"
+    "echarts-for-react": "^3.0.2",
+    "katex": "^0.19.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "sql.js": "^1.15.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
+    "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",

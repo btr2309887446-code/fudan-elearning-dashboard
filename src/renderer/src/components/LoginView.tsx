@@ -22,6 +22,8 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const preparedFor = useRef<string>('');
+  const submitLock = useRef(false);
+  const [captchaBusy, setCaptchaBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -50,17 +52,22 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
 
   async function refreshCaptcha() {
     const name = username.trim();
-    if (!name) return;
+    if (!name || captchaBusy) return;
+    setCaptchaBusy(true);
+    try {
     const res = await window.elearning.auth.checkCaptcha(name);
     if (res.ok && res.data.captchaRequired) {
       setCaptcha({ image: res.data.captchaImage });
       setCaptchaCode('');
     }
+    if (!res.ok) setError(res.error.message);
+    } catch (e) { setError(String(e)); }
+    finally { setCaptchaBusy(false); }
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (submitLock.current) return;
     setError(null);
     setDetail(null);
 
@@ -74,6 +81,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
       return;
     }
 
+    submitLock.current = true;
     setBusy(true);
     try {
       // No captcha on screen yet: ask first, so a doomed attempt is never spent.
@@ -113,6 +121,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
     } catch (err) {
       setError((err as Error).message);
     } finally {
+      submitLock.current = false;
       setBusy(false);
       setStage('');
     }
@@ -124,6 +133,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
         className="icon-btn"
         onClick={onToggleTheme}
         title={theme === 'light' ? '切换到深色' : '切换到浅色'}
+        aria-label={theme === 'light' ? '切换到深色' : '切换到浅色'}
         style={{ position: 'fixed', top: 22, right: 24, zIndex: 5 }}
       >
         <Icon name={theme === 'light' ? 'moon' : 'sun'} size={19} />
@@ -146,7 +156,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
         </p>
 
         {notice && <div className="alert alert-warn">{notice}</div>}
-        {error && <div className="alert alert-error">{error}</div>}
+        {error && <div className="alert alert-error" role="alert">{error}</div>}
         {detail && (
           <div className="alert alert-info" style={{ fontSize: 12, maxHeight: 130, overflow: 'auto' }}>
             {detail}
@@ -192,15 +202,14 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
                 autoFocus
               />
               {captcha.image ? (
-                <img
+                <button type="button" className="captcha-button" aria-label="刷新验证码" title="刷新验证码" disabled={busy || captchaBusy} aria-busy={captchaBusy} onClick={() => void refreshCaptcha()}><img
                   className="captcha-img"
                   src={captcha.image}
                   alt="验证码"
                   title="点击刷新"
-                  onClick={refreshCaptcha}
-                />
+                /></button>
               ) : (
-                <button type="button" className="btn" onClick={refreshCaptcha} disabled={busy}>
+                <button type="button" className="btn" onClick={refreshCaptcha} disabled={busy || captchaBusy}>
                   刷新验证码
                 </button>
               )}
@@ -213,12 +222,12 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
           记住密码（使用 Windows 凭据加密后保存在本机）
         </label>
 
-        <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '11px' }} disabled={busy}>
+        <button type="submit" className="btn btn-primary" aria-busy={busy} style={{ width: '100%', padding: '11px' }} disabled={busy}>
           {busy ? '请稍候…' : '登录'}
         </button>
 
         {stage && (
-          <div className="loading-line" style={{ marginTop: 14, justifyContent: 'center' }}>
+          <div className="loading-line" role="status" style={{ marginTop: 14, justifyContent: 'center' }}>
             <span className="spin" />
             {stage}
           </div>

@@ -2,6 +2,20 @@ import XCTest
 @testable import NativeRunner
 
 final class PersonalAndChangeTests: XCTestCase {
+    // Shared behavioral fixtures only; Windows and iOS keep independent stores.
+    func testSharedDesktopRecurrenceFixtures() throws {
+        struct Fixture: Decodable {
+            let name: String, repeatRule: String, dueAt: String, until: String
+            let weekdays: [Int], expected: [String]
+            enum CodingKeys: String, CodingKey { case name, repeatRule = "repeat", dueAt, until, weekdays, expected }
+        }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtures = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: root.appendingPathComponent("fixtures/task-recurrence.json")))
+        for fixture in fixtures {
+            let series = PersonalTaskSeries(title: fixture.name, dueAt: Beijing.parse(fixture.dueAt), repeatRule: PersonalRepeat(rawValue: fixture.repeatRule)!, weekdays: Set(fixture.weekdays))
+            XCTAssertEqual(series.dates(through: Beijing.parse(fixture.until)!).compactMap { $0.map(Beijing.key) }, fixture.expected, fixture.name)
+        }
+    }
     private func date(_ value: String) -> Date { Beijing.parse(value + "T12:00:00+08:00")! }
 
     func testMonthlyRepeatsClampMonthEndAndKeepAnchorAcrossLeapYear() {

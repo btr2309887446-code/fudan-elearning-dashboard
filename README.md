@@ -9,7 +9,7 @@
 | 平台 | 技术 | 代码入口 | 说明 |
 | --- | --- | --- | --- |
 | iPhone / iPad | SwiftUI + Swift | [`flutter_app/ios/NativeRunner/`](flutter_app/ios/NativeRunner/) | 当前重点开发的原生客户端，最低 iOS 15 |
-| Windows | Electron + React + TypeScript | [`src/`](src/) | 桌面学习看板 |
+| Windows | Electron + React + TypeScript | [`src/`](src/) | 今日、任务、变化中心、课程三栏工作区 |
 | Android / macOS | Flutter + Dart | [`flutter_app/lib/`](flutter_app/lib/) | Flutter 客户端 |
 
 三套客户端对接相同的学校服务，分别实现认证、数据同步等逻辑，不共用一份业务代码。iOS 的独立工程位于 `flutter_app/ios/NativeRunner.xcodeproj`，构建不包含 Flutter 运行时。
@@ -41,9 +41,15 @@ iOS 提供“今日、作业、课程、我的”四个标签页，支持作业�
 
 ### Windows 界面预览
 
-![Windows 桌面端总览](docs/dashboard.png)
+Windows 0.11.0 增加课程概览与课堂笔记：连接 iCourse 订阅仓库后，将已生成的摘要、转写和 PPT 文字关联到课程，支持从课堂事项创建个人任务。保留个人重复任务、手动截止、批量操作、列表/月历、托盘与可选提醒。个人数据按学校账号保存在本机，不跨设备同步。完整操作见 [桌面端说明](docs/desktop.md)，连接步骤见 [课堂笔记说明](docs/classroom-notes.md)。
 
-上图为 Windows 桌面端界面，不代表原生 iOS 的外观。
+![Windows 课程概览（虚构演示数据）](docs/screenshots/windows-course-overview.png)
+
+![Windows 课堂笔记阅读（虚构演示数据）](docs/screenshots/windows-course-reading.png)
+
+![Windows 三栏任务工作区（演示数据）](docs/screenshots/windows-tasks-wide.png)
+
+![Windows 变化中心（演示数据）](docs/screenshots/windows-changes.png)
 
 ## 下载与安装
 
@@ -81,6 +87,8 @@ npm run demo
 ```powershell
 npm run typecheck
 npm test
+npm run test:workspace-ui
+npm run test:course-ui
 npm run dist
 ```
 

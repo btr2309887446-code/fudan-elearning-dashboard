@@ -1,3 +1,5 @@
+import type { WorkspaceData, WorkspaceCommand } from '../core/workspace';
+import type { LectureConnectInput, LectureRef } from '../core/lectures';
 /**
  * Preload: the only bridge between the renderer and the network layer.
  * Nothing here exposes Node or the session cookie to web content.
@@ -6,6 +8,26 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const api = {
+  lectures: {
+    state: (account: number) => ipcRenderer.invoke('lectures:state', account),
+    connect: (account: number, input: LectureConnectInput) => ipcRenderer.invoke('lectures:connect', account, input),
+    disconnect: (account: number) => ipcRenderer.invoke('lectures:disconnect', account),
+    sync: (account: number) => ipcRenderer.invoke('lectures:sync', account),
+    bind: (account: number, icourseCourseId: string, canvasCourseId: number | null) => ipcRenderer.invoke('lectures:bind', account, icourseCourseId, canvasCourseId),
+    list: (account: number, courseId: number, query = '', offset = 0) => ipcRenderer.invoke('lectures:list', account, courseId, query, offset),
+    detail: (account: number, ref: LectureRef) => ipcRenderer.invoke('lectures:detail', account, ref),
+    read: (account: number, ref: LectureRef) => ipcRenderer.invoke('lectures:read', account, ref),
+    onUpdated: (cb: () => void) => { const listener = () => cb(); ipcRenderer.on('lectures:updated', listener); return () => ipcRenderer.removeListener('lectures:updated', listener); },
+  },
+  course: {
+    introduction: (account: number, courseId: number, force = false) => ipcRenderer.invoke('course:introduction', account, courseId, force),
+  },
+  workspace: {
+    get: (account: number) => ipcRenderer.invoke('workspace:get', account),
+    mutate: (account: number, command: WorkspaceCommand) => ipcRenderer.invoke('workspace:mutate', account, command),
+    onUpdated: (cb: () => void) => { const listener = () => cb(); ipcRenderer.on('workspace:updated', listener); return () => ipcRenderer.removeListener('workspace:updated', listener); },
+    onNavigate: (cb: (target: Record<string, string>) => void) => { const listener = (_e: unknown, target: Record<string, string>) => cb(target); ipcRenderer.on('workspace:navigate', listener); return () => ipcRenderer.removeListener('workspace:navigate', listener); },
+  },
   prefs: {
     get: () => ipcRenderer.invoke('prefs:get'),
     set: (patch: Record<string, unknown>) => ipcRenderer.invoke('prefs:set', patch),
@@ -20,7 +42,7 @@ const api = {
     logout: () => ipcRenderer.invoke('auth:logout'),
   },
   data: {
-    snapshot: (opts?: { force?: boolean }) => ipcRenderer.invoke('data:snapshot', opts ?? {}),
+    snapshot: (opts?: { force?: boolean; full?: boolean }) => ipcRenderer.invoke('data:snapshot', opts ?? {}),
     cached: () => ipcRenderer.invoke('data:cached'),
     clear: () => ipcRenderer.invoke('data:clear'),
     onProgress: (cb: (p: { done: number; total: number; label: string }) => void) => {

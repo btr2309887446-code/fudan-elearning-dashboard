@@ -31,3 +31,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: 复旦 eLearning 学习看板
   deleteAppDataOnUninstall: false
+
+extraResources:
+  - from: build/icon.png
+    to: icon.png

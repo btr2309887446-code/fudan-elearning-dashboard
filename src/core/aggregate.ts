@@ -5,6 +5,7 @@
  * only deals with talking to Canvas and stitching the results together.
  */
 
+import type { ResourceResult } from './workspace.ts';
 import { CanvasClient } from './canvas.ts';
 import { CanvasError, describeCanvasError } from './errors.ts';
 import { cachedIds, planRefresh } from './refresh.ts';
@@ -85,8 +86,10 @@ async function fetchCourseAssignments(
   client: CanvasClient,
   course: CanvasCourse,
   displayName: string,
-  warnings: string[]
-): Promise<AssignmentRow[]> {
+  warnings: string[],
+  resources: ResourceResult[],
+  cachedRows: AssignmentRow[] = []
+): Promise<AssignmentRow[] | null> {
   let groups: { id: number; name: string; group_weight: number }[] = [];
   try {
     groups = await client.getAssignmentGroups(course.id);
@@ -97,11 +100,14 @@ async function fetchCourseAssignments(
         ? `作业分组${authWarning(err)}`
         : `作业分组获取失败（${describeCanvasError(err)}）`;
     warnings.push(`${displayName}：${msg}`);
+    groups = [...new Map(cachedRows.map(r => [r.groupId, { id: r.groupId, name: r.groupName, group_weight: r.groupWeight }])).values()];
   }
   const groupById = new Map(groups.map((g) => [g.id, { name: g.name, weight: g.group_weight ?? 0 }]));
 
   try {
     const assignments = await client.getAssignments(course.id);
+    resources.push({ courseId: course.id, kind: 'assignment', status: 'success', items: assignments.map(a => ({ id: String(a.id), title: a.name, value: JSON.stringify({ title: a.name, dueAt: a.due_at, description: a.description ?? '', points: a.points_possible }) })) });
+    resources.push({ courseId: course.id, kind: 'grade', status: 'success', items: assignments.map(a => ({ id: String(a.id), title: a.name, value: JSON.stringify({ score: a.submission?.score ?? null, grade: a.submission?.grade ?? null, gradedAt: a.submission?.graded_at ?? null }) })) });
     return toAssignmentRows(course, displayName, assignments, groupById);
   } catch (err) {
     if (await sessionIsDead(client, err)) throw err;
@@ -110,7 +116,9 @@ async function fetchCourseAssignments(
         ? authWarning(err)
         : `作业列表获取失败（${describeCanvasError(err)}）`;
     warnings.push(`${displayName}：${msg}`);
-    return [];
+    resources.push({ courseId: course.id, kind: 'assignment', status: 'failed', error: msg });
+    resources.push({ courseId: course.id, kind: 'grade', status: 'failed', error: msg });
+    return null;
   }
 }
 
@@ -124,6 +132,7 @@ export interface BuildSnapshotOptions {
   previous?: Snapshot | null;
   /** 强制全量刷新，忽略 [previous] 里的历史学期数据。 */
   full?: boolean;
+  trackResources?: boolean;
 }
 
 export async function buildSnapshot(
@@ -131,6 +140,7 @@ export async function buildSnapshot(
   options: BuildSnapshotOptions = {}
 ): Promise<Snapshot> {
   const warnings: string[] = [];
+  const resources: ResourceResult[] = [];
 
   const profile = await client.getProfile();
 
@@ -170,7 +180,7 @@ export async function buildSnapshot(
 
   // --- 刷新范围 -------------------------------------------------------------
   // 已结束学期的课不会再变，沿用上次的汇总与作业行，省下每门课两个请求。
-  const previous = options.previous ?? null;
+  const previous = options.previous?.profile.id === profile.id ? options.previous : null;
   const ids = cachedIds(previous);
   const plan = planRefresh(
     courses,
@@ -199,11 +209,21 @@ export async function buildSnapshot(
     const nickname = nicknames.get(course.id);
     const displayName = nickname || course.name;
     const term = resolveTerm(course, termInfo);
-    const rows = await fetchCourseAssignments(client, course, displayName, warnings);
+    const cachedRows = previous?.assignments.filter(r => r.courseId === course.id) ?? [];
+    const fresh = await fetchCourseAssignments(client, course, displayName, warnings, resources, cachedRows);
+    const rows = fresh ?? cachedRows;
+    if (options.trackResources) for (const kind of ['announcement', 'file'] as const) {
+      try {
+        const items = kind === 'announcement'
+          ? await client.getAllPages<Record<string, unknown>>(`/api/v1/courses/${course.id}/discussion_topics`, { only_announcements: true })
+          : await client.getAllPages<Record<string, unknown>>(`/api/v1/courses/${course.id}/files`);
+        resources.push({ courseId: course.id, kind, status: 'success', items: items.map(i => ({ id: String(i.id), title: String(i.title ?? i.display_name ?? i.filename ?? ''), value: kind === 'announcement' ? JSON.stringify({ title: i.title, message: i.message, posted_at: i.posted_at }) : JSON.stringify({ name: i.display_name, size: i.size, updated_at: i.updated_at, locked: i.locked }) })) });
+      } catch (e) { resources.push({ courseId: course.id, kind, status: 'failed', error: describeCanvasError(e) }); warnings.push(`${displayName}：${kind === 'file' ? '文件' : '公告'}同步失败，保留基线`); }
+    }
     allRows.push(...rows);
     done += 1;
     options.onProgress?.(done, plan.fetch.length, displayName);
-    return summariseCourse(course, displayName, nickname, rows, term);
+    return fresh === null ? (previous?.courses.find(c => c.id === course.id) ?? summariseCourse(course, displayName, nickname, rows, term)) : summariseCourse(course, displayName, nickname, rows, term);
   });
 
   const details = [...reusedSummaries, ...fetched];
@@ -254,6 +274,7 @@ export async function buildSnapshot(
   details.sort((a, b) => a.displayName.localeCompare(b.displayName, 'zh-Hans-CN'));
 
   return {
+    resources: [...resources, ...plan.reuse.flatMap(c => (['assignment', 'grade', 'announcement', 'file'] as const).map(kind => ({ courseId: c.id, kind, status: 'reused' as const })))],
     fetchedAt: new Date().toISOString(),
     profile,
     courses: details,

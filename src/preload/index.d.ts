@@ -1,6 +1,8 @@
+import type { WorkspaceData, WorkspaceCommand } from '../core/workspace';
 import type { CanvasFile, FileNode } from '../core/files';
 import type { DownloadProgress } from '../main/download';
 import type { CanvasProfile, Snapshot } from '../core/types';
+import type { CourseIntroduction, LectureBody, LectureConnectInput, LectureConnection, LecturePage, LectureRef } from '../core/lectures';
 
 export type IpcResult<T> =
   | { ok: true; data: T }
@@ -14,6 +16,11 @@ export interface Prefs {
   /** Hide assignments the student has not handed in yet. Display-only. */
   hideUnsubmitted: boolean;
   theme: 'light' | 'dark';
+  followSystem?: boolean;
+  syncMinutes?: 0 | 15 | 30 | 60;
+  closeToTray?: boolean;
+  taskNotifications?: boolean;
+  changeNotifications?: boolean;
   /** 课程文件的下载根目录；未设置时用「下载/eLearning」。 */
   downloadRoot?: string;
   /** 首页各板块的显示开关；缺省视为全开。 */
@@ -32,6 +39,26 @@ export interface Prefs {
 export type { CanvasFile, DownloadProgress, FileNode };
 
 export interface ElearningApi {
+  lectures: {
+    state(account: number): Promise<IpcResult<LectureConnection>>;
+    connect(account: number, input: LectureConnectInput): Promise<IpcResult<LectureConnection>>;
+    disconnect(account: number): Promise<IpcResult<LectureConnection>>;
+    sync(account: number): Promise<IpcResult<LectureConnection>>;
+    bind(account: number, icourseCourseId: string, canvasCourseId: number | null): Promise<IpcResult<LectureConnection>>;
+    list(account: number, courseId: number, query?: string, offset?: number): Promise<IpcResult<LecturePage>>;
+    detail(account: number, ref: LectureRef): Promise<IpcResult<LectureBody>>;
+    read(account: number, ref: LectureRef): Promise<IpcResult<true>>;
+    onUpdated(cb: () => void): () => void;
+  };
+  course: {
+    introduction(account: number, courseId: number, force?: boolean): Promise<IpcResult<CourseIntroduction>>;
+  };
+  workspace: {
+    get(account: number): Promise<IpcResult<WorkspaceData>>;
+    mutate(account: number, command: WorkspaceCommand): Promise<IpcResult<WorkspaceData>>;
+    onUpdated(cb: () => void): () => void;
+    onNavigate(cb: (target: Record<string, string>) => void): () => void;
+  };
   prefs: {
     get(): Promise<Prefs>;
     set(patch: Partial<Prefs>): Promise<Prefs>;
@@ -50,7 +77,7 @@ export interface ElearningApi {
     logout(): Promise<IpcResult<true>>;
   };
   data: {
-    snapshot(opts?: { force?: boolean }): Promise<IpcResult<Snapshot>>;
+    snapshot(opts?: { force?: boolean; full?: boolean }): Promise<IpcResult<Snapshot>>;
     cached(): Promise<Snapshot | null>;
     /** Forget the local cache and saved session (recovery from a bad state). */
     clear(): Promise<IpcResult<true>>;

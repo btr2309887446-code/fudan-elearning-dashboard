@@ -1,0 +1,98 @@
+/* Feedback tokens shared by the workspace, dialogs and login. */
+:root {
+  --motion-press: 120ms;
+  --motion-overlay: 160ms;
+  --motion-content: 200ms;
+  --motion-ease: cubic-bezier(.2,.7,.2,1);
+}
+button, a, summary, input, select, textarea {
+  transition: background-color var(--motion-press), border-color var(--motion-press),
+    color var(--motion-press), box-shadow var(--motion-press), transform var(--motion-press);
+}
+button:disabled { cursor: not-allowed; }
+button:not(:disabled):active { filter: brightness(.94); }
+.workspace button.primary:not(:disabled):active, .ws-dialog button.primary:not(:disabled):active {
+  transform: translateY(1px) scale(.99);
+  background: #004c94;
+}
+.workspace button.primary:not(:disabled):hover, .ws-dialog button.primary:not(:disabled):hover {
+  background: #0054a3;
+}
+.workspace button:disabled:hover, .ws-dialog button:disabled:hover {
+  background: var(--ws-surface);
+}
+.workspace button.primary:disabled, .ws-dialog button.primary:disabled { background: #005fb8; }
+:where(button,a,input,select,textarea,summary,[tabindex]):focus-visible {
+  outline: 2px solid var(--ws-accent, #005fb8);
+  outline-offset: 3px;
+}
+.workspace :is(input,select,textarea):not(:disabled):hover,
+.ws-dialog :is(input,select,textarea):not(:disabled):hover { border-color: var(--ws-accent); }
+.workspace :is(input,textarea):focus, .ws-dialog :is(input,textarea):focus {
+  border-color: var(--ws-accent);
+  box-shadow: 0 1px 0 var(--ws-accent);
+}
+input[type="checkbox"]:not(:disabled), select:not(:disabled), summary { cursor: pointer; }
+input[type="checkbox"]:not(:disabled):hover { box-shadow: 0 0 0 4px #0078d418; }
+a:hover { text-decoration: underline; }
+a:active { opacity: .75; }
+.ws-row { position: relative; transition: background-color var(--motion-press), opacity var(--motion-content); }
+.ws-row:has(.ws-row-main:hover), .ws-row:has(.ws-row-main:focus-visible) { background: var(--ws-selected); }
+.ws-row:has(.ws-row-main:active) { background: color-mix(in srgb, var(--ws-accent) 17%, var(--ws-surface)); }
+.ws-row.chosen { box-shadow: inset 3px 0 var(--ws-accent); }
+.ws-row.is-completed strong { text-decoration: line-through; color: var(--ws-muted); }
+.ws-row.is-exiting { animation: ws-collapse 200ms var(--motion-ease) forwards; overflow: hidden; pointer-events: none; }
+.ws-nav-links { position: relative; }
+.ws-nav-marker { position: absolute; left: 0; top: 11px; width: 3px; height: 20px;
+  background: var(--ws-accent); border-radius: 3px; pointer-events: none;
+  transition: transform var(--motion-content) var(--motion-ease); }
+.ws-nav button.active { box-shadow: none; }
+.ws-tabs { position: relative; }
+.ws-tabs button { min-width: 64px; }
+.ws-tabs button[aria-selected="true"] { border-bottom-width: 1px; background: var(--ws-selected); }
+.ws-tab-marker { position: absolute; bottom: -2px; left: 8px; width: 48px; height: 2px;
+  background: var(--ws-accent); transition: transform var(--motion-content) var(--motion-ease); }
+.ws-resizer { transition: background-color var(--motion-press); }
+.ws-resizer[data-dragging="true"], .ws-resizer:focus-visible { background: var(--ws-accent); }
+.ws-bulk, .ws-toast { animation: ws-enter var(--motion-overlay) var(--motion-ease); }
+.ws-dialog[open] { animation: ws-enter var(--motion-overlay) var(--motion-ease); }
+.ws-dialog::backdrop { animation: ws-fade var(--motion-overlay); }
+.ws-dialog[data-closing="true"] { animation: ws-leave var(--motion-overlay) var(--motion-ease) forwards; }
+.ws-dialog[data-closing="true"]::backdrop { animation: ws-fade var(--motion-overlay) reverse forwards; }
+.ws-toast { position: fixed; z-index: 20; bottom: 24px; left: 50%; transform: translateX(-50%);
+  max-width: min(640px, 90vw); padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+  background: var(--ws-surface); color: var(--ws-text); border: 1px solid var(--ws-border);
+  border-radius: 8px; box-shadow: 0 4px 20px #0002; }
+.ws-toast { animation-name: ws-fade; }
+.ws-live { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ws-operation { display: flex; align-items: center; gap: 8px; }
+.ws-operation[data-busy="true"]::before, button[aria-busy="true"]::before {
+  content: ""; display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor;
+  border-right-color: transparent; border-radius: 50%; margin-right: 6px;
+  animation: ws-spin 800ms linear infinite;
+}
+.ws-warning summary:hover, summary.ws-group:hover { background: var(--ws-selected); }
+.ws-settings fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.ws-dialog .ws-form-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.ws-form-fields > label, .ws-settings fieldset > label:not(.ws-check) { display: grid; gap: 6px; margin: 12px 0; max-width: 560px; }
+.ws-form-fields > small { display: block; }
+.ws-form-error { min-height: 21px; margin: 12px 0; }
+.ws-dialog header { position: sticky; top: -24px; z-index: 2; background: var(--ws-surface); margin: -24px -24px 16px; padding: 16px 24px; border-bottom: 1px solid var(--ws-border); }
+.ws-row input[aria-label^="完成 "] { appearance: none; border: 1px solid var(--ws-muted); border-radius: 50%; background: var(--ws-surface); display: grid; place-content: center; }
+.ws-row input[aria-label^="完成 "]::before { content: "✓"; font-size: 12px; line-height: 1; opacity: 0; transition: opacity var(--motion-press); }
+.ws-row input[aria-label^="完成 "]:checked { background: var(--ws-accent); border-color: var(--ws-accent); color: var(--ws-surface); }
+.ws-row input[aria-label^="完成 "]:checked::before { opacity: 1; }
+.ws-dialog fieldset:disabled { opacity: .75; }
+.ws-row-main { min-height: 42px; }
+.login-wrap .btn-primary:not(:disabled):active { transform: translateY(1px); }
+.captcha-button { padding: 0; border: 1px solid var(--border); border-radius: 5px; background: transparent; cursor: pointer; }
+.captcha-button:hover { box-shadow: 0 0 0 2px var(--accent); }
+.captcha-button img { display: block; }
+@keyframes ws-spin { to { transform: rotate(360deg); } }
+@keyframes ws-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ws-enter { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+@keyframes ws-leave { to { opacity: 0; translate: 0 4px; } }
+@keyframes ws-collapse { from { max-height: 80px; } to { max-height: 0; min-height: 0; padding-block: 0; border-width: 0; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
