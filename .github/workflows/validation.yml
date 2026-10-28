@@ -39,7 +39,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run test:login-harness
+      - run: npm run test:lecture-budget
+      - run: npm run test:login-harness -- --mock-only
+      - run: npm run test:stability-ui
       - run: npm run test:workspace-ui
       - run: npm run test:course-ui
       - run: npm run dist

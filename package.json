@@ -32,12 +32,14 @@
     "test:lectures": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-lectures.ts",
     "test:course-ui": "npm run build && node scripts/test-course-content-ui.mjs",
     "postinstall": "node node_modules/electron/install.js",
-    "test:credentials": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-credentials.ts"
+    "test:credentials": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-credentials.ts",
+    "test:lecture-budget": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/benchmark-lecture-cache.ts",
+    "test:stability-ui": "npm run build && node scripts/test-stability-ui.mjs"
   },
   "dependencies": {
-    "echarts": "^5.5.1",
+    "echarts": "6.1.0",
     "echarts-for-react": "^3.0.2",
-    "katex": "^0.19.0",
+    "katex": "0.19.1",
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
@@ -57,5 +59,8 @@
     "react-dom": "^18.3.1",
     "typescript": "^5.7.2",
     "vite": "8.3.5"
+  },
+  "overrides": {
+    "katex": "$katex"
   }
 }

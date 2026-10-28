@@ -30,6 +30,8 @@ private struct LectureSaved: Codable {
     var lastCommit: String?
     var needsRetry: Bool?
     var previousHashes: [String]?
+    var previousManifest: Previous?
+    struct Previous: Codable { var indexHash: String?; var shards: [String: LectureManifest.Shard]; var lastCommit: String? }
 }
 private struct LectureSecret: Codable { var password: String; var token: String }
 enum LectureKeychain {
@@ -126,7 +128,13 @@ actor LectureService {
     }
     private func hydrate(_ value: LectureSaved, key: LectureSecret) throws -> LectureEngine {
         guard let indexHash = value.indexHash else { throw NativeError.protocolFailure("暂无本地笔记缓存，请联网同步。") }
-        _ = try LectureManifest.decode(Data(contentsOf: blob(value, indexHash)), password: key.password)
+        healthy = false
+        var indexError: Error?
+        do {
+        let indexData = try Data(contentsOf: blob(value, indexHash))
+        guard LectureCrypto.hash(indexData) == indexHash else { throw NativeError.protocolFailure("笔记索引缓存损坏，请同步重试。") }
+        _ = try LectureManifest.decode(indexData, password: key.password)
+        } catch { indexError = error }
         let result = LectureEngine(source: value.sourceID)
         var failures = 0
         for shard in value.shards.values.sorted(by: { $0.name < $1.name }) {
@@ -134,7 +142,9 @@ actor LectureService {
             do { try result.loadFile(shard.name, url: blob(value, shard.sha256), password: key.password, hash: shard.sha256) }
             catch { failures += 1 }
         }
-        healthy = failures == 0
+        if let indexError, failures == value.shards.count { throw indexError }
+        healthy = failures == 0 && indexError == nil
+        if indexError != nil { error = "笔记清单缓存损坏，请同步重试；其余正文仍可阅读。" }
         if failures > 0 { error = "\(failures) 个缓存分片无法读取，请同步重试。" }
         return result
     }
@@ -220,8 +230,8 @@ actor LectureService {
         if failures.isEmpty { let names = Set(index.shards.map(\.name)); candidate.retain(names); value.shards = value.shards.filter { names.contains($0.key) } }
         value.indexHash = LectureCrypto.hash(encrypted)
         let indexLocation = try blob(value, value.indexHash!)
-        if value.indexHash != original.indexHash || !FileManager.default.fileExists(atPath: indexLocation.path) { try write(encrypted, to: indexLocation) }
-        if original.needsRetry != true, commitID != original.lastCommit || !failures.isEmpty { value.previousHashes = currentHashes }
+        if value.indexHash != original.indexHash || !healthy || !FileManager.default.fileExists(atPath: indexLocation.path) { try write(encrypted, to: indexLocation) }
+        if original.needsRetry != true, commitID != original.lastCommit || !failures.isEmpty { value.previousHashes = currentHashes; value.previousManifest = LectureSaved.Previous(indexHash: original.indexHash, shards: original.shards, lastCommit: original.lastCommit) }
         value.lastCommit = commitID; value.needsRetry = !failures.isEmpty; value.lastSynced = Date(); healthy = failures.isEmpty
         return (value, failures.isEmpty ? nil : "\(failures.count) 个分片失败，已保留旧内容。\(failures[0])")
     }
@@ -241,6 +251,7 @@ actor LectureService {
         busy = true; defer { busy = false }
         do {
             var (next, warning) = try await download(value, key: key, into: engine)
+            if next.lastCommit == value.lastCommit, next.lastSynced == value.lastSynced, warning == nil, healthy { error = nil; return state() }
             // Reading can occur while network requests suspend this actor.
             next.reads = saved?.reads ?? next.reads
             try persist(next); saved = next; error = warning

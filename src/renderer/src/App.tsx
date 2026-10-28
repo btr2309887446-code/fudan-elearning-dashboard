@@ -387,13 +387,14 @@ export default function App() {
     window.addEventListener("keydown", f);
     return () => window.removeEventListener("keydown", f);
   }, [selected, busy, reader]);
+  const currentDay = dayKey(now);
   const horizon = useMemo(
     () =>
       Math.max(
-        now + 90 * 86400000,
+        Date.parse(`${currentDay}T00:00:00+08:00`) + 90 * 86400000,
         Date.parse(`${month}-01T00:00:00+08:00`) + 32 * 86400000,
       ),
-    [month, now],
+    [month, currentDay],
   );
   const tasks = useMemo(
     () => (snapshot && data ? unifyTasks(snapshot, data, horizon) : []),
@@ -835,6 +836,7 @@ export default function App() {
                     <div className="ws-intro">
                       <span>
                         {new Date(now).toLocaleDateString("zh-CN", {
+                          timeZone: "Asia/Shanghai",
                           month: "long",
                           day: "numeric",
                           weekday: "long",

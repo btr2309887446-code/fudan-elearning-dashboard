@@ -23,7 +23,7 @@ interface Stored {
   version: 1; account: number; configured: boolean; repository: string; branch: string; sourceId: string;
   secret?: string; bindings: LectureBinding[]; generations: Record<string, string>;
   reads: Record<string, string>; shards: Record<string, { hash: string; courseIds: string[] }>;
-  indexHash?: string; lastSynced?: string; lastCommit?: string; needsRetry?: boolean; pendingResources?: boolean; previousHashes?: string[];
+  indexHash?: string; lastSynced?: string; lastCommit?: string; needsRetry?: boolean; pendingResources?: boolean; previousHashes?: string[]; previousManifest?: { indexHash?: string; shards: Stored["shards"]; lastCommit?: string };
 }
 interface Context {
   account: number; stored: Stored; worker: Rpc; epoch: number; abort: AbortController;
@@ -161,7 +161,12 @@ export class LectureService {
   async state(account: number): Promise<LectureConnection> { return this.public(await this.context(account)); }
   private async hydrate(ctx: Context) {
     if (!ctx.password) return;
-    if (ctx.stored.indexHash) await ctx.worker.call('index', await readFile(this.blob(ctx, ctx.stored.indexHash)), ctx.password);
+    let indexError: unknown; ctx.healthy = false;
+    if (ctx.stored.indexHash) { try {
+      const bytes = await readFile(this.blob(ctx, ctx.stored.indexHash));
+      if (hash(bytes) !== ctx.stored.indexHash) throw Error('笔记索引缓存损坏，请同步重试');
+      await ctx.worker.call('index', bytes, ctx.password);
+    } catch (error) { indexError = error; } }
     const errors: string[] = [];
     for (const [name, shard] of Object.entries(ctx.stored.shards)) {
       this.guard(ctx);
@@ -169,7 +174,9 @@ export class LectureService {
       catch { errors.push(name); }
     }
     ctx.courses = await ctx.worker.call('courses'); this.guard(ctx);
-    ctx.healthy = errors.length === 0;
+    if (indexError && errors.length === Object.keys(ctx.stored.shards).length) throw indexError;
+    ctx.healthy = errors.length === 0 && !indexError;
+    if (indexError) ctx.error = '笔记清单缓存损坏，请重试同步；其余缓存仍可阅读';
     if (errors.length) ctx.error = `${errors.length} 个本地分片无法读取，请重试同步；其余缓存仍可使用`;
   }
   async connect(account: number, input: LectureConnectInput): Promise<LectureConnection> {
@@ -283,12 +290,13 @@ export class LectureService {
     if (index.shards.length && failures.length === index.shards.length) throw new Error(`所有笔记分片读取失败：${failures[0]}`);
     const names = new Set(index.shards.map(shard => shard.name));
     const indexHash = hash(encrypted), cache = this.blob(ctx, indexHash);
-    if (indexHash !== old.indexHash || !await cacheExists([cache])) await atomicCache(cache, encrypted, () => this.guard(ctx));
+    if (indexHash !== old.indexHash || !ctx.healthy || !await cacheExists([cache])) await atomicCache(cache, encrypted, () => this.guard(ctx));
     this.guard(ctx);
     // Keep the last complete manifest throughout partial retries, then advance the rollback generation.
+    const previousManifest = old.needsRetry ? old.previousManifest : failures.length || old.lastCommit !== ref.object.sha ? { indexHash: old.indexHash, shards: old.shards, lastCommit: old.lastCommit } : old.previousManifest;
     const previousHashes = old.needsRetry ? old.previousHashes ?? hashes : failures.length || old.lastCommit !== ref.object.sha ? hashes : old.previousHashes;
     ctx.stored = { ...ctx.stored, shards: failures.length ? shards : Object.fromEntries(Object.entries(shards).filter(([name]) => names.has(name))),
-      indexHash, lastCommit: ref.object.sha, needsRetry: !!failures.length, pendingResources: true, previousHashes, lastSynced: new Date().toISOString() };
+      indexHash, lastCommit: ref.object.sha, needsRetry: !!failures.length, pendingResources: true, previousHashes, previousManifest, lastSynced: new Date().toISOString() };
     ctx.healthy = !failures.length;
     ctx.courses = await ctx.worker.call('courses'); this.guard(ctx);
     ctx.error = failures.length ? `${failures.length} 个分片同步失败，已保留旧内容。${failures[0]}` : undefined;

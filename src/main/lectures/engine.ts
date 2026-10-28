@@ -79,7 +79,6 @@ export class LectureEngine {
     const encrypted = await readFile(path);
     if (digest(encrypted) !== expectedHash) throw Error("笔记缓存校验失败，请重试同步");
     if (!validate && this.loaded.get(name)?.hash === expectedHash) return this.loaded.get(name)!.courses;
-    if (digest(encrypted) !== expectedHash) throw Error('笔记缓存校验失败，请重试同步');
     try {
       const cached = await readFile(`${path}.index`);
       const key = createHash('sha256').update(password).digest();
@@ -143,8 +142,7 @@ export class LectureEngine {
         const id = text(row.course_id), old = this.catalog.get(id);
         this.catalog.set(id, { title: text(row.title), teacher: text(row.teacher), terms: [...new Set([...(old?.terms ?? []), text(row.term)].filter(Boolean))] });
       }
-      this.remember(name,db,raw.length);
-      if (!this.dbs.has(name)) db.close();
+      this.dbs.get(name)?.close(); this.dbs.delete(name); this.sizes.delete(name); db.close();
       this.locations.set(name,{path,bytes:path?undefined:Uint8Array.from(encrypted),password,hash:expectedHash});
       this.rebuild();
       this.loaded.set(name, { hash: expectedHash, courses: [...incoming] });

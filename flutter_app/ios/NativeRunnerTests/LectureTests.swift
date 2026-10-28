@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 @testable import NativeRunner
 
 private final class LectureFixtureProtocol: URLProtocol {
@@ -16,7 +17,10 @@ private final class LectureFixtureProtocol: URLProtocol {
     override func stopLoading() { }
 }
 final class LectureTests: XCTestCase {
-    struct Fixture: Decodable { var password: String; var index: Data; var shard: Data; var hash: String }
+    struct Fixture: Decodable {
+        struct LargeShard: Decodable { var bytes: Data; var hash: String; var decodedBytes: Int }
+        var password: String; var index: Data; var shard: Data; var hash: String; var largeShards: [LargeShard]
+    }
     private func fixture() throws -> Fixture {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "lecture-fixture", withExtension: "json"))
         return try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
@@ -57,6 +61,30 @@ final class LectureTests: XCTestCase {
         let body = try restored.body(restored.items[0].reference)
         XCTAssertFalse(body.summary.isEmpty); XCTAssertEqual(restored.residentDatabases, 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathExtension("index").path))
+    }
+    func testMultipleLargeShardsEvictWithinDefaultBudget() throws {
+        let f = try fixture(), folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let engine = LectureEngine(source: "large")
+        for (n, shard) in f.largeShards.enumerated() {
+            let url = folder.appendingPathComponent("\(n).enc"); try shard.bytes.write(to: url)
+            try engine.loadFile("\(n)", url: url, password: f.password, hash: shard.hash)
+            XCTAssertEqual(engine.residentDatabases, 0)
+        }
+        var metrics: [[String: Any]] = []
+        for n in [0, 1, 2, 0] {
+            let start = Date()
+            let body = try engine.body(LectureReference(sourceID: "large", courseID: "large-\(n)", lectureID: "0"))
+            XCTAssertGreaterThan(body.transcript.count, 1_000_000)
+            XCTAssertLessThanOrEqual(engine.residentBytes, 64 * 1024 * 1024)
+            XCTAssertEqual(engine.residentDatabases, 1)
+            var usage = rusage(); getrusage(RUSAGE_SELF, &usage)
+            metrics.append(["shard": n, "milliseconds": Date().timeIntervalSince(start) * 1000,
+                            "residentDatabaseBytes": engine.residentBytes, "processMaxRSSBytes": usage.ru_maxrss])
+        }
+        let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: metrics, options: .prettyPrinted), uniformTypeIdentifier: "public.json")
+        attachment.name = "lecture-cache-budget-and-timings"; attachment.lifetime = .keepAlways; add(attachment)
     }
     func testSourceValidationAndLegacyTasks() throws {
         XCTAssertEqual(try LectureService.source(repository: "https://github.com/Owner/Repo.git/", branch: "data").0, "Owner/Repo")
@@ -104,6 +132,17 @@ final class LectureTests: XCTestCase {
         let reopened = LectureService(account: 1, root: root, configuration: config)
         let locked = try await reopened.restore(); XCTAssertTrue(locked.locked)
         let unlocked = try await reopened.connect(input); XCTAssertFalse(unlocked.locked); XCTAssertNotNil(unlocked.error)
+        let source = try LectureService.source(repository: "Owner/Repo", branch: "data").2
+        let indexFile = root.appendingPathComponent("1/\(source)/\(LectureCrypto.hash(f.index)).enc")
+        try Data("synthetic corruption".utf8).write(to: indexFile)
+        let damaged = LectureService(account: 1, root: root, configuration: config)
+        _ = try await damaged.restore()
+        let recovered = try await damaged.connect(input); XCTAssertFalse(recovered.locked)
+        let preserved = try await damaged.body(body.item.reference, course: 4); XCTAssertEqual(preserved.summary, body.summary)
+        LectureFixtureProtocol.offline = false
+        let repaired = try await damaged.sync(); XCTAssertNil(repaired.error)
+        XCTAssertEqual(LectureCrypto.hash(try Data(contentsOf: indexFile)), LectureCrypto.hash(f.index))
+        await damaged.cancel()
         let connection = root.appendingPathComponent("1/connection.json")
         try FileManager.default.removeItem(at: connection); try FileManager.default.createDirectory(at: connection, withIntermediateDirectories: true)
         do { _ = try await reopened.bind("101", to: 8); XCTFail("failed writes must reject") } catch { }

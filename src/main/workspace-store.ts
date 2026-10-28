@@ -5,6 +5,7 @@ import {
   writeFileSync,
   renameSync,
   copyFileSync,
+  unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -17,14 +18,16 @@ import {
   type ResourceResult,
 } from "../core/workspace.ts";
 
-export function atomicJson(path: string, value: unknown): void {
+export function atomicJson(path: string, value: unknown, backup = true): void {
   const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
   writeFileSync(temporary, JSON.stringify(value), {
     encoding: "utf8",
     flush: true,
   });
-  if (existsSync(path)) copyFileSync(path, `${path}.bak`);
+  if (backup && existsSync(path)) copyFileSync(path, `${path}.bak`);
   renameSync(temporary, path);
+  } finally { if (existsSync(temporary)) unlinkSync(temporary); }
 }
 export class WorkspaceStore {
   private root: string;

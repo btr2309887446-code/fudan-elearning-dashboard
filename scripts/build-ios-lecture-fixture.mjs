@@ -12,5 +12,15 @@ const statement=db.prepare('INSERT INTO lectures VALUES(?,?,?,?,?,?)');
 for(let i=0;i<5000;i++)statement.run(['lecture-'+i,'101','课次 '+i,'2026-10-25','## 课堂事项\n\n- 阅读教材并整理问题。\n\n$$x^2$$','虚构转写']);
 statement.free();const shard=encrypt(gzipSync(db.export()));db.close();
 const index=encrypt(Buffer.from(JSON.stringify({version:4,shards:[{name:'shard-hot-0000.db.gz.enc',sha256:hash(shard),size:shard.length}]})));
-writeFileSync('flutter_app/ios/NativeRunnerTests/lecture-fixture.json',JSON.stringify({password,index:index.toString('base64'),shard:shard.toString('base64'),hash:hash(shard)}));
+const largeShards=[];
+for(let n=0;n<3;n++) {
+  const large=new SQL.Database();
+  large.run('CREATE TABLE courses(course_id TEXT,title TEXT,teacher TEXT); CREATE TABLE lectures(sub_id TEXT,course_id TEXT,sub_title TEXT,date TEXT,summary TEXT,transcript TEXT);');
+  large.run('INSERT INTO courses VALUES(?,?,?)',[`large-${n}`,'Synthetic course','Example']);
+  const transcript='Synthetic transcript. '.repeat(50000);
+  for(let row=0;row<36;row++) large.run('INSERT INTO lectures VALUES(?,?,?,?,?,?)',[String(row),`large-${n}`,`Lecture ${row}`,'2026-10-01','Example summary',transcript]);
+  const raw=large.export(); large.close(); const encrypted=encrypt(gzipSync(raw));
+  largeShards.push({bytes:encrypted.toString('base64'),hash:hash(encrypted),decodedBytes:raw.length});
+}
+writeFileSync('flutter_app/ios/NativeRunnerTests/lecture-fixture.json',JSON.stringify({password,index:index.toString('base64'),shard:shard.toString('base64'),hash:hash(shard),largeShards}));
 console.log('Generated synthetic OpenSSL-compatible fixture: 5000 lectures');

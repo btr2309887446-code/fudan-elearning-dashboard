@@ -20,7 +20,7 @@ import {
   powerMonitor,
 } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, relative, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateIpc, safeExternalUrl } from "./ipc-security.ts";
 import { CredentialStore, publicPreferences, preferencePatch } from "./credentials.ts";
@@ -174,7 +174,10 @@ function readPrefs(): Prefs {
       ...defaults,
       ...(existsSync(prefsPath()) ? JSON.parse(readFileSync(prefsPath(), "utf8")) as Partial<Prefs> : {}),
     };
-    const legacy = result.llm?.apiKey;
+    let legacyBackup: Prefs | undefined;
+    try { if (existsSync(`${prefsPath()}.bak`)) legacyBackup = JSON.parse(readFileSync(`${prefsPath()}.bak`, "utf8")); } catch { /* Preserve malformed backups. */ }
+    const legacy = result.llm?.apiKey || legacyBackup?.llm?.apiKey;
+    if (!result.llm && legacyBackup?.llm && legacy) result.llm = { ...legacyBackup.llm };
     if (legacy) {
       try { credentials().import("llm", legacy); }
       catch { credentials().warning = "AI 密钥迁移未完成，原数据已保留，下次启动会重试。"; }
@@ -197,12 +200,13 @@ function writePrefs(prefs: Prefs): void {
   const clean = { ...prefs, llm: prefs.llm ? { ...prefs.llm, apiKey: "" } : undefined };
   // Preserve a legacy plaintext file only while migration cannot be committed.
   const oldHasKey = existsSync(prefsPath()) && !!JSON.parse(readFileSync(prefsPath(), "utf8")).llm?.apiKey;
-  if (oldHasKey && key && !credentials().persisted("llm")) { cachedPrefs = prefs; return; }
-  atomicJson(prefsPath(), clean);
   const backup = `${prefsPath()}.bak`;
+  const backupHasKey = existsSync(backup) && !!JSON.parse(readFileSync(backup, "utf8")).llm?.apiKey;
+  if ((oldHasKey || backupHasKey) && key && !credentials().persisted("llm")) { cachedPrefs = prefs; return; }
+  atomicJson(prefsPath(), clean, false);
   if (existsSync(backup)) {
     const old = JSON.parse(readFileSync(backup, "utf8"));
-    if (old.llm?.apiKey) { old.llm.apiKey = ""; writeFileSync(backup, JSON.stringify(old), { encoding: "utf8", flush: true }); }
+    if (old.llm?.apiKey) { old.llm.apiKey = ""; atomicJson(backup, old, false); }
   }
   cachedPrefs = prefs;
 }
@@ -1252,7 +1256,9 @@ function registerIpc(): void {
     async (_e, relativePath: string): Promise<void> => {
       try {
         const root = readPrefs().downloadRoot ?? defaultDownloadRoot();
-        shell.showItemInFolder(join(root, relativePath));
+        const target = resolve(root, relativePath), within = relative(resolve(root), target);
+        if (within.startsWith("..") || isAbsolute(within)) throw Error("下载路径无效");
+        shell.showItemInFolder(target);
       } catch {
         // 路径无效时静默忽略：这只是个便利功能。
       }
@@ -1304,9 +1310,8 @@ function createWindow(): void {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      // Keep rendering while the window is in the background: without this the
-      // UI can look frozen after a refresh until the user focuses it.
-      backgroundThrottling: !DEMO,
+      // Only automated screenshots need unthrottled hidden rendering.
+      backgroundThrottling: !process.env["ELEARNING_SMOKE"],
     },
   });
 

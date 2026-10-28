@@ -210,7 +210,7 @@ final class LectureEngine {
             let id = row["course_id"]!, course = courses.first { $0.id == id }, summary = row["summary"]!.trimmingCharacters(in: .whitespacesAndNewlines)
             items.append(LectureItem(reference: LectureReference(sourceID: source, courseID: id, lectureID: row["sub_id"]!), title: row["sub_title"]!, date: row["date"]!, courseTitle: course?.title ?? "", teacher: course?.teacher ?? "", summaryHash: summary.isEmpty ? "" : LectureCrypto.hash(Data(summary.utf8)), shard: name))
         }
-        remember(name, db: db, size: raw.count)
+        databases[name] = nil; sizes[name] = nil; recent.removeAll { $0 == name }
         locations[name] = Location(url: url, data: url == nil ? data : nil, password: password, hash: hash)
         courseShards[name] = courses; entries[name] = items; hashes[name] = hash; rebuild()
     }

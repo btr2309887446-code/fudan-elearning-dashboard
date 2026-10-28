@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createCipheriv, createHash, pbkdf2Sync } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { mkdtempSync, readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -142,6 +142,12 @@ try {
   check(!Object.hasOwn(stored.shards, 'shard-hot-0000.db.gz.enc'), 'retired shards are removed from active manifest');
   check(readdirSync(join(root, '1', state.sourceId)).every(name => name.endsWith('.enc') || name.endsWith('.enc.index') || name === 'state.json'), 'no plaintext SQLite or note files are written');
   assert.ok(!JSON.stringify(stored).includes('fictional-test-password')); checks++;
+  const indexPath = join(folder, `${stored.indexHash}.enc`);
+  writeFileSync(indexPath, 'synthetic corruption'); service.reset();
+  check(!!(await service.state(1)).error && (await service.detail(1, ref)).summary.startsWith('更新摘要'), 'damaged manifest preserves readable cached bodies');
+  check(!(await service.sync(1)).error && digest(readFileSync(indexPath)) === stored.indexHash, 'same-commit recovery repairs a corrupt manifest');
+  service.reset();
+  check(!(await service.state(1)).error, 'repaired manifest survives another restart');
   const before = readFileSync(join(root, '1', 'connection.json'), 'utf8');
   const entered = new Promise<void>(r => { pause = r; });
   const flight = service.sync(1);

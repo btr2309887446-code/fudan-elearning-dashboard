@@ -66,7 +66,7 @@ final class NativeAppStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard, localRepository: NativeLocalRepository = NativeLocalRepository(), sessionVault: NativeSessionVault = .live, clock: NativeClock? = nil) {
         let clock = clock ?? NativeClock()
-        self.clock = clock; self.now = clock.now; self.sessionVault = sessionVault
+        self.clock = clock; self.now = clock.now; self.personalHorizon = Beijing.addDays(90, to: Beijing.day(clock.now)); self.sessionVault = sessionVault
         self.defaults = defaults
         self.localRepository = localRepository
         NativeFreshStart.run(defaults: defaults)
@@ -98,7 +98,7 @@ final class NativeAppStore: ObservableObject {
         clockObservation = clock.$now.dropFirst().sink { [weak self] date in
             guard let self else { return }
             self.now = date
-            self.ensurePersonalRange(through: Beijing.addDays(90, to: date))
+            self.ensurePersonalRange(through: Beijing.addDays(90, to: Beijing.day(date)))
         }
         NativeNotificationRouter.shared.install { [weak self] day in
             self?.reminderDay = day
