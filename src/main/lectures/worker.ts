@@ -9,7 +9,7 @@ parentPort!.on('message', ({ id, method, args }: { id: number; method: string; a
       let value: unknown;
       if (method === 'index') value = decodeIndex(args[0] as Uint8Array, args[1] as string);
       else if (method === 'derive') value = derivePassword(args[0] as string, args[1] as string);
-      else if (['load', 'courses', 'list', 'body', 'resources', 'demo', 'retain', 'close'].includes(method))
+      else if (['load', 'loadFile', 'stats', 'courses', 'list', 'body', 'resources', 'demo', 'retain', 'close'].includes(method))
         value = await (engine[method as keyof LectureEngine] as (...a: unknown[]) => unknown).apply(engine, args);
       else throw new Error('未知课堂内容操作');
       parentPort!.postMessage({ id, value });

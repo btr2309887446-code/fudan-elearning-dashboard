@@ -19,7 +19,7 @@ struct LectureTaskSource: Codable, Hashable, Sendable { var reference: LectureRe
 struct LectureCourse: Codable, Identifiable, Sendable {
     var id: String; var title: String; var teacher: String; var terms: [String] = []
 }
-struct LectureItem: Identifiable, Sendable {
+struct LectureItem: Codable, Identifiable, Sendable {
     var reference: LectureReference; var title: String; var date: String; var courseTitle: String; var teacher: String
     var summaryHash: String; var shard: String; var read = false; var updated = false
     var id: String { reference.key }
@@ -145,12 +145,56 @@ final class LectureEngine {
     private var courseShards: [String: [LectureCourse]] = [:]
     private var entries: [String: [LectureItem]] = [:]
     private var demoBodies: [String: LectureBody] = [:]
+    private struct Location { var url: URL?; var data: Data?; var password: String; var hash: String }
+    private struct Index: Codable { var version = 1; var source: String; var hash: String; var courses: [LectureCourse]; var items: [LectureItem] }
+    private var locations: [String: Location] = [:]
+    private var sizes: [String: Int] = [:]
+    private var recent: [String] = []
+    private var lookup: [String: LectureItem] = [:]
+    private(set) var items: [LectureItem] = []
+    let budget: Int
+    var residentBytes: Int { sizes.values.reduce(0, +) }
+    var residentDatabases: Int { databases.count }
+    var loadedNames: Set<String> { Set(hashes.keys) }
     let source: String
-    init(source: String) { self.source = source }
-    func load(_ name: String, data: Data, password: String, hash: String) throws {
+    init(source: String, budget: Int = 64 * 1024 * 1024) { self.source = source; self.budget = budget }
+    private func rebuild() {
+        lookup = [:]
+        for name in entries.keys.sorted() { for item in entries[name]! { lookup[item.id] = item } }
+        items = lookup.values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
+    }
+    private func remember(_ name: String, db: LectureDatabase, size: Int) {
+        databases[name] = nil; sizes[name] = nil; recent.removeAll { $0 == name }
+        guard size <= budget else { return }
+        while residentBytes + size > budget, !recent.isEmpty {
+            let oldest = recent.removeFirst(); databases[oldest] = nil; sizes[oldest] = nil
+        }
+        databases[name] = db; sizes[name] = size; recent.append(name)
+    }
+    func loadFile(_ name: String, url: URL, password: String, hash: String, validate: Bool = false) throws {
+        if !validate, hashes[name] == hash, FileManager.default.fileExists(atPath: url.path) { return }
+        let data = try Data(contentsOf: url)
+        guard LectureCrypto.hash(data) == hash else { throw NativeError.protocolFailure("笔记缓存损坏，请同步重试。") }
+        let local = url.appendingPathExtension("index")
+        let key = SymmetricKey(data: SHA256.hash(data: Data(password.utf8)))
+        if let sealed = try? AES.GCM.SealedBox(combined: Data(contentsOf: local)),
+           let decoded = try? AES.GCM.open(sealed, using: key),
+           let index = try? JSONDecoder().decode(Index.self, from: decoded), index.version == 1, index.hash == hash, index.source == source {
+            databases[name] = nil; sizes[name] = nil; recent.removeAll { $0 == name }
+            entries[name] = index.items.map { var item = $0; item.shard = name; return item }; courseShards[name] = index.courses; hashes[name] = hash
+            locations[name] = Location(url: url, password: password, hash: hash); rebuild(); return
+        }
+        try load(name, data: data, password: password, hash: hash, url: url)
+        let index = Index(source: source, hash: hash, courses: courseShards[name] ?? [], items: entries[name] ?? [])
+        if let encoded = try? JSONEncoder().encode(index), let sealed = try? AES.GCM.seal(encoded, using: key).combined {
+            try? sealed.write(to: local, options: [.atomic, .completeFileProtection])
+        }
+    }
+    func load(_ name: String, data: Data, password: String, hash: String, url: URL? = nil) throws {
         guard LectureCrypto.hash(data) == hash else { throw NativeError.protocolFailure("笔记分片校验失败。") }
         if hashes[name] == hash { return }
-        let db = try LectureDatabase(LectureCrypto.gunzip(LectureCrypto.decrypt(data, password: password)))
+        let raw = try LectureCrypto.gunzip(LectureCrypto.decrypt(data, password: password))
+        let db = try LectureDatabase(raw)
         let rawCourses = try db.rows("SELECT course_id,title,teacher FROM courses")
         var courses = rawCourses.map { LectureCourse(id: $0["course_id"]!, title: $0["title"]!, teacher: $0["teacher"]!) }
         if try db.has("all_courses") {
@@ -166,18 +210,29 @@ final class LectureEngine {
             let id = row["course_id"]!, course = courses.first { $0.id == id }, summary = row["summary"]!.trimmingCharacters(in: .whitespacesAndNewlines)
             items.append(LectureItem(reference: LectureReference(sourceID: source, courseID: id, lectureID: row["sub_id"]!), title: row["sub_title"]!, date: row["date"]!, courseTitle: course?.title ?? "", teacher: course?.teacher ?? "", summaryHash: summary.isEmpty ? "" : LectureCrypto.hash(Data(summary.utf8)), shard: name))
         }
-        databases[name] = db; courseShards[name] = courses; entries[name] = items; hashes[name] = hash
+        remember(name, db: db, size: raw.count)
+        locations[name] = Location(url: url, data: url == nil ? data : nil, password: password, hash: hash)
+        courseShards[name] = courses; entries[name] = items; hashes[name] = hash; rebuild()
     }
     func retain(_ names: Set<String>) {
         databases = databases.filter { names.contains($0.key) }; hashes = hashes.filter { names.contains($0.key) }
         entries = entries.filter { names.contains($0.key) }; courseShards = courseShards.filter { names.contains($0.key) }
+        locations = locations.filter { names.contains($0.key) }; sizes = sizes.filter { names.contains($0.key) }; recent.removeAll { !names.contains($0) }; rebuild()
     }
     var courses: [LectureCourse] { var result: [String: LectureCourse] = [:]; for c in courseShards.keys.sorted().flatMap({ courseShards[$0]! }) { result[c.id] = c }; return result.values.sorted { $0.title < $1.title } }
-    var items: [LectureItem] { var result: [String: LectureItem] = [:]; for item in entries.keys.sorted().flatMap({ entries[$0]! }) { result[item.id] = item }; return result.values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date } }
     func body(_ ref: LectureReference) throws -> LectureBody {
-        guard let item = items.first(where: { $0.reference == ref }) else { throw NativeError.protocolFailure("课堂笔记不存在，请重新同步。") }
+        guard ref.sourceID == source, let item = lookup[ref.key] else { throw NativeError.protocolFailure("课堂笔记不存在，请重新同步。") }
         if let body = demoBodies[item.id] { return body }
-        guard let db = databases[item.shard], let row = try db.rows("SELECT summary,transcript FROM lectures WHERE course_id=? AND sub_id=?", [ref.courseID, ref.lectureID]).first else { throw NativeError.protocolFailure("课堂正文不可用。") }
+        let db: LectureDatabase
+        if let cached = databases[item.shard] { db = cached; recent.removeAll { $0 == item.shard }; recent.append(item.shard) }
+        else {
+            guard let location = locations[item.shard] else { throw NativeError.protocolFailure("笔记正文缓存缺失，请同步重试。") }
+            let data = try location.url.map { try Data(contentsOf: $0) } ?? location.data ?? Data()
+            guard LectureCrypto.hash(data) == location.hash else { throw NativeError.protocolFailure("笔记缓存损坏，请同步重试。") }
+            let raw = try LectureCrypto.gunzip(LectureCrypto.decrypt(data, password: location.password))
+            db = try LectureDatabase(raw); remember(item.shard, db: db, size: raw.count)
+        }
+        guard let row = try db.rows("SELECT summary,transcript FROM lectures WHERE course_id=? AND sub_id=?", [ref.courseID, ref.lectureID]).first else { throw NativeError.protocolFailure("课堂正文不可用。") }
         let pages = try db.has("ppt_pages") ? db.rows("SELECT page_num,text FROM ppt_pages WHERE sub_id=? ORDER BY page_num", [ref.lectureID]).map { "第 \($0["page_num"] ?? "") 页\n\($0["text"] ?? "")" } : []
         return LectureBody(item: item, summary: row["summary"] ?? "", transcript: row["transcript"] ?? "", pages: pages)
     }
@@ -189,5 +244,6 @@ final class LectureEngine {
             demoBodies[item.id] = LectureBody(item: item, summary: summary, transcript: "本课次原始转写使用虚构内容，仅供界面测试。", pages: ["第 1 页\n核心概念与应用", "第 2 页\n示例与练习"])
             return item
         } }
+        rebuild()
     }
 }

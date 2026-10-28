@@ -1,12 +1,14 @@
 import { Worker } from 'node:worker_threads';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { atomicCache, cacheExists, collectCache } from './cache.ts';
 import { join } from 'node:path';
 import type { Snapshot } from '../../core/types.ts';
 import type { ResourceResult } from '../../core/workspace.ts';
 import { DEFAULT_LECTURE_REPOSITORY, lectureKey, type LectureBinding, type LectureBody, type LectureConnectInput,
   type LectureConnection, type LectureCourse, type LectureItem, type LecturePage, type LectureRef } from '../../core/lectures.ts';
-import type { LectureIndex, ShardEntry } from './engine.ts';
+import type { LectureIndex } from './engine.ts';
 
 interface Options {
   root: string; workerPath: string; wasmPath: string;
@@ -21,12 +23,12 @@ interface Stored {
   version: 1; account: number; configured: boolean; repository: string; branch: string; sourceId: string;
   secret?: string; bindings: LectureBinding[]; generations: Record<string, string>;
   reads: Record<string, string>; shards: Record<string, { hash: string; courseIds: string[] }>;
-  indexHash?: string; lastSynced?: string;
+  indexHash?: string; lastSynced?: string; lastCommit?: string; needsRetry?: boolean; pendingResources?: boolean; previousHashes?: string[];
 }
 interface Context {
   account: number; stored: Stored; worker: Rpc; epoch: number; abort: AbortController;
   password?: string; token?: string; courses: LectureCourse[]; error?: string;
-  flight?: Promise<LectureConnection>; demo?: boolean;
+  flight?: Promise<LectureConnection>; demo?: boolean; healthy?: boolean;
 }
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const message = (error: unknown) => error instanceof Error ? error.message : '课堂笔记同步失败';
@@ -85,19 +87,34 @@ export class LectureService {
   }
   private persist(ctx: Context) {
     if (ctx.demo) return;
-    const value = JSON.stringify(ctx.stored);
-    this.atomic(ctx, join(this.folder(ctx), 'state.json'), value);
-    this.atomic(ctx, join(this.accountDir(ctx.account), 'connection.json'), value);
+    const path = join(this.accountDir(ctx.account), 'connection.json');
+    const registry = this.registry(ctx.account);
+    registry.active = ctx.stored.sourceId; registry.sources[ctx.stored.sourceId] = ctx.stored;
+    this.atomic(ctx, path, JSON.stringify(registry));
   }
   private blank(account: number, repository = DEFAULT_LECTURE_REPOSITORY, branch = 'data'): Stored {
     return { version: 1, account, configured: false, ...normalizeSource(repository, branch), bindings: [], generations: {}, reads: {}, shards: {} };
   }
-  private loadStored(path: string, account: number): Stored | undefined {
-    if (!existsSync(path)) return;
-    const s = JSON.parse(readFileSync(path, 'utf8')) as Stored;
+  private validate(s: Stored, account: number): Stored {
     if (s.version !== 1 || s.account !== account || !Array.isArray(s.bindings) || !s.reads || !s.shards || !s.generations ||
         normalizeSource(s.repository, s.branch).sourceId !== s.sourceId) throw new Error('本地课堂笔记配置格式异常，原文件已保留');
     return s;
+  }
+  private registry(account: number): { version: 2; active?: string; sources: Record<string, Stored> } {
+    const path = join(this.accountDir(account), 'connection.json');
+    if (!existsSync(path)) return { version: 2, sources: {} };
+    const value = JSON.parse(readFileSync(path, 'utf8'));
+    if (value.version === 1) { const old = this.validate(value, account); return { version: 2, active: old.sourceId, sources: { [old.sourceId]: old } }; }
+    if (value.version !== 2 || !value.sources || (value.active && !value.sources[value.active])) throw Error('本地笔记连接格式异常，原文件已保留');
+    for (const [id, source] of Object.entries(value.sources)) if (this.validate(source as Stored, account).sourceId !== id) throw Error('笔记来源索引异常');
+    return value;
+  }
+  private loadStored(account: number, sourceId?: string): Stored | undefined {
+    const registry = this.registry(account), id = sourceId ?? registry.active;
+    if (id && registry.sources[id]) return structuredClone(registry.sources[id]);
+    // Only old installations have per-source files. Preserve them for recovery; never write them again.
+    const legacy = sourceId && join(this.accountDir(account), sourceId, 'state.json');
+    return legacy && existsSync(legacy) ? this.validate(JSON.parse(readFileSync(legacy, 'utf8')), account) : undefined;
   }
   private make(account: number, stored: Stored): Context {
     const ctx: Context = { account, stored, epoch: this.epoch, abort: new AbortController(), courses: [],
@@ -112,7 +129,7 @@ export class LectureService {
     const epoch = this.epoch;
     const promise = (async () => {
       const demo = this.options.demoSnapshot?.();
-      const stored = demo ? this.blank(account, 'demo/classroom') : this.loadStored(join(this.accountDir(account), 'connection.json'), account) ?? this.blank(account);
+      const stored = demo ? this.blank(account, 'demo/classroom') : this.loadStored(account) ?? this.blank(account);
       const ctx = this.make(account, stored);
       try {
         if (demo) {
@@ -144,14 +161,15 @@ export class LectureService {
   async state(account: number): Promise<LectureConnection> { return this.public(await this.context(account)); }
   private async hydrate(ctx: Context) {
     if (!ctx.password) return;
-    if (ctx.stored.indexHash) await ctx.worker.call('index', readFileSync(this.blob(ctx, ctx.stored.indexHash)), ctx.password);
+    if (ctx.stored.indexHash) await ctx.worker.call('index', await readFile(this.blob(ctx, ctx.stored.indexHash)), ctx.password);
     const errors: string[] = [];
     for (const [name, shard] of Object.entries(ctx.stored.shards)) {
       this.guard(ctx);
-      try { await ctx.worker.call('load', name, readFileSync(this.blob(ctx, shard.hash)), ctx.password, shard.hash); }
+      try { await ctx.worker.call('loadFile', name, this.blob(ctx, shard.hash), ctx.password, shard.hash); }
       catch { errors.push(name); }
     }
     ctx.courses = await ctx.worker.call('courses'); this.guard(ctx);
+    ctx.healthy = errors.length === 0;
     if (errors.length) ctx.error = `${errors.length} 个本地分片无法读取，请重试同步；其余缓存仍可使用`;
   }
   async connect(account: number, input: LectureConnectInput): Promise<LectureConnection> {
@@ -162,7 +180,7 @@ export class LectureService {
     if (current.demo) return this.public(current);
     const source = normalizeSource(input.repository, input.branch);
     if (!input.studentId.trim() || !input.password) throw new Error('请输入生成笔记时使用的学号和 UIS 密码');
-    const cached = this.loadStored(join(this.accountDir(account), source.sourceId, 'state.json'), account);
+    const cached = this.loadStored(account, source.sourceId);
     const stored = cached ?? this.blank(account, source.repository, source.branch);
     const candidate = this.make(account, { ...stored, configured: true });
     this.connecting.add(account);
@@ -185,7 +203,7 @@ export class LectureService {
       this.persist(candidate);
       this.close(current);
       this.contexts.set(account, candidate);
-      if (!offline) try { await this.emitResources(candidate); } catch (error) { this.guard(candidate); candidate.error = `笔记已连接，变化记录保存失败：${message(error)}`; }
+      if (!offline && !candidate.stored.needsRetry) try { await this.publishResources(candidate); } catch (error) { this.guard(candidate); candidate.error = `笔记已连接，变化记录保存失败：${message(error)}`; }
       this.options.onUpdated(); return this.public(candidate);
     } catch (error) { this.close(candidate); throw error; }
     finally { this.connecting.delete(account); }
@@ -224,6 +242,13 @@ export class LectureService {
   private async download(ctx: Context, publish: boolean) {
     const ref = await this.json<{ object: { sha: string } }>(ctx, `git/ref/heads/${encodeURIComponent(ctx.stored.branch)}`);
     if (!/^[a-f0-9]{40}$/.test(ref.object?.sha)) throw new Error('GitHub 分支格式无效');
+    const old = ctx.stored;
+    const hashes = [old.indexHash, ...Object.values(old.shards).map(s => s.hash)].filter((h): h is string => !!h);
+    if (old.lastCommit === ref.object.sha && ctx.healthy && !old.needsRetry && await cacheExists(hashes.map(h => this.blob(ctx, h)))) {
+      this.guard(ctx); ctx.error = undefined;
+      if (publish && old.pendingResources) await this.publishResources(ctx);
+      return;
+    }
     const commit = await this.json<{ tree: { sha: string } }>(ctx, `git/commits/${ref.object.sha}`);
     if (!/^[a-f0-9]{40}$/.test(commit.tree?.sha)) throw new Error('GitHub 提交格式无效');
     const tree = await this.json<{ truncated?: boolean; tree: { path: string; sha: string; type: string }[] }>(ctx, `git/trees/${commit.tree.sha}?recursive=1`);
@@ -235,39 +260,51 @@ export class LectureService {
     const index = await ctx.worker.call<LectureIndex>('index', encrypted, ctx.password);
     this.guard(ctx);
     const failures: string[] = [], successCourses = new Set<string>();
-    // Cache successful shards individually; unavailable or invalid shards leave last good bytes untouched.
+    const shards = { ...old.shards };
     for (const shard of index.shards) {
       this.guard(ctx);
       try {
-        let bytes: Uint8Array;
         const cache = this.blob(ctx, shard.sha256);
-        if (existsSync(cache)) bytes = readFileSync(cache);
-        else bytes = new Uint8Array();
-        if (bytes.length !== shard.size || hash(bytes) !== shard.sha256) {
+        let courses: string[];
+        try { courses = await ctx.worker.call<string[]>('loadFile', shard.name, cache, ctx.password, shard.sha256, ctx.healthy === false); }
+        catch {
+          this.guard(ctx);
           const sha = entries.get(`data/shards/${shard.name}`);
           if (!sha || !/^[a-f0-9]{40}$/.test(sha)) throw new Error('提交中缺少分片');
-          bytes = await this.bytes(ctx, `git/blobs/${sha}`, true);
+          const bytes = await this.bytes(ctx, `git/blobs/${sha}`, true);
+          if (bytes.length !== shard.size || hash(bytes) !== shard.sha256) throw new Error('分片大小或校验不符');
+          await atomicCache(cache, bytes, () => this.guard(ctx));
+          courses = await ctx.worker.call<string[]>('loadFile', shard.name, cache, ctx.password, shard.sha256, ctx.healthy === false);
         }
-        if (bytes.length !== shard.size) throw new Error('分片大小不符');
-        const courses = await ctx.worker.call<string[]>('load', shard.name, bytes, ctx.password, shard.sha256);
-        this.guard(ctx); this.atomic(ctx, cache, bytes);
-        ctx.stored.shards[shard.name] = { hash: shard.sha256, courseIds: courses };
+        this.guard(ctx); shards[shard.name] = { hash: shard.sha256, courseIds: courses };
         for (const id of courses) successCourses.add(id);
-      } catch (error) {
-        this.guard(ctx); failures.push(`${shard.name}: ${message(error)}`);
-      }
+      } catch (error) { this.guard(ctx); failures.push(`${shard.name}: ${message(error)}`); }
     }
     if (index.shards.length && failures.length === index.shards.length) throw new Error(`所有笔记分片读取失败：${failures[0]}`);
-    if (!failures.length) {
-      const names = new Set(index.shards.map(shard => shard.name));
-      await ctx.worker.call('retain', [...names]); this.guard(ctx);
-      ctx.stored.shards = Object.fromEntries(Object.entries(ctx.stored.shards).filter(([name]) => names.has(name)));
-    }
-    const indexHash = hash(encrypted); this.atomic(ctx, this.blob(ctx, indexHash), encrypted); ctx.stored.indexHash = indexHash;
-    ctx.stored.lastSynced = new Date().toISOString();
+    const names = new Set(index.shards.map(shard => shard.name));
+    const indexHash = hash(encrypted), cache = this.blob(ctx, indexHash);
+    if (indexHash !== old.indexHash || !await cacheExists([cache])) await atomicCache(cache, encrypted, () => this.guard(ctx));
+    this.guard(ctx);
+    // Keep the last complete manifest throughout partial retries, then advance the rollback generation.
+    const previousHashes = old.needsRetry ? old.previousHashes ?? hashes : failures.length || old.lastCommit !== ref.object.sha ? hashes : old.previousHashes;
+    ctx.stored = { ...ctx.stored, shards: failures.length ? shards : Object.fromEntries(Object.entries(shards).filter(([name]) => names.has(name))),
+      indexHash, lastCommit: ref.object.sha, needsRetry: !!failures.length, pendingResources: true, previousHashes, lastSynced: new Date().toISOString() };
+    ctx.healthy = !failures.length;
     ctx.courses = await ctx.worker.call('courses'); this.guard(ctx);
     ctx.error = failures.length ? `${failures.length} 个分片同步失败，已保留旧内容。${failures[0]}` : undefined;
-    if (publish) { this.persist(ctx); await this.emitResources(ctx, successCourses); }
+    if (publish) {
+      try { this.persist(ctx); } catch (error) { ctx.stored = old; ctx.healthy = false; throw error; }
+      await this.publishResources(ctx, successCourses);
+    }
+    if (!failures.length && publish) {
+      await ctx.worker.call('retain', [...names]); this.guard(ctx);
+      await collectCache(this.folder(ctx), [indexHash, ...Object.values(ctx.stored.shards).map(s => s.hash), ...(previousHashes ?? [])], () => this.guard(ctx));
+    }
+  }
+  private async publishResources(ctx: Context, successCourses?: Set<string>) {
+    await this.emitResources(ctx, successCourses);
+    const old = ctx.stored; ctx.stored = { ...old, pendingResources: false };
+    try { this.persist(ctx); } catch (error) { ctx.stored = old; throw error; }
   }
   private async emitResources(ctx: Context, successCourses?: Set<string>) {
     const resources: ResourceResult[] = [];
@@ -295,16 +332,17 @@ export class LectureService {
   }
   async bind(account: number, icourseCourseId: string, canvasCourseId: number | null): Promise<LectureConnection> {
     const ctx = await this.context(account); this.guard(ctx);
+    if (ctx.flight) throw Error('请等待笔记同步完成后调整关联');
     const parsed = icourseCourseId.match(/(?:course(?:\/|=)|course_id=)(\d+)/i)?.[1] ?? icourseCourseId.trim();
     if (!ctx.courses.some(c => c.id === parsed)) throw new Error('尚未下载该 iCourse 课程，请先同步或检查课程链接');
     if (canvasCourseId !== null && (!Number.isSafeInteger(canvasCourseId) || canvasCourseId < 0)) throw new Error('目标课程无效');
     const old = ctx.stored;
     const existing = old.bindings.find(b => b.icourseCourseId === parsed);
     if ((existing?.canvasCourseId ?? null) === canvasCourseId) return this.public(ctx);
-    ctx.stored = { ...old, bindings: old.bindings.filter(b => b.icourseCourseId !== parsed), generations: { ...old.generations, [parsed]: randomUUID() } };
+    ctx.stored = { ...old, pendingResources: true, bindings: old.bindings.filter(b => b.icourseCourseId !== parsed), generations: { ...old.generations, [parsed]: randomUUID() } };
     if (canvasCourseId !== null) ctx.stored.bindings.push({ icourseCourseId: parsed, canvasCourseId });
     try { this.persist(ctx); } catch (error) { ctx.stored = old; throw error; }
-    try { await this.emitResources(ctx); } catch (error) { this.guard(ctx); ctx.error = `课程已关联，变化记录保存失败：${message(error)}`; }
+    try { await this.publishResources(ctx); } catch (error) { this.guard(ctx); ctx.error = `课程已关联，变化记录保存失败：${message(error)}`; }
     this.options.onUpdated(); return this.public(ctx);
   }
   private async available(account: number): Promise<Context> {
@@ -326,7 +364,8 @@ export class LectureService {
   async detail(account: number, ref: LectureRef): Promise<LectureBody> {
     const ctx = await this.available(account);
     if (ref.sourceId !== ctx.stored.sourceId || !ctx.stored.bindings.some(b => b.icourseCourseId === ref.icourseCourseId)) throw new Error('这条笔记未关联当前账号的课程');
-    const body = await ctx.worker.call<LectureBody>('body', ref); this.guard(ctx); return this.decorate(ctx, body);
+    try { const body = await ctx.worker.call<LectureBody>('body', ref); this.guard(ctx); return this.decorate(ctx, body); }
+    catch (error) { this.guard(ctx); ctx.healthy = false; throw error; }
   }
   async read(account: number, ref: LectureRef): Promise<true> {
     const body = await this.detail(account, ref), ctx = await this.available(account), old = ctx.stored;

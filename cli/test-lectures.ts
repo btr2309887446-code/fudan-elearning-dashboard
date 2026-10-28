@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createCipheriv, createHash, pbkdf2Sync } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -42,8 +42,9 @@ let networkDown = false, failed = '', pause: (() => void) | undefined, release: 
 const blobs = new Map<string, Buffer>();
 const files = new Map<string, { sha: string; bytes: Buffer }>();
 const calls: string[] = [];
+let revision = 0; const commitId = () => revision.toString(16).padStart(40,"0");
 function publish(versions: [string, string | null, Buffer][]) {
-  blobs.clear(); files.clear();
+  revision++; blobs.clear(); files.clear();
   const put = (path: string, bytes: Buffer) => {
     const sha = createHash('sha1').update(bytes).digest('hex'); blobs.set(sha, bytes); files.set(path, { sha, bytes });
   };
@@ -55,18 +56,19 @@ const transport: typeof fetch = async (input) => {
   if (pause) { const entered = pause; pause = undefined; entered(); await new Promise<void>(r => { release = r; }); }
   if (networkDown) throw Error('offline');
   const path = url.split('/repos/test/notes/')[1];
-  if (path?.startsWith('git/ref/heads/')) return Response.json({ object: { sha: 'a'.repeat(40) } });
-  if (path === `git/commits/${'a'.repeat(40)}`) return Response.json({ tree: { sha: 'b'.repeat(40) } });
+  if (path?.startsWith('git/ref/heads/')) return Response.json({ object: { sha: commitId() } });
+  if (path === `git/commits/${commitId()}`) return Response.json({ tree: { sha: 'b'.repeat(40) } });
   if (path === `git/trees/${'b'.repeat(40)}?recursive=1`) return Response.json({ tree: [...files].map(([path, file]) => ({ path, sha: file.sha, type: 'blob' })) });
   const sha = path?.replace('git/blobs/', '') ?? '';
   if (sha === failed) return new Response('failure', { status: 503 });
   return blobs.has(sha) ? new Response(Uint8Array.from(blobs.get(sha)!)) : new Response('', { status: 404 });
 };
+let failResources = false;
 let account = 1, workspace = emptyWorkspace(1), eventId = 0;
 const service = new LectureService({ root, wasmPath, workerPath: resolve('src/main/lectures/worker.ts'),
   protect: value => Buffer.from(value).toString('base64'), unprotect: value => Buffer.from(value, 'base64').toString(),
   isCurrent: id => id === account, fetch: transport, onUpdated() {},
-  onResources(id, results) { assert.equal(id, account); workspace = recordChanges(workspace, results, `batch-${eventId}`, new Date().toISOString(), () => `event-${++eventId}`); },
+  onResources(id, results) { if(failResources) throw Error("synthetic event write failure"); assert.equal(id, account); workspace = recordChanges(workspace, results, `batch-${eventId}`, new Date().toISOString(), () => `event-${++eventId}`); },
 });
 const input = { repository: 'test/notes', branch: 'data', studentId: '20260000', password: 'fictional-test-password', remember: true };
 const meta = shard(null, '');
@@ -93,13 +95,21 @@ try {
   check((await service.detail(1, ref)).pages[0].text === '虚构 PPT', 'lecture supplies transcript and OCR pages');
   await service.read(1, ref);
   check((await service.list(1, 10)).items.find(i => i.icourseCourseId === '101')?.read, 'read is persisted per content hash');
+  const folder = join(root, '1', state.sourceId);
+  const modified = Object.fromEntries(readdirSync(folder).map(name=>[name, statSync(join(folder,name)).mtimeMs]));
   calls.length = 0;
   await service.sync(1);
+  check(calls.length === 1, 'healthy same-commit check only resolves the upstream ref');
+  check(Object.entries(modified).every(([name,time])=>statSync(join(folder,name)).mtimeMs === time), 'healthy check performs zero shard or metadata writes');
   check(!calls.some(url => initial.some(([, , bytes]) => url.endsWith(createHash('sha1').update(bytes).digest('hex')))), 'unchanged shards are not downloaded');
   check(workspace.changes.length === 0, 'repeated sync is quiet');
   const update = shard('101', '更新摘要', 2);
   publish([initial[0], ['shard-hot-0000.db.gz.enc', '101', update], initial[2]]);
+  failResources = true;
+  check(!!(await service.sync(1)).error, 'event persistence failure remains visible');
+  failResources = false; calls.length=0;
   await service.sync(1);
+  check(calls.length === 1, 'same-commit event recovery does not download shards');
   check(workspace.changes.length === 2, 'new lecture and changed summary each emit once');
   check(workspace.changes.every(c => c.after.length === 64 && !c.after.includes('摘要')), 'change baseline never stores full text');
   check((await service.list(1, 10)).items.find(i => i.lectureId === ref.lectureId)?.updated, 'updated read version is shown unread');
@@ -122,12 +132,15 @@ try {
   state = await service.connect(1, input);
   check(!!state.error && (await service.detail(1, ref)).summary.startsWith('更新摘要'), 'partial reconnect hydrates preserved shards');
   failed = '';
+  check(!(await service.sync(1)).error && (await service.detail(1, ref)).summary.startsWith('失败更新'), 'same-commit failed shard is retried');
   publish([initial[0], ['shard-cold-0000.db.gz.enc', '101', update], initial[2]]);
   await service.sync(1); service.reset();
   check((await service.list(1, 11)).total === 2 && (await service.detail(1, ref)).summary.startsWith('更新摘要'), 'hot/cold shard move survives restart without duplicates');
-  const stored = JSON.parse(readFileSync(join(root, '1', 'connection.json'), 'utf8'));
+  const registry = JSON.parse(readFileSync(join(root, '1', 'connection.json'), 'utf8'));
+  const stored = registry.sources[registry.active];
+  check(stored.previousHashes.every((h: string)=>existsSync(join(folder,`${h}.enc`))), 'rollback manifest blobs survive cleanup');
   check(!Object.hasOwn(stored.shards, 'shard-hot-0000.db.gz.enc'), 'retired shards are removed from active manifest');
-  check(readdirSync(join(root, '1', state.sourceId)).every(name => name.endsWith('.enc') || name === 'state.json'), 'no plaintext SQLite or note files are written');
+  check(readdirSync(join(root, '1', state.sourceId)).every(name => name.endsWith('.enc') || name.endsWith('.enc.index') || name === 'state.json'), 'no plaintext SQLite or note files are written');
   assert.ok(!JSON.stringify(stored).includes('fictional-test-password')); checks++;
   const before = readFileSync(join(root, '1', 'connection.json'), 'utf8');
   const entered = new Promise<void>(r => { pause = r; });

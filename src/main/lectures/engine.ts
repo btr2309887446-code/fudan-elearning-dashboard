@@ -1,6 +1,8 @@
-import { createHash, createDecipheriv, pbkdf2Sync } from 'node:crypto';
+import { createHash, createDecipheriv, createCipheriv, randomBytes, pbkdf2Sync } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { atomicCache } from './cache.ts';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 import type { LectureBody, LectureCourse, LectureItem, LecturePage, LectureRef } from '../../core/lectures.ts';
 
@@ -45,18 +47,63 @@ function query(db: Database, sql: string, args: SqlValue[] = []): Record<string,
 export class LectureEngine {
   private sql: Promise<SqlJsStatic>;
   private dbs = new Map<string, Database>();
+  private sizes = new Map<string, number>();
+  private locations = new Map<string, { path?: string; bytes?: Uint8Array; password: string; hash: string }>();
+  private sorted: IndexedItem[] = [];
+  private budget: number;
   private items = new Map<string, IndexedItem>();
   private courseRows = new Map<string, LectureCourse>();
   private catalog = new Map<string, { terms: string[]; teacher: string; title: string }>();
   private demoBodies = new Map<string, LectureBody>();
   private sourceId: string;
   private loaded = new Map<string, { hash: string; courses: string[] }>();
-  constructor(wasmPath: string, sourceId: string) {
+  constructor(wasmPath: string, sourceId: string, budget = 128 * 1024 * 1024) {
+    this.budget = budget;
     this.sourceId = sourceId;
     const bytes = readFileSync(wasmPath);
     this.sql = initSqlJs({ wasmBinary: Uint8Array.from(bytes).buffer });
   }
-  async load(name: string, encrypted: Uint8Array, password: string, expectedHash: string): Promise<string[]> {
+  private rebuild() { this.sorted = [...this.items.values()].sort((a,b)=>b.date.localeCompare(a.date)||a.lectureId.localeCompare(b.lectureId)); }
+  private remember(name: string, db: Database, size: number) {
+    this.dbs.get(name)?.close(); this.dbs.delete(name); this.sizes.delete(name);
+    if (size > this.budget) return;
+    while ([...this.sizes.values()].reduce((a,b)=>a+b,0) + size > this.budget && this.dbs.size) {
+      const oldest = this.dbs.keys().next().value!;
+      this.dbs.get(oldest)!.close(); this.dbs.delete(oldest); this.sizes.delete(oldest);
+    }
+    this.dbs.set(name,db); this.sizes.set(name,size);
+  }
+  stats() { return { residentBytes:[...this.sizes.values()].reduce((a,b)=>a+b,0), databases:this.dbs.size, items:this.items.size }; }
+  async loadFile(name: string, path: string, password: string, expectedHash: string, validate = false): Promise<string[]> {
+    if (!validate && this.loaded.get(name)?.hash === expectedHash && (await stat(path)).isFile()) return this.loaded.get(name)!.courses;
+    const encrypted = await readFile(path);
+    if (digest(encrypted) !== expectedHash) throw Error("笔记缓存校验失败，请重试同步");
+    if (!validate && this.loaded.get(name)?.hash === expectedHash) return this.loaded.get(name)!.courses;
+    if (digest(encrypted) !== expectedHash) throw Error('笔记缓存校验失败，请重试同步');
+    try {
+      const cached = await readFile(`${path}.index`);
+      const key = createHash('sha256').update(password).digest();
+      const decipher = createDecipheriv('aes-256-gcm',key,cached.subarray(0,12)); decipher.setAuthTag(cached.subarray(12,28));
+      const meta = JSON.parse(Buffer.concat([decipher.update(cached.subarray(28)),decipher.final()]).toString('utf8'));
+      if (meta.version !== 1 || meta.hash !== expectedHash || meta.source !== this.sourceId || !Array.isArray(meta.items) || !Array.isArray(meta.courses) || !Array.isArray(meta.catalog)) throw Error('index');
+      this.dbs.get(name)?.close(); this.dbs.delete(name); this.sizes.delete(name);
+      const incoming = new Set<string>(meta.courses.map((c: LectureCourse)=>c.id));
+      for (const [id,item] of this.items) if (item.shard === name || incoming.has(item.icourseCourseId)) this.items.delete(id);
+      for (const item of meta.items as IndexedItem[]) this.items.set(JSON.stringify([item.icourseCourseId,item.lectureId]),{...item,shard:name});
+      for (const course of meta.courses as LectureCourse[]) this.courseRows.set(course.id,course);
+      for (const [id,row] of meta.catalog) this.catalog.set(id,row);
+      this.loaded.set(name,{hash:expectedHash,courses:[...incoming]});
+      this.locations.set(name,{path,password,hash:expectedHash}); this.rebuild();
+      return [...incoming];
+    } catch { /* Missing/old/invalid local indexes are rebuilt from the encrypted shard. */ }
+    const courses = await this.load(name,encrypted,password,expectedHash,path);
+    const meta = JSON.stringify({version:1,hash:expectedHash,source:this.sourceId,items:[...this.items.values()].filter(i=>i.shard===name),courses:courses.map(id=>this.courseRows.get(id)),catalog:[...this.catalog]});
+    const nonce=randomBytes(12), cipher=createCipheriv('aes-256-gcm',createHash('sha256').update(password).digest(),nonce);
+    const body=Buffer.concat([cipher.update(meta,'utf8'),cipher.final()]);
+    await atomicCache(`${path}.index`,Buffer.concat([nonce,cipher.getAuthTag(),body]),()=>{}).catch(()=>{});
+    return courses;
+  }
+  async load(name: string, encrypted: Uint8Array, password: string, expectedHash: string, path?: string): Promise<string[]> {
     if (digest(encrypted) !== expectedHash) throw new Error('笔记分片校验失败，已保留旧内容');
     if (this.loaded.get(name)?.hash === expectedHash) return this.loaded.get(name)!.courses;
     const compressed = decrypt(encrypted, password);
@@ -71,18 +118,19 @@ export class LectureEngine {
       const columns = new Set(query(db, "PRAGMA table_info('lectures')").map(c => text(c.name)));
       for (const required of ['sub_id', 'course_id', 'sub_title', 'date', 'summary', 'transcript'])
         if (!columns.has(required)) throw new Error('笔记数据库字段不兼容');
-      const rows = query(db, `SELECT sub_id, course_id, sub_title, date, summary, length(transcript) AS transcript_length,
+      const statement = db.prepare( `SELECT sub_id, course_id, sub_title, date, summary, length(transcript) AS transcript_length,
         ${columns.has('processed_at') ? 'processed_at' : "'' AS processed_at"},
         ${columns.has('error_msg') ? 'error_msg' : "'' AS error_msg"} FROM lectures`);
       const counts = new Map(hasPpt ? query(db, 'SELECT sub_id, count(*) AS n FROM ppt_pages GROUP BY sub_id').map(p => [text(p.sub_id), Number(p.n)]) : []);
       const courses = new Map(courseRows.map(c => [text(c.course_id), c]));
-      const indexed = rows.map(row => {
+      const indexed: IndexedItem[] = [];
+      try { while (statement.step()) { const row = statement.getAsObject();
         const courseId = text(row.course_id), summary = text(row.summary).trim(), course = courses.get(courseId);
-        return { sourceId: this.sourceId, icourseCourseId: courseId, lectureId: text(row.sub_id), title: text(row.sub_title) || '未命名课次',
+        indexed.push({ sourceId: this.sourceId, icourseCourseId: courseId, lectureId: text(row.sub_id), title: text(row.sub_title) || '未命名课次',
           date: text(row.date), courseTitle: text(course?.title), teacher: text(course?.teacher), summaryHash: summary ? digest(summary) : '',
           hasSummary: !!summary, hasTranscript: Number(row.transcript_length) > 0, pptCount: counts.get(text(row.sub_id)) ?? 0,
-          processedAt: text(row.processed_at) || undefined, error: text(row.error_msg) ? '上游处理尚未完成，请稍后同步' : undefined, shard: name } satisfies IndexedItem;
-      });
+          processedAt: text(row.processed_at) || undefined, error: text(row.error_msg) ? '上游处理尚未完成，请稍后同步' : undefined, shard: name });
+      } } finally { statement.free(); }
       const catalogRows = query(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='all_courses'").length
         ? query(db, 'SELECT course_id, term, title, teacher FROM all_courses') : [];
       // Publish only after the complete shard has validated, never partially replace a working DB.
@@ -95,15 +143,20 @@ export class LectureEngine {
         const id = text(row.course_id), old = this.catalog.get(id);
         this.catalog.set(id, { title: text(row.title), teacher: text(row.teacher), terms: [...new Set([...(old?.terms ?? []), text(row.term)].filter(Boolean))] });
       }
-      this.dbs.get(name)?.close(); this.dbs.set(name, db);
+      this.remember(name,db,raw.length);
+      if (!this.dbs.has(name)) db.close();
+      this.locations.set(name,{path,bytes:path?undefined:Uint8Array.from(encrypted),password,hash:expectedHash});
+      this.rebuild();
       this.loaded.set(name, { hash: expectedHash, courses: [...incoming] });
       return [...incoming];
     } catch (error) { db.close(); throw error; }
   }
   retain(names: string[]): void {
     const keep = new Set(names);
-    for (const [name, db] of this.dbs) if (!keep.has(name)) { db.close(); this.dbs.delete(name); this.loaded.delete(name); }
+    for (const [name, db] of this.dbs) if (!keep.has(name)) { db.close(); this.dbs.delete(name); this.sizes.delete(name); }
     for (const [key, item] of this.items) if (!keep.has(item.shard)) this.items.delete(key);
+    for (const name of this.loaded.keys()) if (!keep.has(name)) { this.loaded.delete(name); this.locations.delete(name); this.sizes.delete(name); }
+    this.rebuild();
     const courses = new Set([...this.loaded.values()].flatMap(s => s.courses));
     for (const id of this.courseRows.keys()) if (!courses.has(id)) this.courseRows.delete(id);
   }
@@ -112,15 +165,25 @@ export class LectureEngine {
   }
   list(courseIds: string[], search = '', offset = 0): LecturePage {
     const ids = new Set(courseIds), normalized = search.trim().toLocaleLowerCase();
-    const all = [...this.items.values()].filter(i => ids.has(i.icourseCourseId) && (!normalized || `${i.title} ${i.date} ${i.courseTitle} ${i.teacher}`.toLocaleLowerCase().includes(normalized)))
-      .sort((a, b) => b.date.localeCompare(a.date) || a.lectureId.localeCompare(b.lectureId));
+    const all = this.sorted.filter(i => ids.has(i.icourseCourseId) && (!normalized || `${i.title} ${i.date} ${i.courseTitle} ${i.teacher}`.toLocaleLowerCase().includes(normalized)))
+      ;
     return { total: all.length, offset, items: all.slice(offset, offset + 50).map(({ shard: _shard, ...item }) => ({ ...item, read: false, updated: false })) };
   }
-  body(ref: LectureRef): LectureBody {
+  async body(ref: LectureRef): Promise<LectureBody> {
     const item = this.items.get(JSON.stringify([ref.icourseCourseId, ref.lectureId]));
     if (!item || ref.sourceId !== this.sourceId) throw new Error('这条课堂笔记不可用，请刷新课程');
     if (this.demoBodies.has(ref.lectureId)) return this.demoBodies.get(ref.lectureId)!;
-    const db = this.dbs.get(item.shard)!;
+    let db = this.dbs.get(item.shard);
+    if (db) { this.dbs.delete(item.shard); this.dbs.set(item.shard,db); }
+    else {
+      const location=this.locations.get(item.shard);
+      if (!location) throw Error('笔记正文缓存缺失，请同步重试');
+      const bytes=location.path ? await readFile(location.path) : location.bytes!;
+      if(digest(bytes)!==location.hash) throw Error('笔记缓存损坏，请同步重试');
+      const raw=gunzipSync(decrypt(bytes,location.password),{maxOutputLength:256*1024*1024});
+      db=new (await this.sql).Database(raw); db.run('PRAGMA query_only=ON'); this.remember(item.shard,db,raw.length);
+    }
+    try {
     const row = query(db, 'SELECT summary, transcript FROM lectures WHERE course_id=? AND sub_id=?', [ref.icourseCourseId, ref.lectureId])[0];
     if (!row) throw new Error('课堂笔记不存在');
     const pages = query(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='ppt_pages'").length
@@ -130,6 +193,7 @@ export class LectureEngine {
       throw new Error('本课次正文过大，请在 iCourse 订阅网页中查看');
     return { ...metadata, read: false, updated: false, summary: text(row.summary), transcript: text(row.transcript),
       pages: pages.map(p => ({ page: Number(p.page_num), seconds: Number(p.created_sec), text: text(p.text) })) };
+    } finally { if (!this.dbs.has(item.shard)) db.close(); }
   }
   resources(courseIds: string[]): { ref: LectureRef; title: string; hash: string }[] {
     const ids = new Set(courseIds);
@@ -150,6 +214,7 @@ export class LectureEngine {
         this.items.set(JSON.stringify([id, lectureId]), { ...meta, shard: 'demo' }); this.demoBodies.set(lectureId, body);
       }
     });
+    this.rebuild();
   }
-  close(): void { for (const db of this.dbs.values()) db.close(); this.dbs.clear(); this.loaded.clear(); this.items.clear(); this.courseRows.clear(); this.catalog.clear(); this.demoBodies.clear(); }
+  close(): void { for (const db of this.dbs.values()) db.close(); this.dbs.clear(); this.locations.clear(); this.sizes.clear(); this.sorted=[]; this.loaded.clear(); this.items.clear(); this.courseRows.clear(); this.catalog.clear(); this.demoBodies.clear(); }
 }

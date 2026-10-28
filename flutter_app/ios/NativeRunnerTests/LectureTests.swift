@@ -4,9 +4,11 @@ import XCTest
 private final class LectureFixtureProtocol: URLProtocol {
     static var responses: [String: Data] = [:]
     static var offline = false
+    static var calls: [String] = []
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        Self.calls.append(request.url!.path)
         guard !Self.offline, let data = Self.responses[request.url!.path] else { client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)); return }
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Length": String(data.count)])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
@@ -40,6 +42,21 @@ final class LectureTests: XCTestCase {
         XCTAssertEqual(LectureActions.extract(body.summary), ["阅读教材并整理问题。"])
         XCTAssertTrue(LectureActions.extract("```\n- 作业是假代码\n```").isEmpty)
         XCTAssertNotNil(Bundle.main.url(forResource: "lecture-reader", withExtension: "html"))
+    }
+    func testLazyIndexBudgetAndOfflineBody() throws {
+        let f = try fixture(), folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent(f.hash + ".enc"); try f.shard.write(to: url)
+        let build = LectureEngine(source: "source", budget: 1024)
+        try build.loadFile("fixture", url: url, password: f.password, hash: f.hash)
+        XCTAssertEqual(build.residentBytes, 0)
+        let restored = LectureEngine(source: "source", budget: 1024)
+        try restored.loadFile("fixture", url: url, password: f.password, hash: f.hash)
+        XCTAssertEqual(restored.items.count, 5000); XCTAssertEqual(restored.residentDatabases, 0)
+        let body = try restored.body(restored.items[0].reference)
+        XCTAssertFalse(body.summary.isEmpty); XCTAssertEqual(restored.residentDatabases, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathExtension("index").path))
     }
     func testSourceValidationAndLegacyTasks() throws {
         XCTAssertEqual(try LectureService.source(repository: "https://github.com/Owner/Repo.git/", branch: "data").0, "Owner/Repo")
@@ -76,6 +93,9 @@ final class LectureTests: XCTestCase {
         let body = try await service.body(page.items[0].reference, course: 4)
         try await service.read(body.item.reference, course: 4, hash: body.item.summaryHash)
         let read = try await service.page(course: 4); XCTAssertTrue(read.items[0].read)
+        LectureFixtureProtocol.calls = []
+        let healthy = try await service.sync(); XCTAssertNil(healthy.error)
+        XCTAssertEqual(LectureFixtureProtocol.calls, [prefix + "git/ref/heads/data"])
         LectureFixtureProtocol.offline = true
         let failed = try await service.sync(); XCTAssertNotNil(failed.error)
         let offline = try await service.body(body.item.reference, course: 4); XCTAssertEqual(offline.summary, body.summary)
