@@ -6,6 +6,8 @@
 
 ## 客户端与当前开发方向
 
+当前评审版本为 Windows **0.12.0**、iOS **1.2.1 (7)**：增加凭据安全迁移、跨天刷新、课堂笔记增量检查与正文缓存预算，桌面成绩图表和阅读器改为按需加载。安装包、测试范围及性能数据见 [稳定性优化验证记录](docs/stability-performance.md)。该版本通过评审分支交付，尚未合并主分支或发布正式 Release。
+
 | 平台 | 技术 | 代码入口 | 说明 |
 | --- | --- | --- | --- |
 | iPhone / iPad | SwiftUI + Swift | [`flutter_app/ios/NativeRunner/`](flutter_app/ios/NativeRunner/) | 当前重点开发的原生客户端，最低 iOS 15 |

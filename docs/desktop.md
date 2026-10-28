@@ -184,9 +184,10 @@ Canvas 不返回 CORS 头，浏览器环境下的渲染进程无法直接请求�
 
 ## 技术栈
 
-- **Electron 33** + **electron-vite** + **Vite 5**
+- **Electron 45.0.0** + **electron-vite 6.0.0** + **Vite 8.3.5**
 - **React 18** + **TypeScript** + **ECharts**
 - **electron-builder** 打包为 NSIS 安装包
+- Windows 会话 Cookie 与 AI 密钥使用系统安全存储；公开设置接口只返回已保存状态。旧明文在加密写入和回读验证成功后清理，失败时保留旧数据并提示。CLI 独立会话文件保持原格式。
 - 密码加密使用 Node 内置 `crypto`（RSA PKCS#1 v1.5），无额外加密依赖
 
 ---
