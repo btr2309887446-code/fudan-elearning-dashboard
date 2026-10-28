@@ -110,7 +110,7 @@ final class PersonalAndChangeTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let store = NativeAppStore(defaults: defaults, localRepository: NativeLocalRepository(root: root))
+        let store = NativeAppStore(defaults: defaults, localRepository: NativeLocalRepository(root: root), sessionVault: .testing())
         var snapshot = NativeSnapshot(fetchedAt: Date(), profile: NativeProfile(id: 1, name: "测试"), courses: [], terms: [], assignments: [], todo: [], warnings: [], reusedCourseCount: 0)
         await store.applySnapshot(snapshot)
         let draft = PersonalTaskSeries(title: "练习", dueAt: date("2026-10-19"), repeatRule: .daily)

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 // Each run has its own synthetic account files and never reads production userData.
-mkdirSync("docs/screenshots", { recursive: true });
+mkdirSync("artifacts/ui", { recursive: true });
 const cases = [
   ["feedback", 1366, 768, 1, "light"],
   ["reduced", 1366, 768, 1, "dark"],
@@ -38,7 +38,7 @@ for (const [view, width, height, scale, theme] of cases.filter(c => !process.env
           ...process.env,
           ELEARNING_DEMO: "1",
           ELEARNING_DEMO_DIR: profile,
-          ELEARNING_SMOKE: `docs/screenshots/windows-${view}.png`,
+          ELEARNING_SMOKE: `artifacts/ui/windows-${view}.png`,
           ELEARNING_SMOKE_WIDTH: String(
             Math.max(800, Math.round(width / scale)),
           ),

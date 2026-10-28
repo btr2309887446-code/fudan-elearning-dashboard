@@ -21,6 +21,9 @@ import {
 } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { validateIpc, safeExternalUrl } from "./ipc-security.ts";
+import { CredentialStore, publicPreferences, preferencePatch } from "./credentials.ts";
 import { LectureService } from "./lectures/service.ts";
 import { parseLectureKey, type CourseIntroduction, type LectureConnectInput, type LectureRef } from "../core/lectures.ts";
 import { WorkspaceStore, atomicJson } from "./workspace-store.ts";
@@ -42,9 +45,7 @@ import {
   type FileNode,
 } from "../core/files.ts";
 import {
-  loadSession,
   makeClient,
-  saveSession,
   verifySession,
 } from "../core/session.ts";
 import { normaliseSnapshot } from "../core/scoring.ts";
@@ -135,6 +136,20 @@ const userDir = () => app.getPath("userData");
 const sessionPath = () => join(userDir(), "session.json");
 const snapshotPath = () => join(userDir(), "snapshot.json");
 const prefsPath = () => join(userDir(), "prefs.json");
+let credentialStore: CredentialStore | undefined;
+function credentials() {
+  return credentialStore ??= new CredentialStore(join(userDir(), "credentials.json"), {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: value => safeStorage.encryptString(value).toString("base64"),
+    decrypt: value => safeStorage.decryptString(Buffer.from(value, "base64")),
+  });
+}
+const loadSession = (path: string) => credentials().loadSession(path);
+const saveSession = (path: string, jar: CookieJar, extra: { username?: string; displayName?: string }) => credentials().saveSession(path, jar, extra);
+let cachedPrefs: Prefs | undefined;
+function publicPrefs(prefs: Prefs) {
+  return { ...publicPreferences(prefs), storageWarning: credentials().warning } as import("../preload/index.d").Prefs;
+}
 
 /** 未设置时的下载根目录：「下载」文件夹下建一个 eLearning。 */
 const defaultDownloadRoot = (): string =>
@@ -146,6 +161,7 @@ function ensureUserDir(): void {
 }
 
 function readPrefs(): Prefs {
+  if (cachedPrefs) return cachedPrefs;
   const defaults: Prefs = {
     rememberUsername: true,
     rememberPassword: false,
@@ -154,11 +170,21 @@ function readPrefs(): Prefs {
     theme: "light",
   };
   try {
-    if (!existsSync(prefsPath())) return defaults;
-    return {
+    const result: Prefs = {
       ...defaults,
-      ...(JSON.parse(readFileSync(prefsPath(), "utf8")) as Partial<Prefs>),
+      ...(existsSync(prefsPath()) ? JSON.parse(readFileSync(prefsPath(), "utf8")) as Partial<Prefs> : {}),
     };
+    const legacy = result.llm?.apiKey;
+    if (legacy) {
+      try { credentials().import("llm", legacy); }
+      catch { credentials().warning = "AI 密钥迁移未完成，原数据已保留，下次启动会重试。"; }
+    }
+    if (result.llm) result.llm = { ...result.llm, apiKey: credentials().get("llm") ?? legacy ?? "" };
+    cachedPrefs = result;
+    if (legacy && credentials().persisted("llm")) {
+      try { writePrefs(result); } catch { credentials().warning = "密钥已加密，旧设置清理未完成，下次启动会重试。"; }
+    }
+    return result;
   } catch {
     return defaults;
   }
@@ -166,7 +192,19 @@ function readPrefs(): Prefs {
 
 function writePrefs(prefs: Prefs): void {
   ensureUserDir();
-  atomicJson(prefsPath(), prefs);
+  const key = prefs.llm?.apiKey || undefined;
+  if (credentials().get("llm") !== key || !credentials().persisted("llm")) credentials().set("llm", key);
+  const clean = { ...prefs, llm: prefs.llm ? { ...prefs.llm, apiKey: "" } : undefined };
+  // Preserve a legacy plaintext file only while migration cannot be committed.
+  const oldHasKey = existsSync(prefsPath()) && !!JSON.parse(readFileSync(prefsPath(), "utf8")).llm?.apiKey;
+  if (oldHasKey && key && !credentials().persisted("llm")) { cachedPrefs = prefs; return; }
+  atomicJson(prefsPath(), clean);
+  const backup = `${prefsPath()}.bak`;
+  if (existsSync(backup)) {
+    const old = JSON.parse(readFileSync(backup, "utf8"));
+    if (old.llm?.apiKey) { old.llm.apiKey = ""; writeFileSync(backup, JSON.stringify(old), { encoding: "utf8", flush: true }); }
+  }
+  cachedPrefs = prefs;
 }
 
 /**
@@ -471,6 +509,15 @@ async function simulateDemoDownload(
   return { ok: true, data: { ...progress, errors: [] } };
 }
 
+const handle: typeof ipcMain.handle = (channel, listener) => ipcMain.handle(channel, (event, ...args) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw Error("请求来源无效");
+  const actual = new URL(event.senderFrame.url);
+  const expected = new URL(process.env["ELECTRON_RENDERER_URL"] || pathToFileURL(join(__dirname, "../renderer/index.html")).href);
+  if (actual.protocol !== expected.protocol || actual.origin !== expected.origin || actual.pathname !== expected.pathname) throw Error("请求页面无效");
+  validateIpc(channel, args);
+  return listener(event, ...args);
+});
+
 function registerIpc(): void {
   const assertAccount = (id: number) => {
     if (!Number.isSafeInteger(id) || activeAccount() !== id) throw new Error("账号已切换，请重新打开");
@@ -479,7 +526,7 @@ function registerIpc(): void {
     if (!Number.isSafeInteger(id) || !snapshot?.courses.some(c => c.id === id)) throw new Error("当前账号无此课程");
   };
   const lectureHandler = (channel: string, action: (id: number, ...args: any[]) => Promise<unknown>) => {
-    ipcMain.handle(channel, async (_e, id: number, ...args: any[]) => {
+    handle(channel, async (_e, id: number, ...args: any[]) => {
       try {
         assertAccount(id);
         const epoch = accountEpoch;
@@ -535,7 +582,7 @@ function registerIpc(): void {
       throw e;
     }
   });
-  ipcMain.handle("workspace:get", (_e, account: number) => {
+  handle("workspace:get", (_e, account: number) => {
     try {
       if (activeAccount() !== account) throw new Error("账号已切换");
       return { ok: true, data: workspaceStore().read(account) };
@@ -543,7 +590,7 @@ function registerIpc(): void {
       return fail(e);
     }
   });
-  ipcMain.handle(
+  handle(
     "workspace:mutate",
     async (_e, account: number, command: WorkspaceCommand) => {
       try {
@@ -575,26 +622,23 @@ function registerIpc(): void {
       }
     },
   );
-  ipcMain.handle("prefs:get", (): Prefs => {
-    const prefs = readPrefs();
-    // Never ship the encrypted blob to the renderer.
-    return { ...prefs, encryptedPassword: undefined };
-  });
+  handle("prefs:get", () => publicPrefs(readPrefs()));
 
-  ipcMain.handle("prefs:set", (_e, patch: Partial<Prefs>): Prefs => {
+  handle("prefs:set", (_e, patch: Partial<Prefs>) => {
     if (
       patch.syncMinutes !== undefined &&
       ![0, 15, 30, 60].includes(patch.syncMinutes)
     )
       throw new Error("同步间隔无效");
-    const prefs = { ...readPrefs(), ...patch };
+    const prefs = { ...readPrefs(), ...preferencePatch(patch) };
+    if (prefs.rememberPassword === false) prefs.encryptedPassword = undefined;
     writePrefs(prefs);
     configureLifecycle();
-    return { ...prefs, encryptedPassword: undefined };
+    return publicPrefs(prefs);
   });
 
   /** Step 1: reach the IdP and find out whether a captcha is pending. */
-  ipcMain.handle(
+  handle(
     "auth:prepare",
     async (
       _e,
@@ -620,7 +664,7 @@ function registerIpc(): void {
   );
 
   /** Re-check the captcha state after the username changed (no new lck). */
-  ipcMain.handle(
+  handle(
     "auth:checkCaptcha",
     async (
       _e,
@@ -645,7 +689,7 @@ function registerIpc(): void {
   );
 
   /** Step 2: spend exactly one authentication attempt. */
-  ipcMain.handle(
+  handle(
     "auth:submit",
     async (
       _e,
@@ -654,14 +698,18 @@ function registerIpc(): void {
         password: string;
         captchaCode?: string;
         remember?: boolean;
+        useRememberedPassword?: boolean;
       },
     ): Promise<IpcResult<{ profile: CanvasProfile }>> => {
       try {
+        const remembered = readPrefs();
+        const password = payload.password || (payload.useRememberedPassword && payload.username === remembered.username ? readPasswordBlob(remembered) : undefined);
+        if (!password) throw new Error("请填写密码，或重新启用已保存的密码。");
         const ctx = loginCtx ?? (await beginLogin());
         loginCtx = null;
         const result = await completeLogin(ctx, {
           username: payload.username,
-          password: payload.password,
+          password,
           captchaCode: payload.captchaCode,
         });
 
@@ -687,8 +735,9 @@ function registerIpc(): void {
         prefs.rememberUsername = true;
         if (payload.remember) {
           prefs.rememberPassword = true;
-          const blob = passwordBlob(payload.password);
-          if (blob) prefs.encryptedPassword = blob;
+          const blob = passwordBlob(password);
+          prefs.encryptedPassword = blob;
+          if (!blob) credentials().warning = "系统安全存储不可用，密码仅用于本次登录。";
         } else {
           prefs.rememberPassword = false;
           prefs.encryptedPassword = undefined;
@@ -708,7 +757,7 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "auth:status",
     async (): Promise<
       IpcResult<{
@@ -745,23 +794,24 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "auth:remembered",
-    (): { username?: string; password?: string } => {
+    (): { username?: string; hasRememberedPassword: boolean; storageWarning?: string } => {
       const prefs = readPrefs();
       return {
         username: prefs.rememberUsername ? prefs.username : undefined,
-        password: readPasswordBlob(prefs),
+        hasRememberedPassword: !!readPasswordBlob(prefs),
+        storageWarning: credentials().warning,
       };
     },
   );
 
-  ipcMain.handle("auth:logout", (): IpcResult<true> => {
+  handle("auth:logout", (): IpcResult<true> => {
     try {
       const prefs = readPrefs();
       prefs.encryptedPassword = undefined;
       writePrefs(prefs);
-      if (existsSync(sessionPath())) writeFileSync(sessionPath(), "{}", "utf8");
+      credentials().clearSession(sessionPath());
       accountEpoch++;
       lectureService?.reset();
       syncPaused = true;
@@ -773,7 +823,7 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle(
+  handle(
     "data:snapshot",
     async (
       _e,
@@ -790,7 +840,7 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle("data:cached", (): Snapshot | null => {
+  handle("data:cached", (): Snapshot | null => {
     // 演示模式也要把快照存进模块变量：否则渲染进程拿到了数据，
     // 主进程这边的 `snapshot` 仍是 null，任何按 id 查作业的功能
     //（比如作业详情）都会查不到东西。
@@ -804,12 +854,13 @@ function registerIpc(): void {
   });
 
   /** Escape hatch used by the error screen: forget cache and session. */
-  ipcMain.handle("data:clear", (): IpcResult<true> => {
+  handle("data:clear", (): IpcResult<true> => {
     try {
       accountEpoch++;
       lectureService?.reset();
       snapshot = null;
-      for (const file of [snapshotPath(), sessionPath()]) {
+      credentials().clearSession(sessionPath());
+      for (const file of [snapshotPath()]) {
         if (existsSync(file)) writeFileSync(file, "{}", "utf8");
       }
       return { ok: true, data: true };
@@ -818,7 +869,7 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle("shell:open", async (_e, url: string): Promise<void> => {
+  handle("shell:open", async (_e, url: string): Promise<void> => {
     try {
       const parsed = new URL(url);
       if (parsed.protocol === "https:" && !parsed.username && !parsed.password)
@@ -861,7 +912,7 @@ function registerIpc(): void {
     return tree;
   }
 
-  ipcMain.handle(
+  handle(
     "files:course",
     async (
       _e,
@@ -881,34 +932,35 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "files:root",
     (): string => readPrefs().downloadRoot ?? defaultDownloadRoot(),
   );
 
   /** 侧边栏底部显示版本号，免得装了两版看起来一样分不清。 */
-  ipcMain.handle("app:version", (): string => app.getVersion());
+  handle("app:version", (): string => app.getVersion());
 
   // --- 作业详情与简介 -------------------------------------------------------
 
   /** 大模型配置（读）。API key 只在主进程里用，不主动回传渲染进程全文。 */
-  ipcMain.handle("llm:get", (): LlmConfig => {
+  const publicLlm = (cfg: LlmConfig) => ({ baseUrl: cfg.baseUrl, model: cfg.model, enabled: cfg.enabled, hasApiKey: !!cfg.apiKey, storageWarning: credentials().warning });
+  handle("llm:get", () => {
     const cfg = readPrefs().llm ?? DEFAULT_LLM;
     // 回传时把 key 打码，界面上只需要知道「配没配」。
-    return { ...cfg, apiKey: cfg.apiKey ? "********" : "" };
+    return publicLlm(cfg);
   });
 
-  ipcMain.handle(
+  handle(
     "llm:set",
     (
       _e,
-      patch: Partial<LlmConfig> & { apiKey?: string },
-    ): IpcResult<LlmConfig> => {
+      patch: Partial<LlmConfig> & { clearApiKey?: boolean },
+    ) => {
       try {
         const current = readPrefs().llm ?? DEFAULT_LLM;
         // 传进来的是打码串说明用户没改 key，保留原来的。
         const nextKey =
-          patch.apiKey === undefined || patch.apiKey === "********"
+          patch.clearApiKey ? "" : !patch.apiKey || patch.apiKey === "********"
             ? current.apiKey
             : patch.apiKey.trim();
         const next: LlmConfig = {
@@ -922,7 +974,7 @@ function registerIpc(): void {
         writePrefs({ ...readPrefs(), llm: next });
         return {
           ok: true,
-          data: { ...next, apiKey: next.apiKey ? "********" : "" },
+          data: publicLlm(next),
         };
       } catch (err) {
         return fail(err);
@@ -936,7 +988,7 @@ function registerIpc(): void {
    * 完整描述按需拉取（列表里只存了摘录），简介会缓存——
    * 同一份描述只花一次大模型调用。
    */
-  ipcMain.handle(
+  handle(
     "assignment:detail",
     async (
       _e,
@@ -1025,7 +1077,7 @@ function registerIpc(): void {
   );
 
   /** 只算简介，不重新拉描述——详情页已经有描述时用。 */
-  ipcMain.handle(
+  handle(
     "assignment:summarise",
     async (
       _e,
@@ -1066,7 +1118,7 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle("files:pickRoot", async (): Promise<IpcResult<string>> => {
+  handle("files:pickRoot", async (): Promise<IpcResult<string>> => {
     try {
       const res = await dialog.showOpenDialog({
         title: "选择课程文件的下载位置",
@@ -1085,13 +1137,13 @@ function registerIpc(): void {
 
   let activeDownload: DownloadManager | null = null;
 
-  ipcMain.handle("files:cancel", (): IpcResult<true> => {
+  handle("files:cancel", (): IpcResult<true> => {
     activeDownload?.cancel();
     activeDownload = null;
     return { ok: true, data: true };
   });
 
-  ipcMain.handle(
+  handle(
     "files:download",
     async (
       _e,
@@ -1195,7 +1247,7 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "files:reveal",
     async (_e, relativePath: string): Promise<void> => {
       try {
@@ -1249,12 +1301,12 @@ function createWindow(): void {
     title: "复旦大学 eLearning 学习看板",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       // Keep rendering while the window is in the background: without this the
       // UI can look frozen after a refresh until the user focuses it.
-      backgroundThrottling: false,
+      backgroundThrottling: !DEMO,
     },
   });
 
@@ -1364,10 +1416,12 @@ function createWindow(): void {
 
   // Never let the app navigate away from its own UI.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//i.test(url)) void shell.openExternal(url);
+    const external = safeExternalUrl(url);
+    if (external) void shell.openExternal(external);
     return { action: "deny" };
   });
 
+  mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   const devUrl = process.env["ELECTRON_RENDERER_URL"];
   if (devUrl) {
     void mainWindow.loadURL(devUrl);
@@ -1378,6 +1432,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   ensureUserDir();
+  powerMonitor.on("resume", () => mainWindow?.webContents.send("app:resume"));
   registerIpc();
   createWindow();
   app.setAppUserModelId("cn.edu.fudan.elearning.dashboard");

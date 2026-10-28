@@ -35,7 +35,7 @@ const api = {
   auth: {
     prepare: (username: string) => ipcRenderer.invoke('auth:prepare', username),
     checkCaptcha: (username: string) => ipcRenderer.invoke('auth:checkCaptcha', username),
-    submit: (payload: { username: string; password: string; captchaCode?: string; remember?: boolean }) =>
+    submit: (payload: { username: string; password: string; captchaCode?: string; remember?: boolean; useRememberedPassword?: boolean }) =>
       ipcRenderer.invoke('auth:submit', payload),
     status: () => ipcRenderer.invoke('auth:status'),
     remembered: () => ipcRenderer.invoke('auth:remembered'),
@@ -80,6 +80,7 @@ const api = {
   },
   open: (url: string) => ipcRenderer.invoke('shell:open', url),
   version: () => ipcRenderer.invoke('app:version'),
+  onResume: (callback: () => void) => { const listener = () => callback(); ipcRenderer.on('app:resume', listener); return () => ipcRenderer.removeListener('app:resume', listener); },
 };
 
 contextBridge.exposeInMainWorld('elearning', api);

@@ -14,6 +14,7 @@ interface Props {
 export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: Props) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberedFor, setRememberedFor] = useState('');
   const [remember, setRemember] = useState(false);
   const [captcha, setCaptcha] = useState<{ image?: string } | null>(null);
   const [captchaCode, setCaptchaCode] = useState('');
@@ -29,10 +30,11 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
     void (async () => {
       const remembered = await window.elearning.auth.remembered();
       if (remembered.username) setUsername(remembered.username);
-      if (remembered.password) {
-        setPassword(remembered.password);
+      if (remembered.hasRememberedPassword) {
+        setRememberedFor(remembered.username ?? '');
         setRemember(true);
       }
+      if (remembered.storageWarning) setError(remembered.storageWarning);
       setStage('');
     })();
   }, []);
@@ -72,7 +74,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
     setDetail(null);
 
     const name = username.trim();
-    if (!name || !password) {
+    if (!name || (!password && !(remember && rememberedFor === name))) {
       setError('请填写学号和密码。');
       return;
     }
@@ -107,6 +109,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
         password,
         captchaCode: captcha ? captchaCode.trim() : undefined,
         remember,
+        useRememberedPassword: remember && rememberedFor === name && !password,
       });
 
       if (!res.ok) {
@@ -152,7 +155,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
         <p className="login-desc">
           使用你的复旦 UIS 学号和密码登录，数据直接来自 eLearning（Canvas）官方接口。
           <br />
-          密码只在本机内存中使用，不会写入磁盘，也不会发送到除复旦认证服务器以外的任何地方。
+          密码用于连接复旦认证服务器；开启记住密码后，使用系统安全存储保存在本机。
         </p>
 
         {notice && <div className="alert alert-warn">{notice}</div>}
@@ -180,11 +183,11 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
           <label htmlFor="password">密码</label>
           <input
             id="password"
+            placeholder={remember && rememberedFor === username.trim() ? '已保存密码；输入新密码可替换' : '请输入密码'}
             type="password"
             value={password}
             autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="统一身份认证密码"
             disabled={busy}
           />
         </div>

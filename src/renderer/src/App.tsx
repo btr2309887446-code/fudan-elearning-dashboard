@@ -1,3 +1,4 @@
+import { useClock } from "./useClock";
 import { htmlToPlainText } from "../../core/summary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Snapshot } from "../../core/types";
@@ -10,20 +11,24 @@ import {
   type TaskDraft,
 } from "../../core/workspace";
 import { parseLectureKey, type LectureRef } from "../../core/lectures";
-import { CourseOverview, LectureReader, LectureSettings } from "./CourseContent";
+import { asyncView } from "./AsyncView";
+const CourseOverview = asyncView(() => import("./CourseContent").then(m=>({default:m.CourseOverview})));
+const LectureReader = asyncView(() => import("./CourseContent").then(m=>({default:m.LectureReader})));
+const LectureSettings = asyncView(() => import("./CourseContent").then(m=>({default:m.LectureSettings})));
+const Settings = asyncView(() => import("./Settings").then(m=>({default:m.Settings})));
+const GradeDetails = asyncView(() => import("./CourseGrades").then(m=>({default:m.GradeDetails})));
+const CourseScoreChart = asyncView(() => import("./components/charts").then(m=>({default:m.CourseScoreChart})));
 import type { Prefs } from "../../preload/index.d";
 import LoginView from "./components/LoginView";
 import AssignmentDetail from "./components/AssignmentDetail";
 import CourseFiles from "./components/CourseFiles";
-import { CourseScoreChart } from "./components/charts";
+
 import { formatDate } from "./util";
 import {
   TaskEditor,
   DeleteDialog,
   Calendar,
-  Settings,
   Deadline,
-  GradeDetails,
 } from "./WorkspaceParts";
 import "./workspace.css";
 import "./interaction.css";
@@ -44,6 +49,7 @@ const kinds = {
 };
 const courseTabs = [["overview", "概览"], ["lectures", "课堂笔记"], ["assignments", "作业"], ["grades", "成绩"], ["files", "文件"]];
 export default function App() {
+  const now = useClock();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [data, setData] = useState<WorkspaceData | null>(null),
     [prefs, setPrefs] = useState<Prefs | null>(null),
@@ -58,7 +64,7 @@ export default function App() {
     [checked, setChecked] = useState<Set<string>>(new Set()),
     [tab, setTab] = useState("overview"),
     [calendar, setCalendar] = useState(false),
-    [month, setMonth] = useState(dayKey(Date.now()).slice(0, 7));
+    [month, setMonth] = useState(dayKey(now).slice(0, 7));
   const [unread, setUnread] = useState(false),
     [kind, setKind] = useState("all"),
     [batch, setBatch] = useState(""),
@@ -384,10 +390,10 @@ export default function App() {
   const horizon = useMemo(
     () =>
       Math.max(
-        Date.now() + 90 * 86400000,
+        now + 90 * 86400000,
         Date.parse(`${month}-01T00:00:00+08:00`) + 32 * 86400000,
       ),
-    [month],
+    [month, now],
   );
   const tasks = useMemo(
     () => (snapshot && data ? unifyTasks(snapshot, data, horizon) : []),
@@ -421,9 +427,9 @@ export default function App() {
                   : !t.completed &&
                     !t.ignored &&
                     !!t.dueAt &&
-                    Date.parse(t.dueAt) < Date.now())),
+                    Date.parse(t.dueAt) < now)),
       ),
-    [tasks, courseIds, source, course, query, status, finishing],
+    [tasks, courseIds, source, course, query, status, finishing, now],
   );
   const changes = useMemo(
     () =>
@@ -481,7 +487,7 @@ export default function App() {
           </span>
         </button>
         <div
-          className={`ws-row-date ${!t.completed && !t.ignored && t.dueAt && Date.parse(t.dueAt) < Date.now() ? "overdue" : ""}`}
+          className={`ws-row-date ${!t.completed && !t.ignored && t.dueAt && Date.parse(t.dueAt) < now ? "overdue" : ""}`}
         >
           <span>{t.dueAt ? formatDate(t.dueAt) : "无截止时间"}</span>
           <small>
@@ -492,8 +498,8 @@ export default function App() {
     );
   }
   const groups = useMemo(() => {
-    const today = dayKey(Date.now()),
-      week = dayKey(Date.now() + 7 * 86400000),
+    const today = dayKey(now),
+      week = dayKey(now + 7 * 86400000),
       active = tasks.filter(
         (t) =>
           (!t.completed || finishing.has(t.id)) &&
@@ -511,7 +517,7 @@ export default function App() {
       ],
       ["逾期任务", active.filter((t) => t.dueAt && dayKey(t.dueAt) < today)],
     ] as [string, TaskView[]][];
-  }, [tasks, courseIds, query, finishing]);
+  }, [tasks, courseIds, query, finishing, now]);
   if (login)
     return (
       <LoginView
@@ -828,7 +834,7 @@ export default function App() {
                   <>
                     <div className="ws-intro">
                       <span>
-                        {new Date().toLocaleDateString("zh-CN", {
+                        {new Date(now).toLocaleDateString("zh-CN", {
                           month: "long",
                           day: "numeric",
                           weekday: "long",

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
 
-mkdirSync('docs/screenshots', { recursive: true });
+mkdirSync('artifacts/ui', { recursive: true });
 const cases = [
   ['overview', 1366, 768, 1, 'light'], ['reading', 1366, 768, 1, 'light'],
   ['reading-dark', 1920, 1080, 1, 'dark'], ['reading-narrow', 800, 600, 1, 'light'],
@@ -27,7 +27,7 @@ for (const [view, width, height, scale, theme] of cases.filter(c => !process.env
       [...(packaged ? [] : [view === 'flow' ? 'scripts/feedback-main.cjs' : '.']), `--force-device-scale-factor=${scale}`], {
         windowsHide: true,
         env: { ...childEnv, ELEARNING_DEMO: '1', ELEARNING_DEMO_DIR: profile,
-          ELEARNING_SMOKE: `docs/screenshots/windows-course-${view}.png`, ELEARNING_SMOKE_VIEW: view,
+          ELEARNING_SMOKE: `artifacts/ui/windows-course-${view}.png`, ELEARNING_SMOKE_VIEW: view,
           ELEARNING_SMOKE_WIDTH: String(Math.max(800, Math.round(width / scale))),
           ELEARNING_SMOKE_HEIGHT: String(Math.max(600, Math.round(height / scale))),
           ELEARNING_SMOKE_DELAY: '800', ELEARNING_SMOKE_SETTLE: '300',

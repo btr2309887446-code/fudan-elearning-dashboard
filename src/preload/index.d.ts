@@ -9,6 +9,7 @@ export type IpcResult<T> =
   | { ok: false; error: { kind: string; message: string; detail?: string } };
 
 export interface Prefs {
+  storageWarning?: string;
   rememberUsername: boolean;
   username?: string;
   rememberPassword: boolean;
@@ -71,9 +72,10 @@ export interface ElearningApi {
       password: string;
       captchaCode?: string;
       remember?: boolean;
+      useRememberedPassword?: boolean;
     }): Promise<IpcResult<{ profile: CanvasProfile }>>;
     status(): Promise<IpcResult<{ loggedIn: boolean; profile?: CanvasProfile; savedAt?: string }>>;
-    remembered(): Promise<{ username?: string; password?: string }>;
+    remembered(): Promise<{ username?: string; hasRememberedPassword: boolean; storageWarning?: string }>;
     logout(): Promise<IpcResult<true>>;
   };
   data: {
@@ -103,6 +105,7 @@ export interface ElearningApi {
   open(url: string): Promise<void>;
   /** 应用版本号（来自 package.json），显示在侧边栏底部。 */
   version(): Promise<string>;
+  onResume(callback: () => void): () => void;
   /** 作业详情与 100 字简介。 */
   assignment: {
     detail(
@@ -123,15 +126,16 @@ export interface ElearningApi {
       description: string;
     }): Promise<IpcResult<{ summary: string; summarySource: 'llm' | 'fallback' | 'none'; summaryError?: string }>>;
   };
-  /** 大模型配置。apiKey 回传时是打码串，不是真实密钥。 */
+  /** Only public configuration is returned; credentials never cross this boundary. */
   llm: {
-    get(): Promise<{ baseUrl: string; model: string; enabled: boolean; apiKey: string }>;
+    get(): Promise<{ baseUrl: string; model: string; enabled: boolean; hasApiKey: boolean; storageWarning?: string }>;
     set(patch: {
       baseUrl?: string;
       model?: string;
       enabled?: boolean;
       apiKey?: string;
-    }): Promise<IpcResult<{ baseUrl: string; model: string; enabled: boolean; apiKey: string }>>;
+      clearApiKey?: boolean;
+    }): Promise<IpcResult<{ baseUrl: string; model: string; enabled: boolean; hasApiKey: boolean; storageWarning?: string }>>;
   };
 }
 

@@ -1,0 +1,116 @@
+name: Stability validation
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        options: [all, windows, ios]
+        default: all
+      ref:
+        description: 'Commit SHA (blank uses selected branch)'
+        required: false
+  workflow_call:
+    inputs:
+      platform:
+        type: string
+        default: all
+      ref:
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}-${{ inputs.platform || 'all' }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    if: ${{ !inputs.platform || inputs.platform == 'all' || inputs.platform == 'windows' }}
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:login-harness
+      - run: npm run test:workspace-ui
+      - run: npm run test:course-ui
+      - run: npm run dist
+        env:
+          DIST_NO_MIRROR: '1'
+      - run: node scripts/artifact-manifest.mjs release windows
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-validation
+          path: |
+            release/*.exe
+            release/*-manifest.json
+            release/*-SHA256SUMS.txt
+            artifacts/ui
+            artifacts/benchmarks
+          retention-days: 14
+  ios:
+    if: ${{ !inputs.platform || inputs.platform == 'all' || inputs.platform == 'ios' }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+      - name: Test iPhone and iPad
+        working-directory: flutter_app/ios
+        run: |
+          set -euo pipefail
+          python3 ../../scripts/ios-ci-devices.py > /tmp/stability-devices
+          INDEX=0
+          while IFS= read -r DEVICE; do
+            INDEX=$((INDEX+1))
+            xcrun simctl shutdown all || true
+            xcrun simctl boot "$DEVICE" || true
+            xcrun simctl bootstatus "$DEVICE" -b
+            xcodebuild test -project NativeRunner.xcodeproj -scheme NativeRunnerCI \
+              -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ../build/stability \
+              -resultBundlePath "../build/stability-$INDEX.xcresult" -parallel-testing-enabled NO \
+              -only-testing:NativeRunnerTests -only-testing:NativeRunnerUITests/LectureUITests CODE_SIGNING_ALLOWED=NO
+            xcrun xcresulttool export attachments --path "../build/stability-$INDEX.xcresult" --output-path "../build/stability-screenshots/device-$INDEX"
+          done < /tmp/stability-devices
+      - name: Diagnostics
+        if: failure()
+        run: python3 scripts/ios-test-diagnostics.py flutter_app/build flutter_app/build/stability-diagnostics
+      - name: Build unsigned IPA
+        working-directory: flutter_app/ios
+        run: |
+          set -euo pipefail
+          xcodebuild build -project NativeRunner.xcodeproj -scheme NativeRunner -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ../build/stability-device CODE_SIGNING_ALLOWED=NO
+          mkdir -p ../build/stability-package/Payload
+          ditto ../build/stability-device/Build/Products/Release-iphoneos/NativeRunner.app ../build/stability-package/Payload/NativeRunner.app
+          cd ../build/stability-package
+          zip -qry Fudan-eLearning-iOS-stability-unsigned.ipa Payload
+      - run: node scripts/artifact-manifest.mjs flutter_app/build/stability-package ios
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-delivery
+          path: |
+            flutter_app/build/stability-package/*.ipa
+            flutter_app/build/stability-package/*-manifest.json
+            flutter_app/build/stability-package/*-SHA256SUMS.txt
+            flutter_app/build/stability-screenshots
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-test-results
+          path: |
+            flutter_app/build/stability-*.xcresult
+            flutter_app/build/stability-diagnostics
+          retention-days: 14
