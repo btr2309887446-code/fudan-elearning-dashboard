@@ -19,6 +19,11 @@ try {
   store.set('llm', 'synthetic-secret');
   const restored = new CredentialStore(path, codec);
   assert.equal(restored.get('llm'), 'synthetic-secret');
+  restored.set('llm', undefined);
+  const cleared = new CredentialStore(path, codec);
+  cleared.import('llm', 'stale-backup-key');
+  assert.equal(cleared.get('llm'), undefined, 'cleared keys cannot be resurrected by interrupted legacy backup cleanup');
+  restored.set('llm', 'synthetic-secret');
   assert.deepEqual(publicPreferences({ theme: 'light', llm: { apiKey: 'secret' }, encryptedPassword: 'secret', summaryCache: {} }), { theme: 'light' });
   assert.deepEqual(preferencePatch({ theme: 'dark', llm: { apiKey: 'injected' } }), { theme: 'dark' });
   assert.throws(() => preferencePatch({ closeToTray: 'yes' }));
@@ -29,6 +34,10 @@ try {
   restored.clearSession(legacy);
   available = true;
   assert.equal(new CredentialStore(path, codec).loadSession(legacy), null, 'logout survives an unavailable vault');
+  const backupSession = join(root, 'backup-session.json'); writeFileSync(`${backupSession}.bak`, JSON.stringify(session));
+  const backupStore = new CredentialStore(join(root, 'backup-vault'), codec);
+  assert.equal(backupStore.loadSession(backupSession)?.file.username, 'synthetic');
+  assert.equal(existsSync(`${backupSession}.bak`), false, 'backup-only session migrates and cleans up');
   const blocked = join(root,'directory'); mkdirSync(blocked);
   const failure = new CredentialStore(join(blocked,'secrets'), codec); failure.set('llm','original');
   // A write error must not acknowledge the new in-memory value.

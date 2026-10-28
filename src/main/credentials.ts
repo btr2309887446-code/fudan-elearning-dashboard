@@ -45,6 +45,7 @@ export class CredentialStore {
     }
   }
   get(key: string): string | undefined { this.load(); return this.values[key]; }
+  isRevoked(key: string): boolean { this.load(); return this.revoked.has(key); }
   persisted(key: string): boolean { this.load(); return this.readable && this.codec.available() && this.durable[key] === this.values[key]; }
   private saveRevocations() {
     mkdirSync(dirname(this.path), { recursive: true });
@@ -83,6 +84,7 @@ export class CredentialStore {
   }
   /** Import is idempotent, including after interruption before plaintext cleanup. */
   import(key: string, value: string): boolean {
+    if (this.isRevoked(key)) return this.persisted(key);
     const current = this.get(key);
     return this.set(key, current ?? value);
   }
@@ -94,7 +96,7 @@ export class CredentialStore {
       return { file, jar: CookieJar.fromJSON(file.cookies) };
     }
     if (this.revoked.has('session')) return null;
-    const legacy = loadLegacySession(legacyPath);
+    const legacy = loadLegacySession(legacyPath) ?? loadLegacySession(`${legacyPath}.bak`);
     if (!legacy) return null;
     try {
       if (this.import('session', JSON.stringify(legacy.file))) this.clearLegacySession(legacyPath);

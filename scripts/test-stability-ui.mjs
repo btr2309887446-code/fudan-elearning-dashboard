@@ -3,13 +3,14 @@ import { mkdirSync,mkdtempSync,writeFileSync,readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join,resolve } from 'node:path';
 import assert from 'node:assert/strict';
-for (const migration of ['primary-and-backup', 'backup-only']) {
+for (const migration of ['primary-and-backup', 'backup-only', 'revoked-backup']) {
 const profile=mkdtempSync(join(tmpdir(),'elearning-stability-'));
 const fake='synthetic-migration-key-never-real';
 writeFileSync(join(profile,'prefs.json'),JSON.stringify({syncMinutes:0,...(migration==='primary-and-backup'?{llm:{apiKey:fake,enabled:true,baseUrl:'https://example.invalid',model:'synthetic'}}:{})}));
 writeFileSync(join(profile,'prefs.json.bak'),JSON.stringify({llm:{apiKey:fake,enabled:true,baseUrl:'https://example.invalid',model:'synthetic'}}));
+if(migration==='revoked-backup') writeFileSync(join(profile,'credentials.json.revoked'),JSON.stringify(['llm']));
 mkdirSync('artifacts/ui',{recursive:true});
-const env={...process.env,ELEARNING_DEMO:'1',ELEARNING_DEMO_DIR:profile,ELEARNING_SMOKE:`artifacts/ui/stability-${migration}.png`,ELEARNING_SMOKE_DELAY:'700',ELEARNING_SMOKE_SETTLE:'200',ELEARNING_SMOKE_SCRIPT_FILE:resolve('scripts/stability-ui-driver.js')};
+const env={...process.env,ELEARNING_DEMO:'1',ELEARNING_DEMO_DIR:profile,ELEARNING_SMOKE_VIEW:migration,ELEARNING_SMOKE:`artifacts/ui/stability-${migration}.png`,ELEARNING_SMOKE_DELAY:'700',ELEARNING_SMOKE_SETTLE:'200',ELEARNING_SMOKE_SCRIPT_FILE:resolve('scripts/stability-ui-driver.js')};
 delete env.ELECTRON_RUN_AS_NODE;
 const result=await new Promise((done,reject)=>{
   const child=spawn(resolve('node_modules/electron/dist/electron.exe'),['.'],{env,windowsHide:true});
@@ -19,7 +20,7 @@ const result=await new Promise((done,reject)=>{
 });
 writeFileSync(`artifacts/ui/stability-${migration}.log`,result.output);
 assert(result.code===0&&result.output.includes('STABILITY_UI_PASS'),result.output);
-for(const name of ['prefs.json','prefs.json.bak','credentials.json']) assert(!readFileSync(join(profile,name),'utf8').includes(fake),`${name} contains plaintext`);
+for(const name of ['prefs.json','prefs.json.bak',...(migration==='revoked-backup'?[]:['credentials.json'])]) assert(!readFileSync(join(profile,name),'utf8').includes(fake),`${name} contains plaintext`);
 assert(!result.output.includes(fake),'diagnostics contain synthetic secret');
 }
 console.log('stability UI: sandbox, public credential boundaries, real safeStorage migration and foreground day change passed');

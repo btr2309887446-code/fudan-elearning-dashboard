@@ -176,7 +176,8 @@ function readPrefs(): Prefs {
     };
     let legacyBackup: Prefs | undefined;
     try { if (existsSync(`${prefsPath()}.bak`)) legacyBackup = JSON.parse(readFileSync(`${prefsPath()}.bak`, "utf8")); } catch { /* Preserve malformed backups. */ }
-    const legacy = result.llm?.apiKey || legacyBackup?.llm?.apiKey;
+    const stale = result.llm?.apiKey || legacyBackup?.llm?.apiKey;
+    const legacy = credentials().isRevoked("llm") ? undefined : stale;
     if (!result.llm && legacyBackup?.llm && legacy) result.llm = { ...legacyBackup.llm };
     if (legacy) {
       try { credentials().import("llm", legacy); }
@@ -184,7 +185,7 @@ function readPrefs(): Prefs {
     }
     if (result.llm) result.llm = { ...result.llm, apiKey: credentials().get("llm") ?? legacy ?? "" };
     cachedPrefs = result;
-    if (legacy && credentials().persisted("llm")) {
+    if (stale && (credentials().isRevoked("llm") || credentials().persisted("llm"))) {
       try { writePrefs(result); } catch { credentials().warning = "密钥已加密，旧设置清理未完成，下次启动会重试。"; }
     }
     return result;
@@ -1388,7 +1389,7 @@ function createWindow(): void {
               );
               try {
                 const result = await mainWindow!.webContents.executeJavaScript(
-                  `const SMOKE_VIEW = ${view};\n${script}`,
+                  `const SMOKE_VIEW = ${view}; const SMOKE_PACKAGED = ${app.isPackaged};\n${script}`,
                 );
                 console.log("[smoke] driver result:", result);
               } catch (err) {

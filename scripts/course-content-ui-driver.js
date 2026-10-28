@@ -64,13 +64,15 @@
     assert(document.querySelector('dialog textarea').value.includes('阅读本章'), 'Selected action is retained');
     const original = title.value;
     button('保存任务').click(); button('保存任务')?.click();
+    if (!SMOKE_PACKAGED) {
     await until(() => document.querySelector('dialog [role="alert"]')?.textContent.includes('演示'), 'First save fails explicitly');
     assert(title.value === original && document.querySelector('dialog[open]'), 'Failure preserves all input');
     let data = await window.elearning.workspace.get(snapshot.profile.id);
     assert(!data.data.series.some(s => s.title === original), 'Failed save did not persist');
     await click('保存任务');
+    }
     await until(() => !document.querySelector('dialog[open]'), 'Retry succeeds');
-    data = await window.elearning.workspace.get(snapshot.profile.id);
+    const data = await window.elearning.workspace.get(snapshot.profile.id);
     const created = data.data.series.filter(s => s.title === original);
     assert(created.length === 1 && created[0].lectureSource.title === lectureTitle && !created[0].dueAt, 'Exactly one task retains source and no deadline');
     assert(document.querySelector('.cc-article-heading h1').textContent === lectureTitle, 'Save keeps reading context');

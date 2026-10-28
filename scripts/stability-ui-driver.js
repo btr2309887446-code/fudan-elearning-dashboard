@@ -6,11 +6,12 @@
   assert(typeof require==='undefined','renderer has no Node require');
   const prefs=await window.elearning.prefs.get(), llm=await window.elearning.llm.get();
   assert(!('llm' in prefs)&&!('encryptedPassword' in prefs),'public preference whitelist');
-  assert(llm.hasApiKey&&!('apiKey' in llm),'dedicated getter returns saved-state only');
+  const expectedKey=SMOKE_VIEW!=='revoked-backup';
+  assert(llm.hasApiKey===expectedKey&&!('apiKey' in llm),'dedicated getter returns saved-state only');
   const remembered=await window.elearning.auth.remembered();
   assert(!('password' in remembered),'saved login password never crosses IPC');
   await window.elearning.prefs.set({llm:{apiKey:'invalid-override'},encryptedPassword:'invalid-override'});
-  assert((await window.elearning.llm.get()).hasApiKey,'generic preference mutation cannot clear the private key');
+  assert((await window.elearning.llm.get()).hasApiKey===expectedKey,'generic preference mutation cannot change the private key');
   let rejected=false;
   try { await window.elearning.llm.set({enabled:'invalid'}); } catch { rejected=true; }
   assert(rejected,'invalid IPC fields rejected before mutation');
