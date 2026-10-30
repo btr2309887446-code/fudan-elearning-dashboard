@@ -27,6 +27,11 @@ private struct LectureSaved: Codable {
     var shards: [String: LectureManifest.Shard] = [:]
     var indexHash: String?
     var lastSynced: Date?
+    var lastCommit: String?
+    var needsRetry: Bool?
+    var previousHashes: [String]?
+    var previousManifest: Previous?
+    struct Previous: Codable { var indexHash: String?; var shards: [String: LectureManifest.Shard]; var lastCommit: String? }
 }
 private struct LectureSecret: Codable { var password: String; var token: String }
 enum LectureKeychain {
@@ -54,7 +59,9 @@ enum LectureKeychain {
 actor LectureService {
     let account: Int
     private let root: URL
-    private let session: URLSession
+    private let configuration: URLSessionConfiguration
+    private var transfer: LectureTransfer?
+    private var healthy = false
     private var cancelled = false
     private var busy = false
     private var saved: LectureSaved?
@@ -65,9 +72,9 @@ actor LectureService {
     init(account: Int, root: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Classroom", isDirectory: true), configuration: URLSessionConfiguration = .ephemeral) {
         self.account = account; self.root = root.appendingPathComponent(String(account), isDirectory: true)
         configuration.timeoutIntervalForRequest = 45; configuration.timeoutIntervalForResource = 180
-        session = URLSession(configuration: configuration)
+        self.configuration = configuration
     }
-    func cancel() { cancelled = true; session.invalidateAndCancel(); secret = nil; engine = nil }
+    func cancel() { cancelled = true; transfer?.cancel(); secret = nil; engine = nil }
     private func check() throws { if cancelled || Task.isCancelled { throw CancellationError() } }
     static func source(repository: String, branch: String) throws -> (String, String, String) {
         var repo = repository.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -121,14 +128,23 @@ actor LectureService {
     }
     private func hydrate(_ value: LectureSaved, key: LectureSecret) throws -> LectureEngine {
         guard let indexHash = value.indexHash else { throw NativeError.protocolFailure("暂无本地笔记缓存，请联网同步。") }
-        _ = try LectureManifest.decode(Data(contentsOf: blob(value, indexHash)), password: key.password)
+        healthy = false
+        var indexError: Error?
+        do {
+        let indexData = try Data(contentsOf: blob(value, indexHash))
+        guard LectureCrypto.hash(indexData) == indexHash else { throw NativeError.protocolFailure("笔记索引缓存损坏，请同步重试。") }
+        _ = try LectureManifest.decode(indexData, password: key.password)
+        } catch { indexError = error }
         let result = LectureEngine(source: value.sourceID)
         var failures = 0
         for shard in value.shards.values.sorted(by: { $0.name < $1.name }) {
             try check()
-            do { try result.load(shard.name, data: Data(contentsOf: blob(value, shard.sha256)), password: key.password, hash: shard.sha256) }
+            do { try result.loadFile(shard.name, url: blob(value, shard.sha256), password: key.password, hash: shard.sha256) }
             catch { failures += 1 }
         }
+        if let indexError, failures == value.shards.count { throw indexError }
+        healthy = failures == 0 && indexError == nil
+        if indexError != nil { error = "笔记清单缓存损坏，请同步重试；其余正文仍可阅读。" }
         if failures > 0 { error = "\(failures) 个缓存分片无法读取，请同步重试。" }
         return result
     }
@@ -169,12 +185,9 @@ actor LectureService {
         request.setValue(raw ? "application/vnd.github.raw+json" : "application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if !key.token.isEmpty { request.setValue("Bearer \(key.token)", forHTTPHeaderField: "Authorization") }
-        let (stream, response) = try await session.bytes(for: request)
-        try check()
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw NativeError.protocolFailure("无法读取 GitHub 笔记，请检查网络、数据分支或私有仓库令牌。") }
-        guard response.expectedContentLength <= limit else { throw NativeError.protocolFailure("笔记分片过大。") }
-        var data = Data()
-        for try await byte in stream { data.append(byte); if data.count > limit { throw NativeError.protocolFailure("笔记分片过大。") }; if data.count % 65536 == 0 { try check() } }
+        let active = LectureTransfer(limit: limit); transfer = active
+        defer { transfer = nil }
+        let data = try await active.receive(request, configuration: configuration)
         try check(); return data
     }
     private func json(_ value: LectureSaved, key: LectureSecret, path: String) async throws -> [String: Any] {
@@ -185,6 +198,9 @@ actor LectureService {
         var value = original
         let ref = try await json(value, key: key, path: "git/ref/heads/\(value.branch)")
         guard let object = ref["object"] as? [String: Any], let commitID = object["sha"] as? String, validSHA(commitID) else { throw NativeError.protocolFailure("笔记分支无效。") }
+        let currentHashes = [value.indexHash].compactMap { $0 } + value.shards.values.map(\.sha256)
+        let complete = try currentHashes.allSatisfy { FileManager.default.fileExists(atPath: try blob(value, $0).path) }
+        if value.lastCommit == commitID, value.needsRetry != true, healthy, complete { return (value, nil) }
         let commit = try await json(value, key: key, path: "git/commits/\(commitID)")
         guard let treeRef = commit["tree"] as? [String: Any], let treeID = treeRef["sha"] as? String, validSHA(treeID) else { throw NativeError.protocolFailure("笔记提交无效。") }
         let tree = try await json(value, key: key, path: "git/trees/\(treeID)?recursive=1")
@@ -198,22 +214,34 @@ actor LectureService {
         for shard in index.shards {
             do {
                 let location = try blob(value, shard.sha256)
-                var data = (try? Data(contentsOf: location)) ?? Data()
-                if data.count != shard.size || LectureCrypto.hash(data) != shard.sha256 {
+                do { try candidate.loadFile(shard.name, url: location, password: key.password, hash: shard.sha256, validate: !healthy) }
+                catch {
+                    try check()
                     guard let hash = files["data/shards/\(shard.name)"] else { throw NativeError.protocolFailure("提交缺少分片。") }
-                    data = try await bytes(value, key: key, path: "git/blobs/\(hash)", raw: true)
+                    let data = try await bytes(value, key: key, path: "git/blobs/\(hash)", raw: true)
+                    guard data.count == shard.size, LectureCrypto.hash(data) == shard.sha256 else { throw NativeError.protocolFailure("分片大小或校验不符。") }
+                    try write(data, to: location)
+                    try candidate.loadFile(shard.name, url: location, password: key.password, hash: shard.sha256, validate: !healthy)
                 }
-                try check()
-                guard data.count == shard.size else { throw NativeError.protocolFailure("笔记分片大小不符。") }
-                try candidate.load(shard.name, data: data, password: key.password, hash: shard.sha256)
-                try write(data, to: location); value.shards[shard.name] = shard
+                try check(); value.shards[shard.name] = shard
             } catch { try check(); failures.append(error.localizedDescription) }
         }
         if !index.shards.isEmpty, failures.count == index.shards.count { throw NativeError.protocolFailure("所有分片读取失败：\(failures[0])") }
         if failures.isEmpty { let names = Set(index.shards.map(\.name)); candidate.retain(names); value.shards = value.shards.filter { names.contains($0.key) } }
         value.indexHash = LectureCrypto.hash(encrypted)
-        try write(encrypted, to: blob(value, value.indexHash!)); value.lastSynced = Date()
+        let indexLocation = try blob(value, value.indexHash!)
+        if value.indexHash != original.indexHash || !healthy || !FileManager.default.fileExists(atPath: indexLocation.path) { try write(encrypted, to: indexLocation) }
+        if original.needsRetry != true, commitID != original.lastCommit || !failures.isEmpty { value.previousHashes = currentHashes; value.previousManifest = LectureSaved.Previous(indexHash: original.indexHash, shards: original.shards, lastCommit: original.lastCommit) }
+        value.lastCommit = commitID; value.needsRetry = !failures.isEmpty; value.lastSynced = Date(); healthy = failures.isEmpty
         return (value, failures.isEmpty ? nil : "\(failures.count) 个分片失败，已保留旧内容。\(failures[0])")
+    }
+    private func collect(_ value: LectureSaved) throws {
+        let keep = Set([value.indexHash].compactMap { $0 } + value.shards.values.map(\.sha256) + (value.previousHashes ?? []))
+        for file in try FileManager.default.contentsOfDirectory(at: folder(value), includingPropertiesForKeys: nil) {
+            let name = file.lastPathComponent
+            guard name.range(of: "^[a-f0-9]{64}\\.enc(\\.index)?$", options: .regularExpression) != nil, !keep.contains(String(name.prefix(64))) else { continue }
+            try check(); try FileManager.default.removeItem(at: file)
+        }
     }
     private func validSHA(_ value: String) -> Bool { value.range(of: "^[a-f0-9]{40}$", options: .regularExpression) != nil }
     func sync() async throws -> LectureConnection {
@@ -223,9 +251,11 @@ actor LectureService {
         busy = true; defer { busy = false }
         do {
             var (next, warning) = try await download(value, key: key, into: engine)
+            if next.lastCommit == value.lastCommit, next.lastSynced == value.lastSynced, warning == nil, healthy { error = nil; return state() }
             // Reading can occur while network requests suspend this actor.
             next.reads = saved?.reads ?? next.reads
             try persist(next); saved = next; error = warning
+            if warning == nil { try collect(next) }
         }
         catch { try check(); self.error = error.localizedDescription }
         return state()
@@ -247,7 +277,8 @@ actor LectureService {
     }
     func body(_ reference: LectureReference, course: Int) throws -> LectureBody {
         try check(); guard let saved, saved.configured, secret != nil, reference.sourceID == saved.sourceID, saved.bindings[reference.courseID] == course, let engine else { throw NativeError.protocolFailure("笔记来源已断开或课程关联已调整。") }
-        var body = try engine.body(reference); body.item = decorate(body.item, saved); return body
+        do { var body = try engine.body(reference); body.item = decorate(body.item, saved); return body }
+        catch { healthy = false; throw error }
     }
     func read(_ reference: LectureReference, course: Int, hash: String) throws {
         let body = try body(reference, course: course)

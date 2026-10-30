@@ -1,4 +1,9 @@
-import ReactECharts from 'echarts-for-react';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import * as echarts from 'echarts/core';
+import { BarChart, LineChart } from 'echarts/charts';
+import { GridComponent, TooltipComponent } from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 import type { AssignmentRow, CourseSummary } from '../../../core/types';
 import { scoreColorResolved, useThemeColors } from '../useTheme';
 
@@ -85,7 +90,7 @@ export function CourseScoreChart({
   };
 
   return (
-    <ReactECharts
+    <ReactEChartsCore echarts={echarts}
       option={option}
       style={{ height: height ?? Math.max(180, data.length * 31 + 36) }}
       opts={{ renderer: 'canvas' }}
@@ -157,7 +162,7 @@ export function GroupChart({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 224 }} opts={{ renderer: 'canvas' }} />;
+  return <ReactEChartsCore echarts={echarts} option={option} style={{ height: 224 }} opts={{ renderer: 'canvas' }} />;
 }
 
 /**
@@ -244,5 +249,5 @@ export function ScoreTrendChart({ rows }: { rows: AssignmentRow[] }) {
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 224 }} opts={{ renderer: 'canvas' }} />;
+  return <ReactEChartsCore echarts={echarts} option={option} style={{ height: 224 }} opts={{ renderer: 'canvas' }} />;
 }
