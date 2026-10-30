@@ -9,6 +9,8 @@
 import { fileFromJson, folderFromJson, type CanvasFile, type CanvasFolder } from './files.ts';
 import { CanvasError } from './errors.ts';
 import { HttpClient } from './http.ts';
+import { htmlToPlainText } from './summary.ts';
+import type { CourseIntroduction } from './lectures.ts';
 import type {
   CanvasAssignment,
   CanvasAssignmentGroup,
@@ -85,10 +87,12 @@ export class CanvasClient {
     let pages = 0;
     while (url && pages < maxPages) {
       const { data, link } = await this.fetchJson<T[]>(url);
-      if (Array.isArray(data)) out.push(...data);
+      if (!Array.isArray(data)) throw new Error('Canvas 分页响应格式异常');
+      out.push(...data);
       url = parseNextLink(link);
       pages += 1;
     }
+    if (url) throw new Error('Canvas 分页超过上限，本次结果不完整');
     return out;
   }
 
@@ -147,6 +151,28 @@ export class CanvasClient {
     return this.getAllPages<CanvasAssignmentGroup>(`/api/v1/courses/${courseId}/assignment_groups`, {
       per_page: 100,
     });
+  }
+
+  /** Load optional official course content separately from the compact snapshot. */
+  async getCourseIntroduction(courseId: number): Promise<CourseIntroduction> {
+    if (!Number.isSafeInteger(courseId) || courseId <= 0) throw new Error('课程编号无效');
+    const course = await this.get<CanvasCourse>(`/api/v1/courses/${courseId}`, {
+      include: ['syllabus_body', 'teachers'],
+    });
+    if (!course || typeof course !== 'object' || course.id !== courseId || Array.isArray(course))
+      throw new Error('Canvas 课程简介响应格式异常');
+    const teachers = Array.isArray(course.teachers) ? course.teachers.flatMap((teacher) => {
+      if (!teacher || typeof teacher !== 'object') return [];
+      const name = [teacher.display_name, teacher.name, teacher.short_name]
+        .find((value) => typeof value === 'string' && value.trim());
+      return name ? [name.trim()] : [];
+    }) : [];
+    return {
+      courseId,
+      description: htmlToPlainText(typeof course.syllabus_body === 'string' ? course.syllabus_body : ''),
+      teachers: [...new Set(teachers)],
+      fetchedAt: new Date().toISOString(),
+    };
   }
 
   /** Assignments for one course, each carrying the current user's submission. */

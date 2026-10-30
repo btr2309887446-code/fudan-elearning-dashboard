@@ -26,19 +26,27 @@ struct NativeRootView: View {
                 if !store.isLoggedIn && store.snapshot == nil {
                     NativeLoginView(store: store)
                 } else {
-                    MainTabsView(store: store)
+                    MainTabsView(store: store).id(store.snapshot?.profile.id)
                 }
             } else {
                 NativeLoginView(store: store)
             }
         }
+        .safeAreaInset(edge: .bottom) { if let warning = store.credentialWarning { Text(warning).font(.caption).padding(8).frame(maxWidth: .infinity).background(Color(uiColor: .secondarySystemBackground)) } }
         .tint(.blue)
         .preferredColorScheme(colorScheme)
-        .task { await store.boot() }
+        .task { store.clock.setActive(true); await store.boot() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in store.clock.refresh() }
         .onChange(of: scenePhase) { phase in
+            store.clock.setActive(phase == .active)
             if phase == .active {
-                store.ensurePersonalRange(through: Beijing.addDays(90, to: Date()))
-                Task { await store.reconcileReminders() }
+                store.ensurePersonalRange(through: Beijing.addDays(90, to: store.now))
+                Task {
+                    await store.reconcileReminders()
+                    if !store.lectures.connection.locked, Date().timeIntervalSince(store.lectures.connection.lastSynced ?? .distantPast) >= 900 {
+                        await store.lectures.sync(store: store)
+                    }
+                }
             }
         }
     }
@@ -129,7 +137,7 @@ struct TodayView: View {
 
     var body: some View {
         let pending = store.selectedTasks.filter { $0.status == .pending }
-        let now = Date()
+        let now = store.now
         let grouped = Dictionary(grouping: pending) { $0.bucket(now: now) }
         let overdue = grouped[.overdue, default: []]
         let today = grouped[.today, default: []]
@@ -151,7 +159,7 @@ struct TodayView: View {
                     }
                 }
             } header: {
-                Text(Beijing.key(Date()).replacingOccurrences(of: "-", with: "/"))
+                Text(Beijing.key(store.now).replacingOccurrences(of: "-", with: "/"))
             }
 
             Section("变化中心") {
@@ -302,7 +310,7 @@ struct TasksView: View {
 
     private var status: TaskStatus { TaskStatus(rawValue: store.preferences.taskFilter) ?? .pending }
     private var filtered: [NativeTask] {
-        let now = Date()
+        let now = store.now
         return store.selectedTasks.filter { task in
             (taskSource == "all" || (taskSource == "personal" ? task.personal != nil : task.personal == nil)) &&
             task.status == status && (selectedCourse == nil || task.courseID == selectedCourse) &&
@@ -417,7 +425,7 @@ struct TasksView: View {
 
     private var listBody: some View {
         let visibleTasks = filtered
-        let now = Date()
+        let now = store.now
         // Keep the calendar outside UICollectionView's self-sizing List cells.
         // Its grid must not participate in recursive List height measurement.
         return VStack(spacing: 0) {
@@ -437,7 +445,7 @@ struct TasksView: View {
                     let dayTasks = NativeDomain.tasks(visibleTasks, on: selectedDay)
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 20) {
-                            MonthGrid(month: $month, day: $selectedDay, taskCounts: counts)
+                            MonthGrid(month: $month, day: $selectedDay, taskCounts: counts, now: store.now)
                                 .padding(16)
                                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
                             Text(Beijing.dayTitle(selectedDay))
@@ -527,13 +535,14 @@ struct MonthGrid: View {
     @Binding var month: Date
     @Binding var day: Date
     let taskCounts: [Date: Int]
+    var now: Date = Date()
     @ScaledMetric(relativeTo: .body) private var cellHeight: CGFloat = 44
     @ScaledMetric(relativeTo: .caption) private var weekdayHeight: CGFloat = 20
     private let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
 
     var body: some View {
         let grid = NativeMonthGrid(month: month)
-        let today = Beijing.day(Date())
+        let today = Beijing.day(now)
         return VStack(spacing: 8) {
             HStack {
                 Button { shiftMonth(-1) } label: {
@@ -747,13 +756,19 @@ struct CourseDetailView: View {
                 Text(course.courseCode.isEmpty ? course.termName : "\(course.courseCode) · \(course.termName)")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Picker("课程内容", selection: $section) {
-                    Text("作业").tag(0)
-                    Text("成绩").tag(1)
-                    Text("文件").tag(2)
-                }.pickerStyle(.segmented)
+                    Text("概览").tag(0)
+                    Text("课堂笔记").tag(1)
+                    Text("作业").tag(2)
+                    Text("成绩").tag(3)
+                    Text("文件").tag(4)
+                }.pickerStyle(.menu).accessibilityIdentifier("course-content-picker")
             }
 
             if section == 0 {
+                CourseOverviewSections(store: store, lectures: store.lectures, course: course)
+            } else if section == 1 {
+                Section { NavigationLink("阅读课堂笔记") { LectureListView(store: store, lectures: store.lectures, course: course) } }
+            } else if section == 2 {
                 Section {
                     Menu {
                         Button("全部作业") { taskFilter = nil }
@@ -766,7 +781,7 @@ struct CourseDetailView: View {
                         }
                     }
                 } header: { Text("作业") }
-            } else if section == 1 {
+            } else if section == 3 {
                 Section("eLearning 当前得分") {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(score(course.currentScore)).font(.largeTitle.weight(.semibold))
@@ -1433,6 +1448,7 @@ struct ProfileView: View {
             }
 
             Section("作业摘要与帮助") {
+                NavigationLink("课堂笔记连接") { LectureSettingsView(store: store, lectures: store.lectures) }
                 NavigationLink("作业摘要配置") { SummarySettingsView(store: store) }
                 NavigationLink("诊断日志") { DiagnosticsView(store: store) }
                 Link("使用帮助", destination: URL(string: "https://github.com/btr2309887446-code/fudan-elearning-dashboard/blob/master/docs/ios.md")!)

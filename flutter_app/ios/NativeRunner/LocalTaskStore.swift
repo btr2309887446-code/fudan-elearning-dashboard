@@ -52,6 +52,13 @@ extension NativeAppStore {
 
     func savePersonal(_ draft: PersonalTaskSeries, occurrence: PersonalOccurrence? = nil, following: Bool = false) async -> Bool {
         guard let editingAccount = snapshot?.profile.id else { return false }
+        if occurrence == nil, let source = draft.lectureSource {
+            guard lectures.account == editingAccount, lectures.connection.configured,
+                  source.reference.sourceID == lectures.connection.sourceID,
+                  lectures.connection.bindings[source.reference.courseID] == draft.courseID else {
+                localError = "课堂来源或关联课程已调整，请重新打开笔记创建任务。"; return false
+            }
+        }
         var draft = draft.withoutExceptions
         draft.title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if let due = draft.dueAt { draft.dueAt = Date(timeIntervalSince1970: floor(due.timeIntervalSince1970 / 60) * 60) }

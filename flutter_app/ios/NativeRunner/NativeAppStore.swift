@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftUI
 import UIKit
 
@@ -11,6 +12,11 @@ struct NativeAssignmentDetail {
 
 @MainActor
 final class NativeAppStore: ObservableObject {
+    let lectures = LectureStore()
+    let clock: NativeClock
+    @Published private(set) var now: Date
+    private var clockObservation: AnyCancellable?
+    private let sessionVault: NativeSessionVault
     @Published private(set) var snapshot: NativeSnapshot?
     @Published private(set) var taskIndex = NativeTaskIndex()
     @Published var localAccount = NativeLocalAccount()
@@ -36,6 +42,7 @@ final class NativeAppStore: ObservableObject {
     @Published var isBusy = false
     @Published var errorMessage: String?
     @Published var noticeMessage: String?
+    @Published var credentialWarning: String?
     @Published var refreshProgress: (done: Int, total: Int, label: String)?
     @Published var downloadProgress: NativeDownloadProgress?
     @Published var isDownloading = false
@@ -57,7 +64,9 @@ final class NativeAppStore: ObservableObject {
     private var snapshotKey = "native.snapshot.v1"
     private var prefsKey = "native.preferences.v1"
 
-    init(defaults: UserDefaults = .standard, localRepository: NativeLocalRepository = NativeLocalRepository()) {
+    init(defaults: UserDefaults = .standard, localRepository: NativeLocalRepository = NativeLocalRepository(), sessionVault: NativeSessionVault = .live, clock: NativeClock? = nil) {
+        let clock = clock ?? NativeClock()
+        self.clock = clock; self.now = clock.now; self.personalHorizon = Beijing.addDays(90, to: Beijing.day(clock.now)); self.sessionVault = sessionVault
         self.defaults = defaults
         self.localRepository = localRepository
         NativeFreshStart.run(defaults: defaults)
@@ -79,9 +88,17 @@ final class NativeAppStore: ObservableObject {
             if let data = defaults.data(forKey: "native.snapshot.v1") {
                 cachedSnapshotData = data
             }
-            if let data = defaults.data(forKey: "native.cookies.v1") {
-                cookies = (try? JSONDecoder().decode([NativeCookie].self, from: data)) ?? []
+            do { cookies = try sessionVault.restore(from: defaults) }
+            catch {
+                // A failed migration preserves the old session for this running process.
+                if !defaults.bool(forKey: "native.session.revoked"), let data = defaults.data(forKey: "native.cookies.v1") { cookies = (try? JSONDecoder().decode([NativeCookie].self, from: data)) ?? [] }
+                credentialWarning = error.localizedDescription
             }
+        }
+        clockObservation = clock.$now.dropFirst().sink { [weak self] date in
+            guard let self else { return }
+            self.now = date
+            self.ensurePersonalRange(through: Beijing.addDays(90, to: Beijing.day(date)))
         }
         NativeNotificationRouter.shared.install { [weak self] day in
             self?.reminderDay = day
@@ -93,6 +110,16 @@ final class NativeAppStore: ObservableObject {
         }
     }
 
+    private func persistCookies(_ value: [NativeCookie]) {
+        guard !uiTesting else { return }
+        do { try sessionVault.save(value, defaults: defaults); credentialWarning = nil }
+        catch { credentialWarning = error.localizedDescription }
+    }
+    private func clearCookies() {
+        guard !uiTesting else { return }
+        do { try sessionVault.clear(defaults: defaults); credentialWarning = nil }
+        catch { credentialWarning = error.localizedDescription }
+    }
     var isLoggedIn: Bool { !cookies.isEmpty }
     // Accessed by many SwiftUI bodies; never parse or sort from this getter.
     var tasks: [NativeTask] { taskIndex.tasks }
@@ -129,6 +156,8 @@ final class NativeAppStore: ObservableObject {
         guard generation == snapshotGeneration, !Task.isCancelled else { return false }
         sourceTaskIndex = prepared
         snapshot = value
+        await lectures.activate(account: value.profile.id, demo: uiTesting ? value.courses : nil)
+        guard generation == snapshotGeneration else { return false }
         rebuildTaskIndex()
         openPendingPersonalNotification()
         return true
@@ -227,7 +256,7 @@ final class NativeAppStore: ObservableObject {
             } catch {
                 if isAuthFailure(error) {
                     cookies = []
-                    defaults.removeObject(forKey: cookieKey)
+                    clearCookies()
                     noticeMessage = "登录状态已失效，请重新登录。你仍可查看上次同步的数据。"
                 } else if snapshot == nil {
                     errorMessage = error.localizedDescription
@@ -235,6 +264,9 @@ final class NativeAppStore: ObservableObject {
             }
         }
         await reconcileReminders()
+        if !lectures.connection.locked, Date().timeIntervalSince(lectures.connection.lastSynced ?? .distantPast) >= 900 {
+            Task { await lectures.sync(store: self) }
+        }
     }
 
     func prepareLogin(username: String) async throws -> NativeUISAuthenticator.Preparation {
@@ -274,7 +306,7 @@ final class NativeAppStore: ObservableObject {
             authTraceLogged = true
             appendLoginTrace(profileHTTP.trace)
             cookies = newCookies
-            defaults.set(try JSONEncoder().encode(newCookies), forKey: cookieKey)
+            persistCookies(newCookies)
             preferences.rememberedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
             preferences.rememberPassword = remember
             NativeSecrets.write(remember ? password : nil, account: "native.password")
@@ -294,7 +326,8 @@ final class NativeAppStore: ObservableObject {
     }
 
     func refresh(force: Bool = false) async {
-        guard !isBusy, isLoggedIn else { return }
+        guard !isBusy else { return }
+        guard isLoggedIn else { await lectures.sync(store: self); return }
         isBusy = true
         errorMessage = nil
         refreshProgress = nil
@@ -313,20 +346,21 @@ final class NativeAppStore: ObservableObject {
             let encoded = try await Task.detached(priority: .utility) { try JSONEncoder().encode(fresh) }.value
             guard session == sessionGeneration, isLoggedIn else { return }
             defaults.set(encoded, forKey: snapshotKey)
-            defaults.set(try JSONEncoder().encode(cookies), forKey: cookieKey)
+            persistCookies(cookies)
             noticeMessage = fresh.warnings.isEmpty ? nil : fresh.warnings.joined(separator: "\n")
             appendLog("同步完成：\(fresh.courses.count) 门课程，\(fresh.assignments.count) 项作业")
             await reconcileReminders()
         } catch {
             if isAuthFailure(error) {
                 cookies = []
-                defaults.removeObject(forKey: cookieKey)
+                clearCookies()
                 noticeMessage = "登录状态已失效，请重新登录。"
             } else {
                 errorMessage = error.localizedDescription
             }
             appendLog("同步失败：\(error.localizedDescription)")
         }
+        if session == sessionGeneration { await lectures.sync(store: self) }
     }
 
     func setTheme(_ value: String) {
@@ -551,11 +585,12 @@ final class NativeAppStore: ObservableObject {
         sessionGeneration += 1
         cookies = []
         clearSnapshot()
+        await lectures.activate(account: nil)
         preferences.remindersEnabled = false
         preferences.mutedTasks = []
         preferences.calendarExports = [:]
         preferences.rememberPassword = false
-        defaults.removeObject(forKey: cookieKey)
+        clearCookies()
         defaults.removeObject(forKey: snapshotKey)
         NativeSecrets.write(nil, account: "native.password")
         await reconcileReminders()

@@ -1,0 +1,26 @@
+import initSql from 'sql.js';
+import {gzipSync} from 'node:zlib';
+import {createHash,createCipheriv,pbkdf2Sync} from 'node:crypto';
+import {writeFileSync} from 'node:fs';
+const hash=b=>createHash('sha256').update(b).digest('hex');
+const password=hash('ICSv2:fictional-student:fictional-password');
+const encrypt=b=>{const salt=Buffer.from('01234567');const k=pbkdf2Sync(password,salt,100000,48,'sha256');const c=createCipheriv('aes-256-cbc',k.subarray(0,32),k.subarray(32));return Buffer.concat([Buffer.from('Salted__'),salt,c.update(b),c.final()]);};
+const SQL=await initSql();const db=new SQL.Database();
+db.run('CREATE TABLE courses(course_id TEXT,title TEXT,teacher TEXT); CREATE TABLE lectures(sub_id TEXT,course_id TEXT,sub_title TEXT,date TEXT,summary TEXT,transcript TEXT); CREATE TABLE ppt_pages(sub_id TEXT,page_num INTEGER,text TEXT); CREATE TABLE all_courses(course_id TEXT,term TEXT,teacher TEXT);');
+db.run("INSERT INTO courses VALUES('101','示例课程','示例教师'); INSERT INTO all_courses VALUES('101','2026秋','示例教师'); INSERT INTO ppt_pages VALUES('lecture-0',1,'虚构 PPT 文字');");
+const statement=db.prepare('INSERT INTO lectures VALUES(?,?,?,?,?,?)');
+for(let i=0;i<5000;i++)statement.run(['lecture-'+i,'101','课次 '+i,'2026-10-25','## 课堂事项\n\n- 阅读教材并整理问题。\n\n$$x^2$$','虚构转写']);
+statement.free();const shard=encrypt(gzipSync(db.export()));db.close();
+const index=encrypt(Buffer.from(JSON.stringify({version:4,shards:[{name:'shard-hot-0000.db.gz.enc',sha256:hash(shard),size:shard.length}]})));
+const largeShards=[];
+for(let n=0;n<3;n++) {
+  const large=new SQL.Database();
+  large.run('CREATE TABLE courses(course_id TEXT,title TEXT,teacher TEXT); CREATE TABLE lectures(sub_id TEXT,course_id TEXT,sub_title TEXT,date TEXT,summary TEXT,transcript TEXT);');
+  large.run('INSERT INTO courses VALUES(?,?,?)',[`large-${n}`,'Synthetic course','Example']);
+  const transcript='Synthetic transcript. '.repeat(50000);
+  for(let row=0;row<36;row++) large.run('INSERT INTO lectures VALUES(?,?,?,?,?,?)',[String(row),`large-${n}`,`Lecture ${row}`,'2026-10-01','Example summary',transcript]);
+  const raw=large.export(); large.close(); const encrypted=encrypt(gzipSync(raw));
+  largeShards.push({bytes:encrypted.toString('base64'),hash:hash(encrypted),decodedBytes:raw.length});
+}
+writeFileSync('flutter_app/ios/NativeRunnerTests/lecture-fixture.json',JSON.stringify({password,index:index.toString('base64'),shard:shard.toString('base64'),hash:hash(shard),largeShards}));
+console.log('Generated synthetic OpenSSL-compatible fixture: 5000 lectures');

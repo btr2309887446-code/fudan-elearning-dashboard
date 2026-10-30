@@ -400,6 +400,12 @@ async function main() {
 
   try { output.mock = await runMockProtocolTests(); }
   catch (error) { output.mock = { status: 'failed', errorCategory: classifyFailure(error), diagnostic: String(error?.message ?? '').slice(0, 120), debug: String(error?.stack ?? '').split('\n').slice(0, 8).join(' | ') }; }
+  if (process.argv.includes('--mock-only')) {
+    await writeFile(join(artifactDir, 'login-mock-result.json'), JSON.stringify(output.mock, null, 2));
+    console.log(JSON.stringify({mock: output.mock.status, syntheticOnly: true}));
+    if (output.mock.status !== 'passed') process.exitCode = 1;
+    return;
+  }
   try { output.node = await runNodeLive(); }
   catch (error) { output.node = { status: 'failed', stage: 'before-request', errorCategory: classifyFailure(error), trace: [] }; }
 

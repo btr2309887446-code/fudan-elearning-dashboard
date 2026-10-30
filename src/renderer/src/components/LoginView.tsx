@@ -14,6 +14,7 @@ interface Props {
 export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: Props) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberedFor, setRememberedFor] = useState('');
   const [remember, setRemember] = useState(false);
   const [captcha, setCaptcha] = useState<{ image?: string } | null>(null);
   const [captchaCode, setCaptchaCode] = useState('');
@@ -22,15 +23,18 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const preparedFor = useRef<string>('');
+  const submitLock = useRef(false);
+  const [captchaBusy, setCaptchaBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
       const remembered = await window.elearning.auth.remembered();
       if (remembered.username) setUsername(remembered.username);
-      if (remembered.password) {
-        setPassword(remembered.password);
+      if (remembered.hasRememberedPassword) {
+        setRememberedFor(remembered.username ?? '');
         setRemember(true);
       }
+      if (remembered.storageWarning) setError(remembered.storageWarning);
       setStage('');
     })();
   }, []);
@@ -50,22 +54,27 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
 
   async function refreshCaptcha() {
     const name = username.trim();
-    if (!name) return;
+    if (!name || captchaBusy) return;
+    setCaptchaBusy(true);
+    try {
     const res = await window.elearning.auth.checkCaptcha(name);
     if (res.ok && res.data.captchaRequired) {
       setCaptcha({ image: res.data.captchaImage });
       setCaptchaCode('');
     }
+    if (!res.ok) setError(res.error.message);
+    } catch (e) { setError(String(e)); }
+    finally { setCaptchaBusy(false); }
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (submitLock.current) return;
     setError(null);
     setDetail(null);
 
     const name = username.trim();
-    if (!name || !password) {
+    if (!name || (!password && !(remember && rememberedFor === name))) {
       setError('请填写学号和密码。');
       return;
     }
@@ -74,6 +83,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
       return;
     }
 
+    submitLock.current = true;
     setBusy(true);
     try {
       // No captcha on screen yet: ask first, so a doomed attempt is never spent.
@@ -99,6 +109,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
         password,
         captchaCode: captcha ? captchaCode.trim() : undefined,
         remember,
+        useRememberedPassword: remember && rememberedFor === name && !password,
       });
 
       if (!res.ok) {
@@ -113,6 +124,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
     } catch (err) {
       setError((err as Error).message);
     } finally {
+      submitLock.current = false;
       setBusy(false);
       setStage('');
     }
@@ -124,6 +136,7 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
         className="icon-btn"
         onClick={onToggleTheme}
         title={theme === 'light' ? '切换到深色' : '切换到浅色'}
+        aria-label={theme === 'light' ? '切换到深色' : '切换到浅色'}
         style={{ position: 'fixed', top: 22, right: 24, zIndex: 5 }}
       >
         <Icon name={theme === 'light' ? 'moon' : 'sun'} size={19} />
@@ -142,11 +155,11 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
         <p className="login-desc">
           使用你的复旦 UIS 学号和密码登录，数据直接来自 eLearning（Canvas）官方接口。
           <br />
-          密码只在本机内存中使用，不会写入磁盘，也不会发送到除复旦认证服务器以外的任何地方。
+          密码用于连接复旦认证服务器；开启记住密码后，使用系统安全存储保存在本机。
         </p>
 
         {notice && <div className="alert alert-warn">{notice}</div>}
-        {error && <div className="alert alert-error">{error}</div>}
+        {error && <div className="alert alert-error" role="alert">{error}</div>}
         {detail && (
           <div className="alert alert-info" style={{ fontSize: 12, maxHeight: 130, overflow: 'auto' }}>
             {detail}
@@ -170,11 +183,11 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
           <label htmlFor="password">密码</label>
           <input
             id="password"
+            placeholder={remember && rememberedFor === username.trim() ? '已保存密码；输入新密码可替换' : '请输入密码'}
             type="password"
             value={password}
             autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="统一身份认证密码"
             disabled={busy}
           />
         </div>
@@ -192,15 +205,14 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
                 autoFocus
               />
               {captcha.image ? (
-                <img
+                <button type="button" className="captcha-button" aria-label="刷新验证码" title="刷新验证码" disabled={busy || captchaBusy} aria-busy={captchaBusy} onClick={() => void refreshCaptcha()}><img
                   className="captcha-img"
                   src={captcha.image}
                   alt="验证码"
                   title="点击刷新"
-                  onClick={refreshCaptcha}
-                />
+                /></button>
               ) : (
-                <button type="button" className="btn" onClick={refreshCaptcha} disabled={busy}>
+                <button type="button" className="btn" onClick={refreshCaptcha} disabled={busy || captchaBusy}>
                   刷新验证码
                 </button>
               )}
@@ -213,12 +225,12 @@ export default function LoginView({ onSuccess, notice, theme, onToggleTheme }: P
           记住密码（使用 Windows 凭据加密后保存在本机）
         </label>
 
-        <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '11px' }} disabled={busy}>
+        <button type="submit" className="btn btn-primary" aria-busy={busy} style={{ width: '100%', padding: '11px' }} disabled={busy}>
           {busy ? '请稍候…' : '登录'}
         </button>
 
         {stage && (
-          <div className="loading-line" style={{ marginTop: 14, justifyContent: 'center' }}>
+          <div className="loading-line" role="status" style={{ marginTop: 14, justifyContent: 'center' }}>
             <span className="spin" />
             {stage}
           </div>

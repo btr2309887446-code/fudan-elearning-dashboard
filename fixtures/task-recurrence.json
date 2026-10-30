@@ -1,0 +1,6 @@
+[
+  { "name": "monthly-leap-year", "repeat": "monthly", "dueAt": "2024-01-31T12:00:00+08:00", "until": "2024-04-30T12:00:00+08:00", "weekdays": [], "expected": ["2024-01-31", "2024-02-29", "2024-03-31", "2024-04-30"] },
+  { "name": "monthly-common-year", "repeat": "monthly", "dueAt": "2025-01-31T12:00:00+08:00", "until": "2025-03-31T12:00:00+08:00", "weekdays": [], "expected": ["2025-01-31", "2025-02-28", "2025-03-31"] },
+  { "name": "weekly-monday-friday", "repeat": "weekly", "dueAt": "2026-10-19T12:00:00+08:00", "until": "2026-10-30T12:00:00+08:00", "weekdays": [2, 6], "expected": ["2026-10-19", "2026-10-23", "2026-10-26", "2026-10-30"] },
+  { "name": "daily-year-boundary", "repeat": "daily", "dueAt": "2026-12-31T12:00:00+08:00", "until": "2027-01-02T12:00:00+08:00", "weekdays": [], "expected": ["2026-12-31", "2027-01-01", "2027-01-02"] }
+]
