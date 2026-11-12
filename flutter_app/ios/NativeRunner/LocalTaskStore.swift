@@ -11,7 +11,7 @@ extension NativeAppStore {
     var unreadChanges: Int { localAccount.events.filter { !$0.read }.count }
 
     @discardableResult
-    func updateLocal(_ transform: (inout NativeLocalAccount) -> Void) async -> Bool {
+    func updateLocal(_ transform: (inout NativeLocalAccount) throws -> Void) async -> Bool {
         guard let account = snapshot?.profile.id, account == localAccountID, !localLoadFailed else { return false }
         while localSaving {
             if Task.isCancelled { return false }
@@ -21,8 +21,8 @@ extension NativeAppStore {
         localSaving = true
         defer { localSaving = false }
         var next = localAccount
-        transform(&next)
         do {
+            try transform(&next)
             if !ProcessInfo.processInfo.arguments.contains("--ui-testing") { try await localRepository.save(next, account: account) }
             guard snapshot?.profile.id == account, localAccountID == account else { return false }
             localAccount = next
@@ -52,6 +52,9 @@ extension NativeAppStore {
 
     func savePersonal(_ draft: PersonalTaskSeries, occurrence: PersonalOccurrence? = nil, following: Bool = false) async -> Bool {
         guard let editingAccount = snapshot?.profile.id else { return false }
+        guard draft.reviewSource == nil, occurrence?.task.reviewSource == nil else {
+            localError = "请在课程复习计划中调整安排。"; return false
+        }
         if occurrence == nil, let source = draft.lectureSource {
             guard lectures.account == editingAccount, lectures.connection.configured,
                   source.reference.sourceID == lectures.connection.sourceID,
@@ -111,6 +114,7 @@ extension NativeAppStore {
                 if state.checked.contains(checklistID) { state.checked.remove(checklistID) } else { state.checked.insert(checklistID) }
             }
             value.series[i].exceptions[occurrence.key] = state
+            if value.series[i].reviewSource != nil, completed != nil { value.review?.revision += 1 }
         }
         if success { await reconcileReminders() }
     }
@@ -118,6 +122,7 @@ extension NativeAppStore {
     func deletePersonal(_ occurrence: PersonalOccurrence, following: Bool) async -> Bool {
         let success = await updateLocal { value in
             guard let i = value.series.firstIndex(where: { $0.id == occurrence.seriesID }) else { return }
+            if value.series[i].reviewSource != nil { value.review?.revision += 1 }
             if value.series[i].repeatRule == .none { value.series.remove(at: i) }
             else if following, let date = occurrence.scheduledAt { value.series[i].endDate = Beijing.addDays(-1, to: Beijing.day(date)) }
             else {

@@ -63,6 +63,10 @@ jobs:
   ios:
     if: ${{ !inputs.platform || inputs.platform == 'all' || inputs.platform == 'ios' }}
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [phone, tablet]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -72,7 +76,7 @@ jobs:
         working-directory: flutter_app/ios
         run: |
           set -euo pipefail
-          python3 ../../scripts/ios-ci-devices.py > /tmp/stability-devices
+          python3 ../../scripts/ios-ci-devices.py '${{ matrix.device }}' > /tmp/stability-devices
           INDEX=0
           while IFS= read -r DEVICE; do
             INDEX=$((INDEX+1))
@@ -82,13 +86,14 @@ jobs:
             xcodebuild test -project NativeRunner.xcodeproj -scheme NativeRunnerCI \
               -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ../build/stability \
               -resultBundlePath "../build/stability-$INDEX.xcresult" -parallel-testing-enabled NO \
-              -only-testing:NativeRunnerTests -only-testing:NativeRunnerUITests/LectureUITests CODE_SIGNING_ALLOWED=NO
+              -only-testing:NativeRunnerTests -only-testing:NativeRunnerUITests/LectureUITests -only-testing:NativeRunnerUITests/ReviewUITests CODE_SIGNING_ALLOWED=NO
             xcrun xcresulttool export attachments --path "../build/stability-$INDEX.xcresult" --output-path "../build/stability-screenshots/device-$INDEX"
           done < /tmp/stability-devices
       - name: Diagnostics
         if: failure()
         run: python3 scripts/ios-test-diagnostics.py flutter_app/build flutter_app/build/stability-diagnostics
       - name: Build unsigned IPA
+        if: matrix.device == 'phone'
         working-directory: flutter_app/ios
         run: |
           set -euo pipefail
@@ -99,10 +104,11 @@ jobs:
           cd ../build/stability-package
           zip -qry Fudan-eLearning-iOS-stability-unsigned.ipa Payload
       - run: node scripts/artifact-manifest.mjs flutter_app/build/stability-package ios
+        if: matrix.device == 'phone'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ios-delivery
+          name: ios-delivery-${{ matrix.device }}
           path: |
             flutter_app/build/stability-package/*.ipa
             flutter_app/build/stability-package/*-manifest.json
@@ -112,7 +118,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ios-test-results
+          name: ios-test-results-${{ matrix.device }}
           path: |
             flutter_app/build/stability-*.xcresult
             flutter_app/build/stability-diagnostics
