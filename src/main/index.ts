@@ -17,6 +17,7 @@ import {
   Menu,
   Notification,
   nativeImage,
+  net,
   powerMonitor,
 } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -279,6 +280,8 @@ function lectures(): LectureService {
     root: join(userDir(), "classroom"),
     workerPath: join(__dirname, "lecture-worker.js"),
     wasmPath: require.resolve("sql.js/dist/sql-wasm.wasm"),
+    // Match the app window's Chromium proxy path instead of Node's HTTP stack.
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
     protect: (value) => {
       if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows 安全存储不可用，请取消在本机记住后重试");
       return safeStorage.encryptString(value).toString("base64");
