@@ -26,6 +26,8 @@ import { pathToFileURL } from "node:url";
 import { validateIpc, safeExternalUrl } from "./ipc-security.ts";
 import { CredentialStore, publicPreferences, preferencePatch } from "./credentials.ts";
 import { LectureService } from "./lectures/service.ts";
+import { ReviewAI } from './review-ai.ts';
+import { previewSchedule } from '../core/review.ts';
 import { parseLectureKey, type CourseIntroduction, type LectureConnectInput, type LectureRef } from "../core/lectures.ts";
 import { WorkspaceStore, atomicJson } from "./workspace-store.ts";
 import {
@@ -270,6 +272,16 @@ function fail(err: unknown): IpcErr {
 let pendingRefresh: Promise<Snapshot> | null = null;
 let pendingRefreshEpoch = -1;
 let accountEpoch = 0;
+const reviewAI = new ReviewAI({
+  config: () => readPrefs().llm ?? DEFAULT_LLM,
+  current: id => activeAccount() === id,
+  fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+  body: async (account, courseId, ref) => {
+    const state = await lectures().state(account);
+    if (state.sourceId !== ref.sourceId || !state.bindings.some(b => b.icourseCourseId === ref.icourseCourseId && b.canvasCourseId === courseId)) throw Error('课程关联已变化，请重新选择材料');
+    return lectures().detail(account, ref);
+  },
+});
 let syncPaused = false;
 let lectureService: LectureService | undefined;
 let pendingSync: Promise<Snapshot> | null = null;
@@ -538,6 +550,7 @@ function registerIpc(): void {
       try {
         assertAccount(id);
         const epoch = accountEpoch;
+        if (['lectures:connect', 'lectures:disconnect', 'lectures:bind'].includes(channel)) reviewAI.reset();
         const data = await action(id, ...args);
         if (epoch !== accountEpoch) throw new Error("账号已切换");
         assertAccount(id);
@@ -590,6 +603,19 @@ function registerIpc(): void {
       throw e;
     }
   });
+  handle('review:preview', (_e, account: number, start: string) => {
+    try { if (activeAccount() !== account) throw Error('账号已切换'); return { ok: true, data: previewSchedule(workspaceStore().read(account), start, Date.now()) }; } catch (e) { return fail(e); }
+  });
+  handle('review:prepare', async (_e, account: number, courseId: number, refs: LectureRef[]) => {
+    try { return { ok: true, data: await reviewAI.prepare(account, courseId, refs) }; } catch (e) { return fail(e); }
+  });
+  handle('review:generate', async (_e, account: number, id: string, index: number) => {
+    try { return { ok: true, data: await reviewAI.generate(account, id, index) }; } catch (e) { return fail(e); }
+  });
+  handle('review:cancel', (_e, account: number, id: string) => {
+    if (activeAccount() !== account) return fail(Error('账号已切换'));
+    reviewAI.cancel(account, id); return { ok: true, data: true };
+  });
   handle("workspace:get", (_e, account: number) => {
     try {
       if (activeAccount() !== account) throw new Error("账号已切换");
@@ -604,6 +630,10 @@ function registerIpc(): void {
       try {
         if (activeAccount() !== account) throw new Error("账号已切换");
         const epoch = accountEpoch;
+        if (command.type === 'review' && command.action.kind === 'plan') {
+          const courseId = command.action.plan.courseId;
+          if (!snapshot?.courses.some(c => c.id === courseId)) throw Error('课程不存在');
+        }
         if (command.type === "save" && command.draft.lectureSource && !command.seriesId) {
           const state = await lectures().state(account);
           const ref = command.draft.lectureSource;
@@ -753,6 +783,7 @@ function registerIpc(): void {
         writePrefs(prefs);
 
         accountEpoch++;
+      reviewAI.reset();
         lectureService?.reset();
         syncPaused = false;
         snapshot = null;
@@ -821,6 +852,7 @@ function registerIpc(): void {
       writePrefs(prefs);
       credentials().clearSession(sessionPath());
       accountEpoch++;
+      reviewAI.reset();
       lectureService?.reset();
       syncPaused = true;
       snapshot = null;
@@ -865,6 +897,7 @@ function registerIpc(): void {
   handle("data:clear", (): IpcResult<true> => {
     try {
       accountEpoch++;
+      reviewAI.reset();
       lectureService?.reset();
       snapshot = null;
       credentials().clearSession(sessionPath());

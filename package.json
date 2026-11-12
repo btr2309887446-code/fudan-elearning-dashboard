@@ -1,6 +1,6 @@
 {
   "name": "fudan-elearning-dashboard",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "复旦大学 eLearning (Canvas) 课程 / 作业 / 成绩 图形化看板",
   "main": "./out/main/index.js",
   "author": "ksar",
@@ -23,7 +23,7 @@
     "test:ignored": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-ignored.ts",
     "test:refresh": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-refresh.ts",
     "test:download": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-download.ts",
-    "test": "npm run test:files && npm run test:summary && npm run test:ignored && npm run test:refresh && npm run test:download && npm run test:cache && npm run test:workspace && npm run test:course-introduction && npm run test:lectures && npm run test:credentials",
+    "test": "npm run test:files && npm run test:summary && npm run test:ignored && npm run test:refresh && npm run test:download && npm run test:cache && npm run test:workspace && npm run test:course-introduction && npm run test:lectures && npm run test:credentials && npm run test:review",
     "cli": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/snapshot.ts",
     "test:workspace": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-workspace.ts",
     "test:workspace-ui": "npm run build && node scripts/test-workspace-ui.mjs",
@@ -34,7 +34,9 @@
     "postinstall": "node node_modules/electron/install.js",
     "test:credentials": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-credentials.ts",
     "test:lecture-budget": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/benchmark-lecture-cache.ts",
-    "test:stability-ui": "npm run build && node scripts/test-stability-ui.mjs"
+    "test:stability-ui": "npm run build && node scripts/test-stability-ui.mjs",
+    "test:review": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON cli/test-review.ts",
+    "test:review-ui": "npm run build && node scripts/test-review-ui.mjs"
   },
   "dependencies": {
     "echarts": "6.1.0",

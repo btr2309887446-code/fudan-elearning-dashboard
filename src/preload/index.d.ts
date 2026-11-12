@@ -1,4 +1,6 @@
 import type { WorkspaceData, WorkspaceCommand } from '../core/workspace';
+import type { SchedulePreview, ReviewItem } from '../core/review';
+import type { ReviewGeneration } from '../main/review-ai';
 import type { CanvasFile, FileNode } from '../core/files';
 import type { DownloadProgress } from '../main/download';
 import type { CanvasProfile, Snapshot } from '../core/types';
@@ -40,6 +42,12 @@ export interface Prefs {
 export type { CanvasFile, DownloadProgress, FileNode };
 
 export interface ElearningApi {
+  review: {
+    preview(account: number, start: string): Promise<IpcResult<SchedulePreview>>;
+    prepare(account: number, courseId: number, refs: LectureRef[]): Promise<IpcResult<ReviewGeneration>>;
+    generate(account: number, id: string, index: number): Promise<IpcResult<{items: ReviewItem[]; rejected: number}>>;
+    cancel(account: number, id: string): Promise<IpcResult<true>>;
+  };
   lectures: {
     state(account: number): Promise<IpcResult<LectureConnection>>;
     connect(account: number, input: LectureConnectInput): Promise<IpcResult<LectureConnection>>;

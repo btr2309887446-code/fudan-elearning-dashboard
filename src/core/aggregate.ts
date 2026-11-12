@@ -66,8 +66,9 @@ async function sessionIsDead(client: CanvasClient, err: unknown): Promise<boolea
   try {
     await client.getProfile();
     return false; // 探针成功，会话没问题
-  } catch {
-    return true; // 探针也 401，会话确实失效了
+  } catch (probeError) {
+    // A timeout or a 5xx probe is not evidence that saved credentials expired.
+    return probeError instanceof CanvasError && probeError.isAuthFailure;
   }
 }
 
