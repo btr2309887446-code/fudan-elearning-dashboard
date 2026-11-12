@@ -44,6 +44,7 @@ jobs:
       - run: npm run test:stability-ui
       - run: npm run test:workspace-ui
       - run: npm run test:course-ui
+      - run: npm run test:review-ui
       - run: npm run dist
         env:
           DIST_NO_MIRROR: '1'

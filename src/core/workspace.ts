@@ -1,5 +1,6 @@
 import type { AssignmentRow, Snapshot } from "./types.ts";
 import type { LectureRef } from "./lectures.ts";
+import { applyReview, type ReviewData, type ReviewAction } from './review.ts';
 
 export type Repeat = "none" | "daily" | "weekly" | "monthly";
 export interface TaskDraft {
@@ -14,6 +15,7 @@ export interface TaskDraft {
   reminders: number[];
   /** A durable navigation target; lecture text and credentials stay elsewhere. */
   lectureSource?: LectureRef & { title: string };
+  reviewSource?: { planId: string; slotId: string };
 }
 export interface Exception {
   completed?: boolean;
@@ -49,6 +51,7 @@ export interface ResourceResult {
   items?: { id: string; title: string; value: string }[];
 }
 export interface WorkspaceData {
+  review?: ReviewData;
   version: 1;
   account: number;
   series: Series[];
@@ -59,6 +62,7 @@ export interface WorkspaceData {
   delivered: Record<string, number>;
 }
 export type WorkspaceCommand =
+  | { type: 'review'; action: ReviewAction }
   | {
       type: "save";
       draft: TaskDraft;
@@ -253,7 +257,12 @@ export function mutateWorkspace(
     return (s.exceptions[key] ??= {});
   };
   switch (command.type) {
+    case 'review':
+      applyReview(data, command.action, uuid, now);
+      return data;
     case "save": {
+      if (command.seriesId && series(command.seriesId).reviewSource) throw Error('请在课程复习计划中调整这项安排');
+      if (command.draft.reviewSource) throw Error('请通过复习计划生成任务');
       const draft = validateDraft(command.draft);
       if (!command.seriesId)
         data.series.push({
@@ -329,6 +338,7 @@ export function mutateWorkspace(
       break;
     }
   }
+  if (data.review && (command.type === 'complete' || command.type === 'delete') && command.items.some(i => data.series.find(s => s.id === i.seriesId)?.reviewSource)) data.review.revision++;
   return data;
 }
 export function unifyTasks(
