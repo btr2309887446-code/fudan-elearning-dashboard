@@ -2,9 +2,9 @@ import Foundation
 import CryptoKit
 
 enum ChangeKind: String, Codable, CaseIterable, Identifiable, Sendable {
-    case assignment, grade, announcement, file
+    case assignment, grade, announcement, file, lecture
     var id: String { rawValue }
-    var title: String { switch self { case .assignment: "作业"; case .grade: "成绩"; case .announcement: "公告"; case .file: "文件" } }
+    var title: String { switch self { case .assignment: "作业"; case .grade: "成绩"; case .announcement: "公告"; case .file: "文件"; case .lecture: "课堂笔记" } }
 }
 
 struct ChangeResource: Codable, Hashable, Sendable {

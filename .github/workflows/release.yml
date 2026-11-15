@@ -28,58 +28,47 @@ on:
       tag:
         description: '要发布到的 tag（例如 v0.9.1）'
         required: true
+      platform:
+        type: choice
+        options: [all, windows, ios, macos]
+        default: all
 
 permissions:
   contents: write
 
 jobs:
-  # ---------------------------------------------------------------- iOS
-  ios:
-    name: iOS 未签名 IPA
-    runs-on: macos-latest
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.target.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Apple toolchain
-        run: xcodebuild -version
-
-      # NativeRunner is independent from the Flutter Runner target.
-      - name: 构建（不签名）
-        working-directory: flutter_app/ios
-        run: |
-          xcodebuild build \
-            -project NativeRunner.xcodeproj \
-            -scheme NativeRunner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath ../build/native-iphoneos \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: 打成 IPA
-        working-directory: flutter_app
+        with:
+          fetch-depth: 0
+      - id: target
+        env:
+          TARGET_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          APP_PATH="build/native-iphoneos/Build/Products/Release-iphoneos/NativeRunner.app"
-          test -d "$APP_PATH"
-          rm -rf Payload app-unsigned.ipa
-          mkdir -p Payload
-          ditto "$APP_PATH" Payload/NativeRunner.app
-          zip -qry app-unsigned.ipa Payload
-          ls -lh app-unsigned.ipa
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ipa
-          path: flutter_app/app-unsigned.ipa
-          if-no-files-found: error
-
+          git check-ref-format "refs/tags/$TARGET_TAG"
+          SHA=$(git rev-parse --verify "refs/tags/$TARGET_TAG^{commit}")
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+  validated:
+    needs: resolve
+    uses: ./.github/workflows/validation.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      platform: ${{ inputs.platform || 'all' }}
   # ------------------------------------------------------------ macOS
   macos:
+    needs: resolve
+    if: ${{ !inputs.platform || inputs.platform == 'all' || inputs.platform == 'macos' }}
     name: macOS 应用
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -90,6 +79,10 @@ jobs:
       - name: 依赖
         working-directory: flutter_app
         run: flutter pub get
+
+      - name: Flutter regression tests
+        working-directory: flutter_app
+        run: flutter test
 
       # 没有开发者证书时用 ad-hoc 签名（CODE_SIGN_IDENTITY=-）。
       # 首次打开需要右键 → 打开，或执行 xattr -cr /Applications/fudan_elearning.app
@@ -116,45 +109,11 @@ jobs:
           path: flutter_app/fudan-elearning-macos.zip
           if-no-files-found: error
 
-  # ---------------------------------------------------------- Windows
-  desktop:
-    name: Windows 安装包
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          # 必须 22.18+：cli 里的测试直接 `node cli/x.ts` 跑 TypeScript，
-          # 靠的是 Node 内置的类型擦除。
-          node-version: '24'
-          cache: npm
-
-      - name: 依赖
-        run: npm ci
-
-      - name: 类型检查
-        run: npm run typecheck
-
-      - name: 测试
-        run: npm test
-
-      - name: 打包
-        # CI 到 GitHub Releases 是最快的路径，不绕镜像。
-        env:
-          DIST_NO_MIRROR: '1'
-        run: npm run dist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: exe
-          path: release/*.exe
-          if-no-files-found: error
-
   # ---------------------------------------------------------- Release
   publish:
     name: 发布 Release
-    needs: [ios, macos, desktop]
+    needs: [resolve, validated, macos]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.validated.result == 'success' && (needs.macos.result == 'success' || needs.macos.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -167,7 +126,9 @@ jobs:
           mkdir -p out
           find artifacts -name '*.ipa' -exec cp {} out/ \;
           find artifacts -name '*.exe' -exec cp {} out/ \;
-          find artifacts -name '*.zip' -exec cp {} out/ \;
+          find artifacts -name 'fudan-elearning-macos.zip' -exec cp {} out/ \;
+          find artifacts -name '*-manifest.json' -exec cp {} out/ \;
+          find artifacts -name '*-SHA256SUMS.txt' -exec cp {} out/ \;
           echo '--- 将发布的文件 ---'
           ls -lh out
 

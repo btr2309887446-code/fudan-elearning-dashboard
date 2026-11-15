@@ -349,6 +349,7 @@ export function normaliseSnapshot(raw: unknown): Snapshot | null {
 
   return {
     fetchedAt: typeof s.fetchedAt === 'string' ? s.fetchedAt : new Date(0).toISOString(),
+    resources: Array.isArray(s.resources) ? s.resources : [],
     profile: s.profile ?? ({ id: 0, name: '未知用户' } as CanvasProfile),
     courses,
     terms,

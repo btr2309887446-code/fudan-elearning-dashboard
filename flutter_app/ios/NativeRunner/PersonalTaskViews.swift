@@ -32,6 +32,12 @@ struct PersonalTaskDetail: View {
                 if repeated { Text("每一期独立完成，未完成的往期任务会保留。").font(.footnote).foregroundStyle(.secondary) }
             }
             if !current.task.notes.isEmpty { Section("备注") { Text(current.task.notes).textSelection(.enabled) } }
+            if let source = current.task.lectureSource, let courseID = current.task.courseID {
+                Section("课堂来源") { NavigationLink(source.title) { LectureReaderView(store: store, lectures: store.lectures, courseID: courseID, reference: source.reference) } }
+            }
+            if let source = current.task.reviewSource, let courseID = current.task.courseID {
+                Section("复习来源") { NavigationLink("返回复习计划") { ReviewPlanView(store: store, courseID: courseID, planID: source.planID) } }
+            }
             if !current.task.checklist.isEmpty {
                 Section("子任务 \(current.checked.count)/\(current.task.checklist.count)") {
                     ForEach(current.task.checklist) { item in
@@ -55,7 +61,7 @@ struct PersonalTaskDetail: View {
             Section { Button("删除任务", role: .destructive) { choosingDelete = true } }
         }
         .navigationTitle("个人任务")
-        .toolbar { Button("编辑") { if repeated { choosingEdit = true } else { following = false; editing = true } } }
+        .toolbar { if current.task.reviewSource == nil { Button("编辑") { if repeated { choosingEdit = true } else { following = false; editing = true } } } }
         .disabled(store.localSaving)
         .confirmationDialog("编辑重复任务", isPresented: $choosingEdit, titleVisibility: .visible) {
             Button("仅这一次") { following = false; editing = true }
@@ -87,10 +93,12 @@ struct PersonalTaskEditor: View {
     @State private var addingReminder = false
     @State private var saving = false
     @State private var validation: String?
+    private let editingAccount: Int?
 
-    init(store: NativeAppStore, occurrence: PersonalOccurrence? = nil, following: Bool = false) {
+    init(store: NativeAppStore, occurrence: PersonalOccurrence? = nil, following: Bool = false, initialDraft: PersonalTaskSeries? = nil) {
         self.store = store; self.occurrence = occurrence; self.following = following
-        var value = occurrence?.task.withoutExceptions ?? PersonalTaskSeries()
+        self.editingAccount = store.snapshot?.profile.id
+        var value = occurrence?.task.withoutExceptions ?? initialDraft ?? PersonalTaskSeries()
         if let occurrence { value.dueAt = occurrence.dueAt }
         if following, let parent = store.localAccount.series.first(where: { $0.id == occurrence?.seriesID }) {
             value.repeatRule = parent.repeatRule; value.weekdays = parent.weekdays; value.endDate = parent.endDate
@@ -210,6 +218,7 @@ struct PersonalTaskEditor: View {
         if !draft.reminderMinutes.contains(minutes), draft.reminderMinutes.count < 5 { draft.reminderMinutes.append(minutes) }
     }
     private func save() {
+        guard editingAccount == store.snapshot?.profile.id else { validation = "账号已切换，请关闭草稿后在当前账号重新创建。"; return }
         draft.dueAt = hasDeadline ? deadline : nil
         draft.endDate = hasEnd && draft.repeatRule != .none ? endDate : nil
         draft.checklist = draft.checklist.filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

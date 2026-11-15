@@ -17,6 +17,8 @@ struct PersonalTaskSeries: Codable, Identifiable, Hashable, Sendable {
     var id = UUID().uuidString
     var title = ""
     var notes = ""
+    var lectureSource: LectureTaskSource?
+    var reviewSource: ReviewTaskSource?
     var courseID: Int?
     var courseName = "个人任务"
     var dueAt: Date?
@@ -108,6 +110,7 @@ struct PersonalOccurrence: Identifiable, Hashable, Sendable {
 
 struct NativeLocalAccount: Codable, Sendable {
     var version = 1
+    var review: ReviewData?
     var series: [PersonalTaskSeries] = []
     var baselines: [String: [String: ChangeResource]] = [:]
     var events: [ChangeEvent] = []

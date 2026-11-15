@@ -58,6 +58,9 @@ export interface CanvasCourse {
   image_download_url?: string | null;
   enrollments?: CanvasEnrollment[];
   total_scores?: unknown;
+  /** Optional fields requested only for the course overview, not the snapshot. */
+  syllabus_body?: string | null;
+  teachers?: { id?: number; display_name?: string; short_name?: string; name?: string }[] | null;
 }
 
 export interface CanvasSubmission {
@@ -227,6 +230,7 @@ export interface CourseDetail {
 }
 
 export interface Snapshot {
+  resources?: import('./workspace.ts').ResourceResult[];
   fetchedAt: string;
   profile: CanvasProfile;
   courses: CourseSummary[];

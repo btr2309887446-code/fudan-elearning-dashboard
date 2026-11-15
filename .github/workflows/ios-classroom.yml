@@ -1,0 +1,64 @@
+name: iOS classroom integration
+on:
+  push:
+    branches: ['codex/ios-classroom-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-classroom-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test iPhone and iPad
+        working-directory: flutter_app/ios
+        run: |
+          set -euo pipefail
+          python3 ../../scripts/ios-ci-devices.py > /tmp/classroom-devices
+          INDEX=0
+          while IFS= read -r DEVICE; do
+            INDEX=$((INDEX+1))
+            xcrun simctl shutdown all || true
+            xcrun simctl boot "$DEVICE" || true
+            xcrun simctl bootstatus "$DEVICE" -b
+            xcodebuild test -project NativeRunner.xcodeproj -scheme NativeRunnerCI \
+              -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ../build/classroom \
+              -resultBundlePath "../build/classroom-$INDEX.xcresult" -parallel-testing-enabled NO \
+              -only-testing:NativeRunnerTests -only-testing:NativeRunnerUITests/LectureUITests CODE_SIGNING_ALLOWED=NO
+            xcrun xcresulttool export attachments --path "../build/classroom-$INDEX.xcresult" --output-path "../build/classroom-screenshots/device-$INDEX"
+          done < /tmp/classroom-devices
+      - name: Export diagnostics
+        if: failure()
+        run: python3 scripts/ios-test-diagnostics.py flutter_app/build flutter_app/build/classroom-diagnostics
+      - name: Build unsigned IPA
+        working-directory: flutter_app/ios
+        run: |
+          set -euo pipefail
+          xcodebuild build -project NativeRunner.xcodeproj -scheme NativeRunner -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ../build/classroom-device CODE_SIGNING_ALLOWED=NO
+          mkdir -p ../build/classroom-package/Payload
+          ditto ../build/classroom-device/Build/Products/Release-iphoneos/NativeRunner.app ../build/classroom-package/Payload/NativeRunner.app
+          cd ../build/classroom-package
+          zip -qry Fudan-eLearning-iOS-classroom-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-classroom-delivery
+          path: |
+            flutter_app/build/classroom-screenshots
+            flutter_app/build/classroom-package/*.ipa
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-classroom-results
+          path: |
+            flutter_app/build/classroom-*.xcresult
+            flutter_app/build/classroom-diagnostics
+            flutter_app/build/classroom-screenshots
+            flutter_app/build/classroom-package/*.ipa
+          retention-days: 14

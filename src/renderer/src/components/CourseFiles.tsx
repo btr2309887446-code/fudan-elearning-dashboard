@@ -44,6 +44,9 @@ export default function CourseFiles({ courseId }: Props) {
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [result, setResult] = useState<DownloadProgress | null>(null);
   const [busy, setBusy] = useState(false);
+  const downloadLock = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   // 用 ref 保存订阅的退订函数，卸载时清理，避免切换课程后收到旧进度。
   const unsubRef = useRef<(() => void) | null>(null);
@@ -52,7 +55,9 @@ export default function CourseFiles({ courseId }: Props) {
     async (force = false) => {
       setLoading(true);
       setError(null);
+      try {
       const res = await window.elearning.files.course(courseId, force);
+      if (!alive.current) return;
       if (res.ok) {
         setTree(res.data.tree);
         setStats(res.data.stats);
@@ -61,7 +66,8 @@ export default function CourseFiles({ courseId }: Props) {
       } else {
         setError(res.error.message);
       }
-      setLoading(false);
+      } catch (e) { if (alive.current) setError(String(e)); }
+      finally { if (alive.current) setLoading(false); }
     },
     [courseId]
   );
@@ -75,7 +81,7 @@ export default function CourseFiles({ courseId }: Props) {
 
   useEffect(() => {
     void window.elearning.files.root().then(setRoot);
-    unsubRef.current = window.elearning.files.onProgress((p) => setProgress(p));
+    unsubRef.current = window.elearning.files.onProgress((p) => { if (downloadLock.current) setProgress(p); });
     return () => {
       unsubRef.current?.();
       unsubRef.current = null;
@@ -84,17 +90,23 @@ export default function CourseFiles({ courseId }: Props) {
 
   const startDownload = useCallback(
     async (fileIds?: number[]) => {
+      if (downloadLock.current) return;
+      downloadLock.current = true;
       setBusy(true);
+      setError(null);
       setResult(null);
       setProgress(null);
+      try {
       const res = await window.elearning.files.download(courseId, fileIds);
+      if (!alive.current) return;
       if (res.ok) {
         setResult(res.data);
         if (res.data.failed === 0) setSelected(new Set());
       } else {
         setError(res.error.message);
       }
-      setBusy(false);
+      } catch (e) { if (alive.current) setError(String(e)); }
+      finally { downloadLock.current = false; if (alive.current) setBusy(false); }
     },
     [courseId]
   );
@@ -159,10 +171,11 @@ export default function CourseFiles({ courseId }: Props) {
             onChange={() => toggleNode(node)}
             disabled={busy || ids.length === 0}
             title={isFolder ? '选中该文件夹下的全部文件' : '选中此文件'}
+            aria-label={`选择 ${node.name}`}
           />
 
           {isFolder ? (
-            <button className="file-name as-button" onClick={() => toggleFolder(node.path)}>
+            <button className="file-name as-button" aria-expanded={isOpen} onClick={() => toggleFolder(node.path)}>
               <span className={`file-caret${isOpen ? ' open' : ''}`}>▸</span>
               <span className="file-icon">📁</span>
               <span className="file-text">{node.name}</span>
@@ -223,8 +236,9 @@ export default function CourseFiles({ courseId }: Props) {
         </button>
       </div>
 
+      {busy && !progress && <p className="ws-operation" data-busy="true" role="status">正在准备下载…</p>}
       {progress && (
-        <div className="dl-progress">
+        <div className="dl-progress" role="status">
           <div className="dl-progress-head">
             <span>
               {progress.state === 'done'
@@ -238,12 +252,12 @@ export default function CourseFiles({ courseId }: Props) {
               {progress.failed > 0 && <span style={{ color: 'var(--bad)' }}> · 失败 {progress.failed}</span>}
             </span>
           </div>
-          <div className="progress-track">
+          {percent !== null && <div className="progress-track" role="progressbar" aria-label="下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
             <div
               className="progress-fill"
-              style={{ width: `${percent ?? (progress.state === 'done' ? 100 : 4)}%` }}
+              style={{ width: `${percent}%` }}
             />
-          </div>
+          </div>}
           <div className="dl-progress-foot">
             <span>{formatBytes(progress.bytesReceived)} / {formatBytes(progress.bytesTotal)}</span>
             {progress.skipped > 0 && <span>已跳过 {progress.skipped} 个（本地已存在）</span>}
@@ -252,7 +266,7 @@ export default function CourseFiles({ courseId }: Props) {
       )}
 
       {result && result.state === 'done' && result.failed === 0 && (
-        <div className="alert alert-info" style={{ marginTop: 10 }}>
+        <div className="alert alert-info" role="status" style={{ marginTop: 10 }}>
           已下载 {result.completed} 个文件{result.skipped > 0 ? `，跳过 ${result.skipped} 个已存在的` : ''}。
         </div>
       )}
@@ -293,7 +307,7 @@ export default function CourseFiles({ courseId }: Props) {
       {loading && <div className="loading-line">正在读取文件列表…</div>}
 
       {error && (
-        <div className="alert alert-error" style={{ marginTop: 10 }}>
+        <div className="alert alert-error" role="alert" style={{ marginTop: 10 }}>
           {error}
         </div>
       )}

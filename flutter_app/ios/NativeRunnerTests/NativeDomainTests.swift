@@ -328,7 +328,7 @@ final class NativeDomainTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "native.didClearFlutterState.v1")
-        let store = NativeAppStore(defaults: defaults)
+        let store = NativeAppStore(defaults: defaults, sessionVault: .testing())
         var snapshot = snapshotFixture()
         let template = snapshot.assignments[0]
         snapshot.assignments = (0..<5000).map { index in
@@ -379,7 +379,7 @@ final class NativeDomainTests: XCTestCase {
         var prefs = NativePreferences()
         prefs.ignoredAssignments = ["4:8"]
         defaults.set(try JSONEncoder().encode(prefs), forKey: "native.preferences.v1")
-        let store = NativeAppStore(defaults: defaults)
+        let store = NativeAppStore(defaults: defaults, sessionVault: .testing())
         await store.boot()
         XCTAssertFalse(store.isBooting)
         XCTAssertFalse(store.isLoggedIn)
@@ -412,7 +412,7 @@ final class NativeDomainTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "native.didClearFlutterState.v1")
-        let store = NativeAppStore(defaults: defaults)
+        let store = NativeAppStore(defaults: defaults, sessionVault: .testing())
         var snapshot = snapshotFixture()
         var dated = snapshot.assignments[0]
         dated.id = 9
@@ -468,11 +468,11 @@ final class NativeDomainTests: XCTestCase {
         var prefs = NativePreferences()
         prefs.theme = "dark"
         defaults.set(try JSONEncoder().encode(prefs), forKey: "native.preferences.v1")
-        let store = NativeAppStore(defaults: defaults)
+        let store = NativeAppStore(defaults: defaults, sessionVault: .testing())
         await store.boot()
         let date = try XCTUnwrap(Beijing.parse("2026-10-18T23:59:00+08:00"))
         await store.setManualDeadline(for: "4:8", date: date)
-        let restored = NativeAppStore(defaults: defaults)
+        let restored = NativeAppStore(defaults: defaults, sessionVault: .testing())
         await restored.boot()
         XCTAssertEqual(restored.preferences.theme, "dark")
         XCTAssertEqual(restored.taskIndex.byID["4:8"]?.dueAt, date)
@@ -489,7 +489,7 @@ final class NativeDomainTests: XCTestCase {
         await restored.applySnapshot(snapshot)
         XCTAssertEqual(restored.taskIndex.byID["4:8"]?.dueAt, date)
         await restored.setManualDeadline(for: "4:8", date: nil)
-        let cleared = NativeAppStore(defaults: defaults)
+        let cleared = NativeAppStore(defaults: defaults, sessionVault: .testing())
         await cleared.applySnapshot(snapshot)
         XCTAssertNil(cleared.manualDeadline(for: "4:8"))
         XCTAssertNil(cleared.taskIndex.byID["4:8"]?.dueAt)

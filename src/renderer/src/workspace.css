@@ -1,0 +1,755 @@
+.workspace {
+  --muted: var(--ws-muted);
+  --text: var(--ws-text);
+  --text-dim: var(--ws-muted);
+  --surface: var(--ws-surface);
+  --surface-2: var(--ws-bg);
+  --border: var(--ws-border);
+  --accent: var(--ws-accent);
+  --bad: #b42318;
+  --ws-bg: #f3f3f3;
+  --ws-surface: #fff;
+  --ws-text: #1a1a1a;
+  --ws-muted: #616161;
+  --ws-border: #d1d1d1;
+  --ws-accent: #005fb8;
+  --ws-selected: #e5f0fb;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--ws-bg);
+  color: var(--ws-text);
+  font:
+    14px/1.5 "Segoe UI Variable",
+    "Segoe UI",
+    "Microsoft YaHei UI",
+    sans-serif;
+}
+.ws-settings-scroll { flex: 1; min-height: 0; overflow: auto; }
+.ws-settings-scroll > .ws-settings { overflow: visible; }
+.ws-settings-scroll > .cc-settings { margin: 24px 32px; }
+.ws-course-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.workspace .ws-course-tabs button { min-width: 0; padding: 6px 8px; font-size: 13px; }
+.ws-course-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px var(--ws-accent); }
+[data-theme="dark"] .workspace {
+  --bad: #ffb4ab;
+  --ws-bg: #202020;
+  --ws-surface: #2b2b2b;
+  --ws-text: #f5f5f5;
+  --ws-muted: #c0c0c0;
+  --ws-border: #555;
+  --ws-accent: #75baff;
+  --ws-selected: #25425d;
+  color-scheme: dark;
+}
+.workspace *,
+.ws-dialog * {
+  box-sizing: border-box;
+}
+.workspace button,
+.workspace input,
+.workspace select,
+.workspace textarea,
+.ws-dialog button,
+.ws-dialog input,
+.ws-dialog select,
+.ws-dialog textarea {
+  font: inherit;
+  color: inherit;
+}
+.workspace button,
+.ws-dialog button {
+  border: 1px solid var(--ws-border, #d1d1d1);
+  background: var(--ws-surface, #fff);
+  border-radius: 5px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background-color 140ms;
+}
+.workspace button:hover,
+.ws-dialog button:hover {
+  background: var(--ws-selected, #e5f0fb);
+}
+.workspace button:disabled,
+.ws-dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.workspace :focus-visible,
+.ws-dialog :focus-visible {
+  outline: 2px solid var(--ws-accent, #005fb8);
+  outline-offset: 2px;
+}
+.workspace .primary,
+.ws-dialog .primary {
+  background: #005fb8;
+  color: white;
+  border-color: #005fb8;
+}
+.workspace input:not([type="checkbox"]),
+.workspace select,
+.workspace textarea,
+.ws-dialog input:not([type="checkbox"]),
+.ws-dialog select,
+.ws-dialog textarea {
+  border: 1px solid var(--ws-border, #d1d1d1);
+  border-radius: 4px;
+  background: var(--ws-surface, #fff);
+  padding: 6px 9px;
+  min-width: 0;
+  max-width: 100%;
+}
+.workspace input[type="checkbox"],
+.ws-dialog input[type="checkbox"] {
+  accent-color: var(--ws-accent, #005fb8);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.ws-nav {
+  width: 208px;
+  flex-shrink: 0;
+  padding: 24px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--ws-border);
+}
+.ws-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 12px 30px;
+}
+.ws-brand b {
+  font-size: 24px;
+  color: var(--ws-accent);
+}
+.ws-brand span {
+  font-size: 13px;
+}
+.ws-nav-links {
+  display: grid;
+  gap: 5px;
+}
+.ws-nav button {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+  align-items: center;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+  min-height: 42px;
+}
+.ws-nav button.active {
+  background: var(--ws-selected);
+  box-shadow: inset 3px 0 var(--ws-accent);
+}
+.ws-nav i {
+  font-size: 19px;
+  font-style: normal;
+  width: 22px;
+  text-align: center;
+}
+.ws-nav small {
+  margin-left: auto;
+  color: var(--ws-accent);
+}
+.ws-nav-bottom {
+  margin-top: auto;
+}
+.ws-term {
+  display: block;
+  margin: 24px 0 16px;
+}
+.ws-term span {
+  display: block;
+  font-size: 12px;
+  color: var(--ws-muted);
+  margin: 0 8px 6px;
+}
+.ws-term select {
+  width: 100%;
+  text-overflow: ellipsis;
+}
+.ws-sync {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--ws-muted);
+}
+.ws-sync time {
+  display: block;
+}
+.ws-account {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-top: 1px solid var(--ws-border);
+}
+.ws-account b {
+  background: var(--ws-selected);
+  color: var(--ws-accent);
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.ws-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ws-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--ws-border);
+  flex-shrink: 0;
+}
+.ws-toolbar h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 auto 0 0;
+  white-space: nowrap;
+}
+.ws-toolbar input {
+  width: 260px;
+}
+.ws-panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ws-surface);
+}
+.ws-list-pane {
+  min-width: 260px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ws-list-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  scrollbar-gutter: stable;
+}
+.ws-detail {
+  width: var(--detail-width);
+  max-width: 55%;
+  min-width: 320px;
+  overflow: auto;
+  flex-shrink: 0;
+  animation: ws-reveal 140ms ease-out;
+}
+.ws-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  background: var(--ws-bg);
+  border-left: 1px solid var(--ws-border);
+  cursor: col-resize;
+  touch-action: none;
+}
+.ws-resizer:hover {
+  background: var(--ws-accent);
+}
+.ws-detail-toolbar {
+  position: sticky;
+  top: 0;
+  background: var(--ws-surface);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ws-border);
+}
+.ws-detail-toolbar span {
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.ws-detail-content {
+  padding: 20px;
+  overflow-wrap: anywhere;
+}
+.ws-detail-content h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+.ws-detail-content pre {
+  font:
+    13px/1.7 "Segoe UI",
+    sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  background: var(--ws-bg);
+  border: 1px solid var(--ws-border);
+  border-radius: 5px;
+  user-select: text;
+}
+.ws-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ws-border);
+}
+.ws-filters select {
+  max-width: 240px;
+}
+.ws-filters label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ws-filters span {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ws-muted);
+}
+.ws-bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--ws-selected);
+  padding: 8px 16px;
+  flex-wrap: wrap;
+}
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 6px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ws-border) 65%, transparent);
+}
+.ws-row.chosen,
+.workspace .chosen {
+  background: var(--ws-selected);
+}
+.workspace .ws-row-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 3px 0;
+}
+.ws-row-main strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-row-main span {
+  display: block;
+  color: var(--ws-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-row-date {
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ws-row-date small {
+  display: block;
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.ws-row-date b {
+  font-size: 16px;
+  font-weight: 600;
+}
+.workspace .overdue {
+  color: #c42b1c;
+}
+[data-theme="dark"] .workspace .overdue {
+  color: #ffaaa2;
+}
+.ws-group {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 15px 20px 10px;
+  margin: 0;
+  background: var(--ws-bg);
+}
+summary.ws-group {
+  cursor: pointer;
+}
+.ws-intro {
+  padding: 28px 24px 22px;
+  border-bottom: 1px solid var(--ws-border);
+}
+.ws-intro span,
+.ws-intro p {
+  color: var(--ws-muted);
+}
+.ws-intro h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+.ws-empty {
+  padding: 18px 24px;
+  color: var(--ws-muted);
+}
+.workspace .ws-change-short {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--ws-border);
+  border-radius: 0;
+  text-align: left;
+  padding: 14px 20px;
+}
+.ws-change-short small {
+  display: block;
+  color: var(--ws-muted);
+  margin-top: 4px;
+}
+.ws-overview,
+.ws-more {
+  margin: 16px;
+}
+.ws-tabs,
+.ws-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.ws-tabs button[aria-selected="true"] {
+  color: var(--ws-accent);
+  border-bottom: 3px solid var(--ws-accent);
+}
+.ws-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.ws-muted {
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.ws-notes {
+  white-space: pre-wrap;
+  user-select: text;
+}
+.ws-deadline label {
+  display: grid;
+  gap: 8px;
+}
+.ws-alert,
+.ws-warning,
+.ws-status {
+  padding: 8px 20px;
+  background: var(--ws-bg);
+  border-bottom: 1px solid var(--ws-border);
+  font-size: 12px;
+}
+.ws-alert {
+  color: #b42318;
+}
+.ws-alert button {
+  margin-left: 8px;
+}
+.ws-warning {
+  max-height: 180px;
+  overflow: auto;
+}
+.ws-loading {
+  padding: 60px;
+  font:
+    16px "Segoe UI",
+    sans-serif;
+}
+.ws-calendar {
+  padding: 16px;
+}
+.ws-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+.ws-calendar-grid > span {
+  text-align: center;
+  color: var(--ws-muted);
+  padding: 8px;
+}
+.ws-calendar-grid button {
+  min-height: 100px;
+  padding: 6px;
+  text-align: left;
+  overflow: hidden;
+}
+.ws-calendar-grid small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--ws-muted);
+  margin: 4px 0;
+}
+.ws-calendar-grid b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.ws-calendar-grid > div {
+  background: var(--ws-bg);
+  border-radius: 4px;
+}
+.ws-settings {
+  overflow: auto;
+  padding: 24px 32px;
+  flex: 1;
+}
+.ws-settings h2 {
+  font-size: 18px;
+  margin: 24px 0 12px;
+}
+.ws-settings h2:first-child {
+  margin-top: 0;
+}
+.ws-settings > label:not(.ws-check),
+.ws-settings form > label:not(.ws-check) {
+  display: grid;
+  gap: 7px;
+  max-width: 560px;
+  margin: 12px 0;
+}
+.ws-settings > p {
+  max-width: 660px;
+}
+.ws-settings form {
+  max-width: 560px;
+}
+.ws-dialog {
+  --ws-border: #d1d1d1;
+  --ws-accent: #005fb8;
+  --ws-surface: #fff;
+  --ws-selected: #e5f0fb;
+  color: #1a1a1a;
+  background: #fff;
+  width: min(640px, 90vw);
+  max-height: 90vh;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 12px 40px #0003;
+  font:
+    14px/1.5 "Segoe UI Variable",
+    "Segoe UI",
+    "Microsoft YaHei UI",
+    sans-serif;
+  overflow: auto;
+}
+.ws-dialog::backdrop {
+  background: #0005;
+}
+.ws-dialog header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.ws-dialog h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.ws-dialog form > label,
+.ws-dialog > label,
+.ws-form-grid > label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.ws-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.ws-dialog fieldset {
+  border: 1px solid var(--ws-border);
+  border-radius: 5px;
+  margin: 16px 0;
+  padding: 12px;
+}
+.ws-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.ws-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 12px;
+}
+.ws-dialog .ws-actions input {
+  flex: 1;
+}
+.ws-dialog [role="alert"] {
+  color: #c42b1c;
+}
+[data-theme="dark"] .ws-dialog {
+  --ws-surface: #2b2b2b;
+  --ws-border: #555;
+  --ws-accent: #75baff;
+  --ws-selected: #25425d;
+  color: #f5f5f5;
+  background: #2b2b2b;
+  color-scheme: dark;
+}
+.ws-assignment .modal {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  background: var(--ws-surface);
+  animation: none;
+}
+.ws-assignment .modal-head {
+  display: none;
+}
+.ws-assignment .modal-body {
+  overflow: visible;
+  padding: 0 20px 20px;
+}
+.ws-assignment .modal-foot {
+  flex-wrap: wrap;
+  padding: 16px;
+  border-top: 1px solid var(--ws-border);
+}
+.ws-assignment .modal-chips {
+  padding: 0 20px 12px;
+}
+.ws-assignment .desc-body {
+  user-select: text;
+}
+.ws-detail .ws-row {
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+.ws-detail .ws-row-date {
+  text-align: left;
+}
+@media (max-width: 1199px) {
+  .ws-nav {
+    width: 68px;
+    padding: 20px 6px 10px;
+  }
+  .ws-nav button {
+    justify-content: center;
+    padding: 8px;
+    position: relative;
+  }
+  .ws-nav button span,
+  .ws-brand span,
+  .ws-sync,
+  .ws-account span,
+  .ws-term span {
+    display: none;
+  }
+  .ws-brand {
+    padding: 0 0 24px;
+    justify-content: center;
+  }
+  .ws-brand b {
+    font-size: 20px;
+  }
+  .ws-nav small {
+    position: absolute;
+    right: 0;
+    top: 0;
+  }
+  .ws-term select {
+    font-size: 11px;
+    padding: 4px 0;
+    width: 56px;
+  }
+  .ws-account {
+    padding: 12px 6px;
+    justify-content: center;
+  }
+  .ws-toolbar {
+    padding: 16px;
+  }
+  .ws-toolbar input {
+    width: 220px;
+  }
+}
+@media (max-width: 959px) {
+  .ws-panes.has-detail .ws-list-pane {
+    display: none;
+  }
+  .ws-resizer {
+    display: none;
+  }
+  .ws-detail {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    flex: 1;
+  }
+  .ws-toolbar input {
+    width: 180px;
+  }
+  .ws-toolbar h1 {
+    font-size: 22px;
+  }
+  .ws-calendar-grid button {
+    min-height: 84px;
+  }
+}
+@keyframes ws-reveal {
+  from {
+    opacity: 0.3;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace *,
+  .ws-dialog * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+.ws-assignment .modal-foot > div {
+  flex-basis: 100% !important;
+  min-width: 100%;
+}
+.ws-assignment .modal-foot {
+  background: var(--ws-surface);
+}
+.ws-assignment .modal-body .empty {
+  min-height: 0;
+  padding: 20px 0;
+}
+.ws-assignment .modal-foot .btn {
+  box-shadow: none;
+}

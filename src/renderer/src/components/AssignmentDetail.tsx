@@ -22,6 +22,8 @@ import { closeWithAnimation } from '../motion';
 import Icon from './Icon';
 
 interface Props {
+  inline?: boolean;
+  saving?: boolean;
   row: AssignmentRow;
   /** 这条作业是否已被标记为「无需提交」。 */
   ignored: boolean;
@@ -31,6 +33,8 @@ interface Props {
 
 export default function AssignmentDetail({
   row,
+  inline = false,
+  saving = false,
   ignored,
   onToggleIgnored,
   onClose,
@@ -40,6 +44,7 @@ export default function AssignmentDetail({
   const closing = useRef(false);
 
   function requestClose() {
+    if (inline) { onClose(); return; }
     if (closing.current) return;
     closing.current = true;
     closeWithAnimation(backdropRef.current, onClose);
@@ -51,6 +56,7 @@ export default function AssignmentDetail({
   const [summaryError, setSummaryError] = useState<string | undefined>();
   const [cached, setCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -58,6 +64,7 @@ export default function AssignmentDetail({
     setError(null);
 
     void (async () => {
+      try {
       const res = await window.elearning.assignment.detail(row.courseId, row.id);
       if (!alive) return;
       if (res.ok) {
@@ -71,17 +78,19 @@ export default function AssignmentDetail({
         setError(res.error.message);
         setDescription(row.descriptionExcerpt ?? '');
       }
-      setLoading(false);
+      } catch (e) { if (alive) { setError(String(e)); setDescription(row.descriptionExcerpt ?? ''); } }
+      finally { if (alive) setLoading(false); }
     })();
 
     return () => {
       alive = false;
     };
-  }, [row.courseId, row.id, row.descriptionExcerpt]);
+  }, [row.courseId, row.id, row.descriptionExcerpt, retry]);
 
   // Esc 关闭，符合浮层的习惯。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (inline || document.querySelector('dialog[open]')) return;
       if (e.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', onKey);
@@ -114,8 +123,8 @@ export default function AssignmentDetail({
         : 'tag-neutral';
 
   return (
-    <div className="modal-backdrop" ref={backdropRef} onClick={requestClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <div className={inline ? "ws-assignment" : "modal-backdrop"} ref={backdropRef} onClick={inline ? undefined : requestClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true}>
         <div className="modal-head">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="modal-title">{row.name}</div>
@@ -124,7 +133,7 @@ export default function AssignmentDetail({
               {row.groupName ? ` · ${row.groupName}` : ''}
             </div>
           </div>
-          <button className="icon-btn" onClick={requestClose} title="关闭（Esc）">
+          <button className="icon-btn" aria-label="关闭详情" onClick={requestClose} title="关闭（Esc）">
             <Icon name="close" size={17} />
           </button>
         </div>
@@ -202,6 +211,7 @@ export default function AssignmentDetail({
           {error && (
             <div className="alert alert-warn" style={{ marginTop: 12 }}>
               完整说明获取失败（{error}），下面是本地缓存的摘录。
+              <button className="btn" onClick={() => setRetry(n => n + 1)}>重试读取</button>
             </div>
           )}
         </div>
@@ -219,6 +229,8 @@ export default function AssignmentDetail({
               这里让用户手动摘掉——只影响显示，不改得分。 */}
           <button
             className={`btn ${ignored ? 'btn-primary' : ''}`}
+            disabled={saving}
+            aria-busy={saving}
             onClick={onToggleIgnored}
             title={
               ignored

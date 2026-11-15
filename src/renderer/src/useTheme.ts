@@ -28,7 +28,7 @@ function read(): ThemeColors {
       bad: '#ff3b30',
     };
   }
-  const cs = getComputedStyle(document.documentElement);
+  const cs = getComputedStyle(document.querySelector('.workspace') ?? document.documentElement);
   const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
   return {
     text: v('--text', '#1c1c1e'),

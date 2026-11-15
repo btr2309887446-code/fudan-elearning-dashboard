@@ -9,7 +9,6 @@ directories:
 # Use the Electron already present in node_modules instead of re-downloading a
 # ~100 MB zip from GitHub on every build.
 electronDist: node_modules/electron/dist
-electronVersion: 33.4.11
 
 files:
   - out/**/*
@@ -31,3 +30,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: 复旦 eLearning 学习看板
   deleteAppDataOnUninstall: false
+
+extraResources:
+  - from: build/icon.png
+    to: icon.png

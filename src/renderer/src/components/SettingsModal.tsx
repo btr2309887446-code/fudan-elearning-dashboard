@@ -73,7 +73,7 @@ export default function SettingsModal({
       const cfg = await window.elearning.llm.get();
       setBaseUrl(cfg.baseUrl);
       setModel(cfg.model);
-      setApiKey(cfg.apiKey);
+      setApiKey('');
       setEnabled(cfg.enabled);
       setLoaded(true);
     })();
@@ -114,7 +114,7 @@ export default function SettingsModal({
     const res = await window.elearning.llm.set({ baseUrl, model, apiKey, enabled });
     setSaving(false);
     if (res.ok) {
-      setApiKey(res.data.apiKey);
+      setApiKey('');
       setMsg({ tone: 'ok', text: '已保存。下次打开作业详情会用大模型生成简介。' });
     } else {
       setMsg({ tone: 'bad', text: res.error.message });
