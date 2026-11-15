@@ -73,7 +73,7 @@ export function Deadline({
     </div>
   );
 }
-function Modal({
+export function Modal({
   title,
   close,
   children,
@@ -106,7 +106,7 @@ function Modal({
       aria-busy={saving}
       onCancel={(e) => {
         e.preventDefault();
-        close();
+        if (!saving && !closing) close();
       }}
     >
       <header>

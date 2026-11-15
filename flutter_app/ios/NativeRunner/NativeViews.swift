@@ -761,6 +761,7 @@ struct CourseDetailView: View {
                     Text("作业").tag(2)
                     Text("成绩").tag(3)
                     Text("文件").tag(4)
+                    Text("复习").tag(5)
                 }.pickerStyle(.menu).accessibilityIdentifier("course-content-picker")
             }
 
@@ -803,6 +804,8 @@ struct CourseDetailView: View {
                         }.padding(.vertical, 3)
                     }
                 }
+            } else if section == 5 {
+                Section { NavigationLink("打开复习计划") { ReviewCourseView(store: store, courseID: course.id) } }
             } else {
                 NativeFilesView(store: store, course: course)
             }

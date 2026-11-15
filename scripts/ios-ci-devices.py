@@ -26,6 +26,9 @@ if phone is None:
     model = next(item for item in types if item["name"] == "iPhone 15 Plus")
     phone = {"udid": simctl("create", "iPhone 15 Plus", model["identifier"], runtime["identifier"]).strip(), "name": "iPhone 15 Plus"}
 tablet = next(device for device in devices if device["name"].startswith("iPad") and device.get("isAvailable"))
-for device in (phone, tablet):
+selected = sys.argv[1] if len(sys.argv) > 1 else "all"
+if selected not in ("phone", "tablet", "all"):
+    raise SystemExit("Expected phone, tablet or all")
+for device in ([phone] if selected == "phone" else [tablet] if selected == "tablet" else [phone, tablet]):
     print(f"Testing {device['name']} on iOS {runtime['version']}", file=sys.stderr)
     print(device["udid"])

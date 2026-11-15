@@ -8,6 +8,15 @@ export function validateIpc(channel: string, args: unknown[]): void {
   if (args.length > 5 || JSON.stringify(args).length > 2 * 1024 * 1024) reject();
   if (noArgs.has(channel)) { if (args.length) reject(); return; }
   const [a,b,c,d] = args;
+  if (channel.startsWith('review:')) {
+    if (!id(a)) reject();
+    if (channel === 'review:preview' && (!str(b,10) || args.length !== 2)) reject();
+    if (channel === 'review:prepare' && (!id(b) || !Array.isArray(c) || c.length > 30 || !c.every(v=>object(v) && ['sourceId','icourseCourseId','lectureId'].every(k=>str(v[k],299))))) reject();
+    if (['review:generate','review:cancel'].includes(channel) && !str(b,100)) reject();
+    if (channel === 'review:generate' && !id(c)) reject();
+    if (!['review:preview','review:prepare','review:generate','review:cancel'].includes(channel)) reject();
+    return;
+  }
   if (channel.startsWith('lectures:') || channel.startsWith('workspace:') || channel === 'course:introduction') {
     if (!id(a)) reject();
     if (channel === 'workspace:mutate' && (!object(b) || !str(b.type, 80))) reject();

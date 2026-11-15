@@ -95,7 +95,9 @@ console.log('\n[3] 当前版本的缓存（idempotent）');
 console.log('\n[4] 本机真实缓存文件');
 {
   const path = join(process.env.APPDATA ?? '', 'Fudan-eLearning-Dashboard', 'snapshot.json');
-  if (!existsSync(path)) {
+  if (!process.argv.includes('--real-cache')) {
+    console.log('  --   默认仅检查虚构数据；--real-cache 显式启用本机诊断');
+  } else if (!existsSync(path)) {
     console.log('  --   未找到真实缓存，跳过');
   } else {
     try {
