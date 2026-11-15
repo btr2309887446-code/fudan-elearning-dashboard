@@ -35,6 +35,9 @@ struct PersonalTaskDetail: View {
             if let source = current.task.lectureSource, let courseID = current.task.courseID {
                 Section("课堂来源") { NavigationLink(source.title) { LectureReaderView(store: store, lectures: store.lectures, courseID: courseID, reference: source.reference) } }
             }
+            if let source = current.task.reviewSource, let courseID = current.task.courseID {
+                Section("复习来源") { NavigationLink("返回复习计划") { ReviewPlanView(store: store, courseID: courseID, planID: source.planID) } }
+            }
             if !current.task.checklist.isEmpty {
                 Section("子任务 \(current.checked.count)/\(current.task.checklist.count)") {
                     ForEach(current.task.checklist) { item in
@@ -58,7 +61,7 @@ struct PersonalTaskDetail: View {
             Section { Button("删除任务", role: .destructive) { choosingDelete = true } }
         }
         .navigationTitle("个人任务")
-        .toolbar { Button("编辑") { if repeated { choosingEdit = true } else { following = false; editing = true } } }
+        .toolbar { if current.task.reviewSource == nil { Button("编辑") { if repeated { choosingEdit = true } else { following = false; editing = true } } } }
         .disabled(store.localSaving)
         .confirmationDialog("编辑重复任务", isPresented: $choosingEdit, titleVisibility: .visible) {
             Button("仅这一次") { following = false; editing = true }

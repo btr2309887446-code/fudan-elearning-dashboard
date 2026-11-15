@@ -8,6 +8,12 @@ import type { LectureConnectInput, LectureRef } from '../core/lectures';
 import { contextBridge, ipcRenderer } from 'electron';
 
 const api = {
+  review: {
+    preview: (account: number, start: string) => ipcRenderer.invoke('review:preview', account, start),
+    prepare: (account: number, courseId: number, refs: LectureRef[]) => ipcRenderer.invoke('review:prepare', account, courseId, refs),
+    generate: (account: number, id: string, index: number) => ipcRenderer.invoke('review:generate', account, id, index),
+    cancel: (account: number, id: string) => ipcRenderer.invoke('review:cancel', account, id),
+  },
   lectures: {
     state: (account: number) => ipcRenderer.invoke('lectures:state', account),
     connect: (account: number, input: LectureConnectInput) => ipcRenderer.invoke('lectures:connect', account, input),

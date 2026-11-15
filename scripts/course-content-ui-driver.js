@@ -35,7 +35,7 @@
   assert(row, 'Mapped course exists'); row.focus(); row.click();
   await until(() => document.querySelector('[data-testid="course-overview"] .cc-simple-list'), 'Overview loads');
   await until(() => document.querySelector('.cc-intro').textContent.includes('示例教师'), 'Official introduction and teacher');
-  assert(document.querySelectorAll('.ws-course-tabs [role="tab"]').length === 5, 'Five course tabs');
+  assert(document.querySelectorAll('.ws-course-tabs [role="tab"]').length === 6, 'Six course tabs including review');
   assert(document.querySelector('.cc-overview').textContent.includes('最近课堂笔记'), 'Course overview contains latest notes');
   if (SMOKE_VIEW === 'overview') return 'COURSE_UI_PASS overview';
   await until(() => [...document.querySelectorAll('.cc-overview button')].some(el => el.textContent.includes('第 4 讲')), 'Latest lecture arrives');

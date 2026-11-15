@@ -13,6 +13,7 @@ import {
 import { parseLectureKey, type LectureRef } from "../../core/lectures";
 import { asyncView } from "./AsyncView";
 const CourseOverview = asyncView(() => import("./CourseContent").then(m=>({default:m.CourseOverview})));
+const ReviewWorkspace = asyncView(() => import('./ReviewWorkspace'));
 const LectureReader = asyncView(() => import("./CourseContent").then(m=>({default:m.LectureReader})));
 const LectureSettings = asyncView(() => import("./CourseContent").then(m=>({default:m.LectureSettings})));
 const Settings = asyncView(() => import("./Settings").then(m=>({default:m.Settings})));
@@ -47,7 +48,7 @@ const kinds = {
   file: "文件",
   lecture: "课堂笔记",
 };
-const courseTabs = [["overview", "概览"], ["lectures", "课堂笔记"], ["assignments", "作业"], ["grades", "成绩"], ["files", "文件"]];
+const courseTabs = [["overview", "概览"], ["lectures", "课堂笔记"], ["review", "复习"], ["assignments", "作业"], ["grades", "成绩"], ["files", "文件"]];
 export default function App() {
   const now = useClock();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
@@ -78,6 +79,8 @@ export default function App() {
     [limit, setLimit] = useState(100);
   const [notice, setNotice] = useState<{ text: string; undo?: WorkspaceCommand; taskId?: string } | null>(null);
   const [reader, setReader] = useState<{ courseId: number; ref?: LectureRef; previousTab: string } | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{ courseId: number; planId?: string } | null>(null);
+  useEffect(() => { setReviewTarget(null); }, [snapshot?.profile.id]);
   const readerFocus = useRef<HTMLElement | null>(null);
   const [operation, setOperation] = useState("");
   const [retry, setRetry] = useState<WorkspaceCommand | null>(null);
@@ -299,6 +302,7 @@ export default function App() {
   }
   function close() {
     if (reader) { closeReader(); return; }
+    if (reviewTarget && page === 'courses') { setReviewTarget(null); setTab('review'); return; }
     setSelected("");
     requestAnimationFrame(() => {
       if (list.current) list.current.scrollTop = positions.current[page] ?? 0;
@@ -386,7 +390,7 @@ export default function App() {
     };
     window.addEventListener("keydown", f);
     return () => window.removeEventListener("keydown", f);
-  }, [selected, busy, reader]);
+  }, [selected, busy, reader, reviewTarget, page]);
   const currentDay = dayKey(now);
   const horizon = useMemo(
     () =>
@@ -611,7 +615,7 @@ export default function App() {
       <main className="ws-main">
         <header className="ws-toolbar">
           <h1>{pages.find((p) => p[0] === page)?.[1] ?? "设置"}</h1>
-          {page !== "settings" && !reader && (
+          {page !== "settings" && !reader && !(reviewTarget && page === 'courses') && (
             <input
               ref={search}
               type="search"
@@ -681,7 +685,7 @@ export default function App() {
           />
           </div>
         ) : (
-          <div className={`ws-panes ${selected ? "has-detail" : ""}`} style={reader && page === "courses" ? { display: "none" } : undefined}>
+          <div className={`ws-panes ${selected ? "has-detail" : ""}`} style={(reader || reviewTarget) && page === "courses" ? { display: "none" } : undefined}>
             <section className="ws-list-pane" aria-label="列表">
               {page === "tasks" && (
                 <div className="ws-filters">
@@ -1077,6 +1081,7 @@ export default function App() {
                               {task.draft?.notes || "暂无备注"}
                             </p>
                             {task.draft?.lectureSource && <button onClick={() => void openLectureTarget(task.draft!.lectureSource!)}>返回课堂笔记：{task.draft.lectureSource.title}</button>}
+                            {task.draft?.reviewSource && <button onClick={() => { setPage('courses'); setReviewTarget({ courseId: task.courseId!, planId: task.draft!.reviewSource!.planId }); }}>进入复习计划</button>}
                             {task.draft?.checklist.map((c) => (
                               <label className="ws-check" key={c.id}>
                                 <input
@@ -1118,7 +1123,7 @@ export default function App() {
                               >
                                 {task.completed ? "恢复待处理" : "标为完成"}
                               </button>
-                              <button onClick={() => setEditor({ task })}>
+                              <button onClick={() => task.draft?.reviewSource ? (setPage('courses'), setReviewTarget({ courseId: task.courseId!, planId: task.draft.reviewSource.planId })) : setEditor({ task })}>
                                 编辑
                               </button>
                               <button onClick={() => setDeleting([task])}>
@@ -1208,7 +1213,7 @@ export default function App() {
                         ))}
                       </div>
                       <Surface identity={tab}>
-                      {tab === "overview" ? <CourseOverview account={snapshot.profile.id} course={chosenCourse} tasks={tasks} onOpenTask={id => { setPage("tasks"); open(id); }} onRead={ref => startReading(chosenCourse.id, ref)} onSettings={() => go("settings")} /> : tab === "lectures" ? <button className="primary" onClick={() => startReading(chosenCourse.id)}>阅读课堂笔记</button> : tab === "files" ? (
+                      {tab === "overview" ? <><CourseOverview account={snapshot.profile.id} course={chosenCourse} tasks={tasks} onOpenTask={id => { setPage("tasks"); open(id); }} onRead={ref => startReading(chosenCourse.id, ref)} onSettings={() => go("settings")} /><section className="cc-overview"><h3>课程复习</h3><p>{data?.review?.plans.filter(p => p.courseId === chosenCourse.id).length ?? 0} 份复习计划</p><button onClick={() => setReviewTarget({ courseId: chosenCourse.id })}>查看复习计划</button></section></> : tab === 'review' ? <button className="primary" onClick={() => setReviewTarget({ courseId: chosenCourse.id })}>打开复习计划</button> : tab === "lectures" ? <button className="primary" onClick={() => startReading(chosenCourse.id)}>阅读课堂笔记</button> : tab === "files" ? (
                         <CourseFiles
                           key={chosenCourse.id}
                           courseId={chosenCourse.id}
@@ -1238,6 +1243,7 @@ export default function App() {
             )}
           </div>
         )}
+        {reviewTarget && page === 'courses' && data && snapshot.courses.find(c => c.id === reviewTarget.courseId) && <div style={{ display: reader ? 'none' : 'flex', flex: 1, minHeight: 0 }}><ReviewWorkspace key={`${snapshot.profile.id}:${reviewTarget.courseId}`} account={snapshot.profile.id} course={snapshot.courses.find(c => c.id === reviewTarget.courseId)!} data={data} now={now} saving={saving} error={error} initialPlan={reviewTarget.planId} mutate={mutate} onBack={() => { setSelected(`course:${reviewTarget.courseId}`); setTab('review'); setReviewTarget(null); }} onRead={ref => startReading(reviewTarget.courseId, ref)} onTask={id => { setPage('tasks'); open(id); }} /></div>}
         {reader && page === "courses" && snapshot.courses.find(c => c.id === reader.courseId) && <LectureReader
           key={`${snapshot.profile.id}:${reader.courseId}`}
           account={snapshot.profile.id} course={snapshot.courses.find(c => c.id === reader.courseId)!}

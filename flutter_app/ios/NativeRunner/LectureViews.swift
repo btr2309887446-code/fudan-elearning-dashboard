@@ -21,6 +21,10 @@ struct CourseOverviewSections: View {
             } else if error == nil { ProgressView("正在读取课程简介…") }
             if let error { Text(error).font(.footnote).foregroundStyle(.red); Button("重试课程简介") { Task { await loadIntroduction(force: true) } } }
         }
+        Section("课程复习") {
+            NavigationLink("打开复习计划") { ReviewCourseView(store: store, courseID: course.id) }
+                .accessibilityIdentifier("course-review-entry")
+        }
         Section("近期待办") {
             let pending = store.tasks.filter { $0.courseID == course.id && $0.status == .pending }.prefix(5)
             if pending.isEmpty { Text("这门课暂时没有待办。").foregroundStyle(.secondary) }
