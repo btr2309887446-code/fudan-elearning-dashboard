@@ -105,7 +105,10 @@ export function previewSchedule(data: WorkspaceData, start: string, now: number)
   }
   const next = [...slots.values()].sort((a, b) => a.date.localeCompare(b.date) || a.planId.localeCompare(b.planId));
   const previous = review.slots.filter(s => !keep.includes(s) && slotActive(data, s));
-  const same = (a: { allocations: ReviewSlot['allocations'] }, b: { allocations: ReviewSlot['allocations'] }) => JSON.stringify(a.allocations) === JSON.stringify(b.allocations);
+  const deadlines = new Map(data.series.map(task => [task.id, task.dueAt]));
+  const same = (a: Omit<ReviewSlot, 'taskId'>, b: ReviewSlot) =>
+    JSON.stringify(a.allocations) === JSON.stringify(b.allocations) &&
+    Date.parse(deadlines.get(b.taskId) ?? '') === Date.parse(`${a.date}T${review.finishTime}:00+08:00`);
   return { revision: review.revision, start, slots: next, shortages, warnings,
     changes: { added: next.filter(s => !previous.some(p => p.id === s.id)).length, moved: next.filter(s => previous.some(p => p.id === s.id && !same(s, p))).length, removed: previous.filter(p => !next.some(s => s.id === p.id)).length } };
 }
@@ -136,7 +139,8 @@ export function applyReview(data: WorkspaceData, action: ReviewAction, uuid: () 
     data.series = data.series.flatMap(s => {
       if (!taskIds.has(s.id)) return [s];
       const remaining = review.slots.filter(slot => slot.taskId === s.id);
-      return remaining.length ? [taskFor(remaining, s)] : [];
+      // Removing a plan changes task content, not its scheduled time.
+      return remaining.length ? [{ ...taskFor(remaining, s), dueAt: s.dueAt }] : [];
     });
   } else if (action.kind === 'budget') {
     if (!Array.isArray(action.budget) || action.budget.length !== 7 || !/^([01]\d|2[0-3]):[0-5]\d$/.test(action.finishTime)) throw Error('每日预算或完成时间无效');

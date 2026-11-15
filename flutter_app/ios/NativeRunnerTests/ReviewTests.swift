@@ -48,6 +48,41 @@ final class ReviewTests: XCTestCase {
         XCTAssertEqual(try ReviewDomain.preview(data, start: start, now: evening).slots.first?.date, "2026-11-14")
         XCTAssertThrowsError(try ReviewDomain.apply(.plan(plan("b")), revision: 0, to: &data, now: now))
     }
+    func testFinishTimeOnlyChangeIsCountedBeforeReschedule() throws {
+        var data = NativeLocalAccount()
+        try ReviewDomain.apply(.plan(plan("a", minutes: 30)), revision: 0, to: &data, now: now)
+        let initial = try ReviewDomain.preview(data, start: start, now: now)
+        try ReviewDomain.apply(.schedule(initial), revision: 1, to: &data, now: now)
+        XCTAssertEqual(try ReviewDomain.preview(data, start: start, now: now).changed, 0)
+        try ReviewDomain.apply(.budget(Array(repeating: 60, count: 7), "20:00"), revision: 2, to: &data, now: now)
+        let preview = try ReviewDomain.preview(data, start: start, now: now)
+        XCTAssertEqual(preview.slots, initial.slots)
+        XCTAssertEqual(preview.changed, 1); XCTAssertEqual(preview.added, 0); XCTAssertEqual(preview.removed, 0)
+        XCTAssertEqual(data.series[0].dueAt, ReviewDomain.deadline(start, time: "21:00"))
+        try ReviewDomain.apply(.schedule(preview), revision: 3, to: &data, now: now)
+        XCTAssertEqual(data.series[0].dueAt, ReviewDomain.deadline(start, time: "20:00"))
+        XCTAssertEqual(try ReviewDomain.preview(data, start: start, now: now).changed, 0)
+    }
+    func testRemoveMergedPlanKeepsDeadlineAndProtection() throws {
+        for protection in ["pending", "locked", "completed"] {
+            var data = NativeLocalAccount()
+            try ReviewDomain.apply(.plan(plan("a", minutes: 30)), revision: 0, to: &data, now: now)
+            try ReviewDomain.apply(.plan(plan("b", minutes: 30)), revision: 1, to: &data, now: now)
+            let preview = try ReviewDomain.preview(data, start: start, now: now)
+            try ReviewDomain.apply(.schedule(preview), revision: 2, to: &data, now: now)
+            if protection == "locked" { try ReviewDomain.apply(.lock(data.review!.slots[0].id, true), revision: data.review!.revision, to: &data, now: now) }
+            if protection == "completed" { data.series[0].exceptions["single"] = PersonalOccurrenceState(completed: true) }
+            let before = data.series[0]
+            try ReviewDomain.apply(.budget(Array(repeating: 60, count: 7), "20:00"), revision: data.review!.revision, to: &data, now: now)
+            try ReviewDomain.apply(.remove("a"), revision: data.review!.revision, to: &data, now: now)
+            XCTAssertEqual(data.series.count, 1)
+            XCTAssertEqual(data.series[0].dueAt, before.dueAt, protection)
+            XCTAssertEqual(data.series[0].id, before.id); XCTAssertEqual(data.series[0].exceptions, before.exceptions)
+            XCTAssertEqual(data.series[0].reviewSource?.planID, "b")
+            XCTAssertTrue(data.series[0].title.contains("30 分钟"))
+            if protection == "locked" { XCTAssertTrue(data.review!.slots[0].locked) }
+        }
+    }
     func testLegacyDataAndAccountIsolation() async throws {
         let bytes = Data(#"{"version":1,"series":[],"baselines":{},"events":[],"personalRemindersEnabled":true}"#.utf8)
         var data = try JSONDecoder().decode(NativeLocalAccount.self, from: bytes)

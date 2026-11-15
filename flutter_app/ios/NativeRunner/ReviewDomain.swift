@@ -142,9 +142,12 @@ enum ReviewDomain {
         }
         let next = slots.values.sorted { ($0.date, $0.planID) < ($1.date, $1.planID) }
         let previous = review.slots.filter { !keep.contains($0) && active($0, data) }
+        let tasks = Dictionary(uniqueKeysWithValues: data.series.map { ($0.id, $0) })
         return ReviewPreview(revision: review.revision, start: start, slots: next, shortages: shortages, warnings: warnings,
                              added: next.filter { n in !previous.contains { $0.id == n.id } }.count,
-                             changed: next.filter { n in previous.contains { $0.id == n.id && $0.allocations != n.allocations } }.count,
+                             changed: next.filter { n in previous.contains { old in
+                                 old.id == n.id && (old.allocations != n.allocations || tasks[old.taskID]?.dueAt != deadline(n.date, time: review.finishTime))
+                             } }.count,
                              removed: previous.filter { p in !next.contains { $0.id == p.id } }.count)
     }
     // Call on a copy, then persist the account once. A thrown error must discard the copy.
@@ -181,7 +184,11 @@ enum ReviewDomain {
             data.series = try data.series.compactMap { old in
                 guard taskIDs.contains(old.id) else { return old }
                 let remaining = review.slots.filter { $0.taskID == old.id }
-                return remaining.isEmpty ? nil : try task(remaining, previous: old)
+                guard !remaining.isEmpty else { return nil }
+                var rebuilt = try task(remaining, previous: old)
+                // Removing a plan changes task content, not its scheduled time.
+                rebuilt.dueAt = old.dueAt
+                return rebuilt
             }
         case .budget(let values, let time):
             guard values.count == 7, values.allSatisfy({ (0...720).contains($0) }), time.range(of: "^([01][0-9]|2[0-3]):[0-5][0-9]$", options: .regularExpression) != nil else { throw failure("每日预算或完成时间无效。") }
