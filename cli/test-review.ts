@@ -32,6 +32,26 @@ assert.equal(grouped.series.length, 1); assert.equal(grouped.review!.slots.lengt
 const removedOne = mutateWorkspace(grouped, { type: 'review', action: { kind: 'remove', planId: 'a', revision: 1 } }, uuid, now);
 assert.equal(removedOne.series.length, 1); assert.equal(removedOne.series[0].reviewSource!.planId, 'b');
 const first = data.review!.slots[0];
+// Changing only the finish time must be visible before confirmation.
+const retimed = mutateWorkspace(grouped, { type: 'review', action: { kind: 'budget', budget: grouped.review!.budget, finishTime: '20:00', revision: 1 } }, uuid, now);
+assert.equal(previewSchedule(grouped, '2026-11-08', Date.parse(now)).changes.moved, 0);
+const retimePreview = previewSchedule(retimed, '2026-11-08', Date.parse(now));
+assert.equal(retimePreview.changes.moved, 2);
+assert.equal(retimePreview.changes.added, 0); assert.equal(retimePreview.changes.removed, 0);
+const rescheduled = mutateWorkspace(retimed, { type: 'review', action: { kind: 'schedule', start: retimePreview.start, revision: retimePreview.revision } }, uuid, now);
+assert.equal(rescheduled.series[0].dueAt, '2026-11-08T20:00:00+08:00');
+assert.equal(previewSchedule(rescheduled, '2026-11-08', Date.parse(now)).changes.moved, 0);
+for (const protection of ['pending', 'locked', 'completed']) {
+  let protectedData = clone(retimed);
+  if (protection === 'locked') protectedData = mutateWorkspace(protectedData, { type: 'review', action: { kind: 'lock', slotId: protectedData.review!.slots[0].id, locked: true, revision: 2 } }, uuid, now);
+  if (protection === 'completed') protectedData = mutateWorkspace(protectedData, { type: 'complete', items: [{ seriesId: protectedData.series[0].id, key: 'single' }], completed: true }, uuid, now);
+  const before = clone(protectedData.series[0]);
+  const after = mutateWorkspace(protectedData, { type: 'review', action: { kind: 'remove', planId: 'a', revision: protectedData.review!.revision } }, uuid, now);
+  assert.equal(after.series.length, 1); assert.equal(after.series[0].dueAt, before.dueAt, protection);
+  assert.equal(after.series[0].id, before.id); assert.deepEqual(after.series[0].exceptions, before.exceptions);
+  assert.equal(after.series[0].reviewSource!.planId, 'b'); assert(after.series[0].title.includes('20 分钟'));
+  if (protection === 'locked') assert(after.review!.slots[0].locked);
+}
 data = mutateWorkspace(data, { type: 'complete', items: [{ seriesId: first.taskId, key: 'single' }], completed: true }, uuid, now);
 assert.equal(reviewedMinutes(data, first.planId, 'soon-i'), 60);
 assert.equal(data.review!.plans.find(p => p.id === 'soon')!.items[0].mastery, 'unassessed');
